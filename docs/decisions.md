@@ -18,7 +18,7 @@ CRM state can arrive late or out of order. Keeping immutable source events permi
 
 ## CRM-agnostic routing core
 
-Scoring, segmentation, routing, and warehouse logging stay upstream of provider-specific writes. HubSpot is the first live CRM because an authorized account is available now; Salesforce remains a disabled parallel adapter until its access is restored. This proves portability without duplicating the decision logic or pretending the blocked Salesforce path is live.
+Scoring, segmentation, routing, and warehouse logging stay upstream of provider-specific writes. HubSpot and Salesforce have separate destination adapters but share the same governed contact state. This keeps provider rules out of the routing core without duplicating business logic.
 
 ## Demonstrate transformation, not only monitoring
 
@@ -34,7 +34,7 @@ The interface never reports a repair from an optimistic click. It requires an al
 
 ## Real mutations, synthetic boundary
 
-The portfolio lab should prove operating behavior without risking destructive CRM changes. Merge, reroute, and replay therefore execute against named synthetic BigQuery or browser-local state. The only live CSV destination is an explicit, receipt-verified HubSpot upsert of governed standard contact properties. Deletion, provider-side merge, owner mutation, lifecycle mutation, and Salesforce writes remain separate portal-aware boundaries.
+The portfolio lab should prove operating behavior without risking destructive CRM changes. Merge, reroute, and replay therefore execute against named synthetic BigQuery or browser-local state. CRM writes are explicit, receipt-verified, standard-field-only syncs. Deletion, provider-side merge, owner mutation, and lifecycle mutation remain separate portal-aware boundaries.
 
 ## Browser-local CSV fallback
 
@@ -43,3 +43,7 @@ CSV mode exists for teams without BigQuery and requires no persistent database. 
 ## Portable HubSpot authentication
 
 Single-portal users can supply a scoped private-app token; teams already using n8n can bind their own HubSpot OAuth credential to the included workflow. The same server contract and receipt validator wrap both paths. Production writes require a separate Control Tower access key so publishing the UI does not publish an open CRM write endpoint.
+
+## Query-first Salesforce identity
+
+Standard Salesforce Lead email is not a portable external ID, while `Company` and `LastName` are required. The Salesforce adapter therefore queries active Leads by normalized email before writing: create on zero matches, update on exactly one, and hold on multiple matches. It writes only portable standard fields and never requires a Harrison-specific custom field. A server-side access token authenticates the local connector; production should use a refreshable connected-app OAuth flow.

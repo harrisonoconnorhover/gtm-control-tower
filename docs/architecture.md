@@ -5,15 +5,15 @@
                   │
                   ▼
        n8n normalization + scoring
-          │          │          │
-          ▼          ▼          ▼
-      HubSpot   Salesforce   BigQuery event log
-       upsert    upsert            │
-                                  ▼
-                       dbt staging + marts + tests
-                                  │
-                                  ▼
-                      GTM Control Tower dashboard
+             │              │
+             ▼              ▼
+         HubSpot       BigQuery event log
+          upsert              │
+                              ▼
+                   dbt staging + marts + tests
+                              │
+                              ▼
+                  GTM Control Tower dashboard
 ```
 
 The dashboard browser never receives Google or n8n credentials. It calls same-origin `/api/control-tower/state`, `/api/control-tower/funky`, and `/api/control-tower/repair` handlers. Those server routes validate request and response contracts before proxying to a separate n8n Operations API workflow.
@@ -27,10 +27,11 @@ CSV file → browser parser + field aliases → in-memory contact state
                                       │               │
                               repaired CSV      clean-record gate
                                                         │
-                                           HubSpot batch upsert
+                                      HubSpot Contacts  Salesforce Leads
+                                         batch upsert   query + create/update
 ```
 
-No CSV bytes cross a network boundary or persist after a refresh. An explicit HubSpot sync sends only allow-listed, governed contact fields through a server-validated batch contract. The browser produces receipt-shaped local repair records and preserves HubSpot's per-record results so the same contact table shows both boundaries without conflating them.
+No CSV bytes cross a network boundary or persist after a refresh. Explicit destination actions send only allow-listed, governed fields through server-validated batch contracts. The browser produces receipt-shaped local repair records and preserves each CRM's per-record results so the same table shows both boundaries without conflating them.
 
 ## Data contract
 
@@ -38,9 +39,9 @@ Every CRM event has a stable `event_id`, lead/account identity, lifecycle stage,
 
 ## Operational path
 
-The n8n workflow accepts a lead signal, normalizes fields, derives score/segment/owner, fans out to HubSpot and Salesforce, and appends the event to BigQuery. The local production webhook is published with HubSpot and BigQuery live. The Salesforce node is disabled until its development organization is recovered and its mapping can be reviewed safely.
+The n8n workflow accepts a lead signal, normalizes fields, derives score/segment/owner, upserts HubSpot, and appends the event to BigQuery. The local production webhook has HubSpot and BigQuery live. Its disabled Salesforce node remains an organization-specific custom-field example; the verified Salesforce path is the portable query-first CSV connector shown below.
 
-The local n8n and BigQuery leg has been validated end to end with a synthetic lead. Salesforce metadata and mappings are prepared, but the Salesforce leg remains intentionally unpublished until OAuth access to the development organization is restored.
+The local n8n and BigQuery leg has been validated end to end with a synthetic lead. HubSpot is the live n8n CRM leg. Salesforce has a separate query-first CSV Lead connector so its required fields and duplicate-email ambiguity can be handled without custom fields.
 
 ## Analytics path
 
@@ -60,10 +61,12 @@ The primary walkthrough uses a ten-record synthetic batch with realistic CRM def
 
 The state webhook executes a bounded BigQuery query with a 100 MB billing ceiling, shapes events, funnel measures, contact state, and repair history into a strict dashboard contract, and returns it server-side. The seed webhook replaces only the named synthetic batch. The repair webhook accepts three known scenario keys and executes one parameterized worker: logical duplicate merge, Northeast enterprise reroute, or expected-lifecycle replay. Every run writes a repair receipt and immutable event. The dashboard reports success only after contract validation, then refreshes the changed rows from BigQuery.
 
-The merge is deliberately non-destructive: source rows remain queryable but are marked `merged` and point at the canonical contact. The CSV destination can upsert governed contact fields to HubSpot only after an explicit click. It does not delete or merge HubSpot records, and Salesforce remains untouched. Production mutation routes require an access key.
+The merge is deliberately non-destructive: source rows remain queryable but are marked `merged` and point at the canonical contact. CSV destinations write governed standard fields only after an explicit click. They do not delete or provider-merge records. Production mutation routes require an access key.
 
 ## CSV compatibility path
 
 The CSV parser accepts quoted cells and newlines, maps common CRM header aliases, and infers missing email/company/owner, lifecycle regression, Unicode-domain, plus-address, and exact normalized-email duplicate flags. It does not guess fuzzy name/company identity. A user may provide `normalized_email` when aliases are already governed upstream. Imports are capped at 10 MB to keep synchronous browser work bounded.
 
 HubSpot sync uses the current contacts batch-upsert API, email identity, a 100-record request ceiling, and `objectWriteTraceId` for per-record reconciliation. The server can call HubSpot directly with a private-app bearer token or proxy through the included n8n OAuth workflow. Both produce the same strict receipt contract.
+
+Salesforce sync uses a bounded SOQL lookup by normalized email followed by sObject Collection creates and updates. Missing company, missing last name, and emails beyond the standard Lead field limit are held before transmission. Multiple active Lead matches return a failure receipt rather than selecting one. Owner, status, source, score, and custom fields are never guessed.

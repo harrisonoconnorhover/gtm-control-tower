@@ -41,6 +41,8 @@ next-env.d.ts
 /outputs/
 /work/
 /.runtime/
+/.sf/
+/.sfdx/
 /analytics/logs/
 /analytics/target/
 /analytics/dbt_packages/

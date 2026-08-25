@@ -12,6 +12,7 @@
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "test": "vitest run",
     "generate:data": "python3 scripts/generate_synthetic_crm.py",
+    "configure:salesforce": "node scripts/configure_salesforce_env.mjs",
     "sync:n8n": "node scripts/sync_ops_workflow.mjs"
   },
   "dependencies": {

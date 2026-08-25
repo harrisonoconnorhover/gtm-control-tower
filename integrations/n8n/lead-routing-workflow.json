@@ -83,7 +83,7 @@
       "typeVersion": 1,
       "position": [-190, 180],
       "disabled": true,
-      "notes": "Prepared secondary CRM path. Keep disabled until Salesforce access is restored and OAuth is verified."
+      "notes": "Organization-specific custom-field example; intentionally disabled. The verified portable Salesforce path is the query-first CSV connector and does not require GTM_* custom fields."
     },
     {
       "parameters": {

@@ -2,41 +2,41 @@
 
 ## Finished
 
-- Turned CSV mode into a governed HubSpot pipeline: local import and repair, clean-record gate, explicit write, and per-email receipts.
-- Added standard-property mapping for email, name, company, phone, job title, and website; unsafe rows remain held.
-- Added a server-validated 100-contact batch API with direct private-app-token and n8n OAuth connector paths.
-- Added production access-key enforcement, retryable batch progress, native error display, and HubSpot IDs on synced rows.
-- Completed a live HubSpot proof: synthetic contact `540806575835` was created; an invalid email returned its exact validation failure.
+- Added Salesforce as an independently selectable governed CSV destination alongside HubSpot.
+- Added query-first Lead identity: create on zero email matches, update on one, and hold duplicate matches.
+- Added Salesforce-required company/last-name gates, standard-field limits, 100-record batches, and per-row receipts.
+- Added a safe CLI-to-`.env.local` configurator; its ignored file is owner-readable and never prints the token.
+- Live proof created then updated the same synthetic Salesforce Lead `00Qg5000007ulRdEAI`.
 
 ## Try It
 
-- Open `http://localhost:3001/`, import the CSV template, and execute merge then lifecycle replay.
-- Review **Governed HubSpot destination**; eligible and held counts update after each repair.
-- Click **Sync to HubSpot**. Batches are capped at 100 and additional clicks continue remaining contacts.
+- Run `sf org login web --alias gtm-control-tower-salesforce --set-default`, then `npm run configure:salesforce`.
+- Restart the site, import a CSV, and repair held duplicates or lifecycle regressions.
+- Sync either destination; Salesforce creates or updates Leads and shows the native ID on each row.
 
 ## Checks
 
-- `npm test`: 16/16 passed across CSV, repair, HubSpot eligibility, contracts, receipt aggregation, and template import.
+- `npm test`: 20/20 passed, including Salesforce gate, contracts, receipt aggregation, and query-first branching.
 - `npm run lint`: passed with no warnings.
-- `npm run build`: passed; the HubSpot sync API route built with the existing site.
-- Page/template/invalid-sync HTTP checks: `200 / 200 / 400`.
-- n8n executions 94 and 95 succeeded; live receipts proved native failure and successful create paths.
+- `npm run build`: passed with both CRM API routes.
+- Live Salesforce route receipts: one create, then one update; both used `00Qg5000007ulRdEAI`.
+- SOQL verification: exactly one matching Lead with the updated title.
 
 ## Decisions
 
-- Send only governed standard contact fields; never upload the original CSV.
-- Do not write lifecycle or owner values until portal-aware preflight reads exist.
-- Require `CONTROL_TOWER_SYNC_KEY` for production writes; keep tokens server-side and out of Git.
+- Salesforce `Email` is not treated as an external ID; ambiguous matches fail closed.
+- Send only governed standard fields; never write owner, status, lifecycle, score, or custom fields.
+- Require `CONTROL_TOWER_SYNC_KEY` for production writes and refreshable OAuth for long-running hosting.
 
 ## Remaining
 
-- Optionally archive the clearly labeled synthetic proof contact after review.
-- Add lifecycle/owner preflight only if those provider-side writes become valuable.
-- Recover Salesforce access and validate its disabled parallel adapter.
-- Add stable HTTPS hosting before publishing any CRM mutation controls.
+- Optionally archive the clearly labeled HubSpot and Salesforce proof records after review.
+- Add lifecycle/owner preflight only if provider-side writes become valuable.
+- Replace the copied local Salesforce token with connected-app token refresh for hosted use.
+- Add stable authenticated HTTPS hosting before publishing CRM mutation controls.
 
 ## Review First
 
-- `app/api/control-tower/hubspot-sync/route.ts`
-- `integrations/n8n/csv-hubspot-sync-workflow.json`
-- `docs/hubspot-csv-setup.md`
+- `app/api/control-tower/salesforce-sync/route.ts`
+- `lib/salesforce-sync.ts`
+- `docs/salesforce-csv-setup.md`

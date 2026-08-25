@@ -25,6 +25,13 @@ import {
   type HubSpotSyncReceipt,
 } from '@/lib/hubspot-sync';
 import {
+  combineSalesforceSyncReceipts,
+  isSalesforceEligible,
+  isSalesforceSyncReceipt,
+  toSalesforceSyncLead,
+  type SalesforceSyncReceipt,
+} from '@/lib/salesforce-sync';
+import {
   isLiveControlTowerState,
   isRepairReceipt,
   isSeedReceipt,
@@ -40,7 +47,7 @@ const integrations = [
   { name: 'n8n', role: 'orchestration', status: 'live locally', tone: 'live' },
   { name: 'BigQuery', role: 'event warehouse', status: 'validated', tone: 'live' },
   { name: 'dbt', role: 'semantic layer', status: '15 / 15 pass', tone: 'live' },
-  { name: 'Salesforce', role: 'parallel CRM', status: 'access pending', tone: 'staged' },
+  { name: 'Salesforce', role: 'parallel CRM', status: 'validated', tone: 'live' },
   { name: 'Control Tower', role: 'decision layer', status: 'demo model', tone: 'demo' },
 ];
 
@@ -169,6 +176,10 @@ export function ControlTowerDashboard() {
   const [hubSpotSyncReceipt, setHubSpotSyncReceipt] = useState<HubSpotSyncReceipt | null>(null);
   const [hubSpotSyncError, setHubSpotSyncError] = useState<string | null>(null);
   const [hubSpotSyncKey, setHubSpotSyncKey] = useState('');
+  const [salesforceSyncStatus, setSalesforceSyncStatus] = useState<'idle' | 'sending' | 'complete' | 'partial' | 'error'>('idle');
+  const [salesforceSyncReceipt, setSalesforceSyncReceipt] = useState<SalesforceSyncReceipt | null>(null);
+  const [salesforceSyncError, setSalesforceSyncError] = useState<string | null>(null);
+  const [salesforceSyncKey, setSalesforceSyncKey] = useState('');
   const hubSpotEligibleContacts = useMemo(() => csvContacts.filter(isHubSpotEligible), [csvContacts]);
   const syncedHubSpotContactIds = useMemo(
     () => new Set(hubSpotSyncReceipt?.records.filter((record) => record.status === 'synced').map((record) => record.contactId) ?? []),
@@ -177,6 +188,15 @@ export function ControlTowerDashboard() {
   const pendingHubSpotContacts = useMemo(
     () => hubSpotEligibleContacts.filter((contact) => !syncedHubSpotContactIds.has(contact.contactId)),
     [hubSpotEligibleContacts, syncedHubSpotContactIds],
+  );
+  const salesforceEligibleContacts = useMemo(() => csvContacts.filter(isSalesforceEligible), [csvContacts]);
+  const syncedSalesforceContactIds = useMemo(
+    () => new Set(salesforceSyncReceipt?.records.filter((record) => record.status !== 'failed').map((record) => record.contactId) ?? []),
+    [salesforceSyncReceipt],
+  );
+  const pendingSalesforceContacts = useMemo(
+    () => salesforceEligibleContacts.filter((contact) => !syncedSalesforceContactIds.has(contact.contactId)),
+    [salesforceEligibleContacts, syncedSalesforceContactIds],
   );
   const visibleScenario = repaired ? null : activeScenario;
   const metrics = useMemo(
@@ -275,6 +295,9 @@ export function ControlTowerDashboard() {
       setHubSpotSyncStatus('idle');
       setHubSpotSyncReceipt(null);
       setHubSpotSyncError(null);
+      setSalesforceSyncStatus('idle');
+      setSalesforceSyncReceipt(null);
+      setSalesforceSyncError(null);
       setDataMode('csv');
       setActiveScenario('duplicate-surge');
       setRepaired(false);
@@ -295,6 +318,9 @@ export function ControlTowerDashboard() {
     setHubSpotSyncStatus('idle');
     setHubSpotSyncReceipt(null);
     setHubSpotSyncError(null);
+    setSalesforceSyncStatus('idle');
+    setSalesforceSyncReceipt(null);
+    setSalesforceSyncError(null);
     setActiveScenario('duplicate-surge');
     setRepaired(false);
     setRepairStatus('idle');
@@ -356,6 +382,44 @@ export function ControlTowerDashboard() {
     } catch (error) {
       setHubSpotSyncStatus('error');
       setHubSpotSyncError(error instanceof Error ? error.message : 'The HubSpot sync failed before a valid receipt returned.');
+    }
+  }
+
+  async function syncNextCsvBatchToSalesforce() {
+    if (salesforceSyncStatus === 'sending' || !pendingSalesforceContacts.length) return;
+    const batch = pendingSalesforceContacts.slice(0, 100).map(toSalesforceSyncLead);
+    const parentSyncId = salesforceSyncReceipt?.syncId ?? globalThis.crypto.randomUUID();
+    setSalesforceSyncStatus('sending');
+    setSalesforceSyncError(null);
+    try {
+      const response = await fetch('/api/control-tower/salesforce-sync', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          ...(salesforceSyncKey ? { 'x-control-tower-key': salesforceSyncKey } : {}),
+        },
+        body: JSON.stringify({
+          syncId: `${parentSyncId}-${Date.now()}`,
+          sourceFile: csvFileName ?? 'imported-contacts.csv',
+          leads: batch,
+        }),
+      });
+      const payload: unknown = await response.json();
+      if (!response.ok || !isSalesforceSyncReceipt(payload)) {
+        const message = typeof payload === 'object' && payload !== null && 'error' in payload
+          ? String(payload.error)
+          : 'Salesforce did not return a per-record receipt.';
+        throw new Error(message);
+      }
+      const combined = combineSalesforceSyncReceipts(
+        salesforceSyncReceipt ? [salesforceSyncReceipt, payload] : [payload],
+        parentSyncId,
+      );
+      setSalesforceSyncReceipt(combined);
+      setSalesforceSyncStatus(combined.status);
+    } catch (error) {
+      setSalesforceSyncStatus('error');
+      setSalesforceSyncError(error instanceof Error ? error.message : 'The Salesforce sync failed before a valid receipt returned.');
     }
   }
 
@@ -457,10 +521,10 @@ export function ControlTowerDashboard() {
               <span className="rounded-full bg-[#cdfc54]/10 px-3 py-1 font-mono text-[10px] text-[#cdfc54]">PORTFOLIO-SAFE</span>
             </div>
             <div className="mt-5 grid gap-3 sm:grid-cols-2">
-              <ProofPoint label="Live path" value="HubSpot · n8n · BigQuery" />
+              <ProofPoint label="Live path" value="HubSpot · Salesforce · n8n · BigQuery" />
               <ProofPoint label="Analytics" value="dbt · 15 checks passed" />
               <ProofPoint label="Demo layer" value="Deterministic synthetic batch" />
-              <ProofPoint label="Salesforce" value="Built · access recovery pending" muted />
+              <ProofPoint label="Salesforce" value="Create + update · same Lead ID" />
             </div>
           </article>
         </section>
@@ -480,6 +544,12 @@ export function ControlTowerDashboard() {
           hubSpotSyncReceipt={hubSpotSyncReceipt}
           hubSpotSyncError={hubSpotSyncError}
           hubSpotSyncKey={hubSpotSyncKey}
+          salesforceEligibleCount={salesforceEligibleContacts.length}
+          salesforcePendingCount={pendingSalesforceContacts.length}
+          salesforceSyncStatus={salesforceSyncStatus}
+          salesforceSyncReceipt={salesforceSyncReceipt}
+          salesforceSyncError={salesforceSyncError}
+          salesforceSyncKey={salesforceSyncKey}
           seedStatus={seedStatus}
           seedReceipt={seedReceipt}
           seedError={seedError}
@@ -488,6 +558,8 @@ export function ControlTowerDashboard() {
           onUseWarehouse={useWarehouseMode}
           onHubSpotSync={syncNextCsvBatchToHubSpot}
           onHubSpotSyncKeyChange={setHubSpotSyncKey}
+          onSalesforceSync={syncNextCsvBatchToSalesforce}
+          onSalesforceSyncKeyChange={setSalesforceSyncKey}
           onReset={() => dataMode === 'csv' ? Promise.resolve(resetCsvWorkspace()) : resetFunkyBatch(false)}
         />
 
@@ -697,6 +769,12 @@ function FunkyCrmLab({
   hubSpotSyncReceipt,
   hubSpotSyncError,
   hubSpotSyncKey,
+  salesforceEligibleCount,
+  salesforcePendingCount,
+  salesforceSyncStatus,
+  salesforceSyncReceipt,
+  salesforceSyncError,
+  salesforceSyncKey,
   seedStatus,
   seedReceipt,
   seedError,
@@ -705,6 +783,8 @@ function FunkyCrmLab({
   onUseWarehouse,
   onHubSpotSync,
   onHubSpotSyncKeyChange,
+  onSalesforceSync,
+  onSalesforceSyncKeyChange,
   onReset,
 }: {
   mode: 'warehouse' | 'csv';
@@ -719,6 +799,12 @@ function FunkyCrmLab({
   hubSpotSyncReceipt: HubSpotSyncReceipt | null;
   hubSpotSyncError: string | null;
   hubSpotSyncKey: string;
+  salesforceEligibleCount: number;
+  salesforcePendingCount: number;
+  salesforceSyncStatus: 'idle' | 'sending' | 'complete' | 'partial' | 'error';
+  salesforceSyncReceipt: SalesforceSyncReceipt | null;
+  salesforceSyncError: string | null;
+  salesforceSyncKey: string;
   seedStatus: 'idle' | 'sending' | 'seeded' | 'error';
   seedReceipt: SeedReceipt | null;
   seedError: string | null;
@@ -727,12 +813,15 @@ function FunkyCrmLab({
   onUseWarehouse: () => void;
   onHubSpotSync: () => Promise<void>;
   onHubSpotSyncKeyChange: (value: string) => void;
+  onSalesforceSync: () => Promise<void>;
+  onSalesforceSyncKeyChange: (value: string) => void;
   onReset: () => Promise<void>;
 }) {
   const fileInput = useRef<HTMLInputElement>(null);
   const active = contacts.filter((contact) => contact.recordStatus === 'active').length;
   const merged = contacts.filter((contact) => contact.recordStatus === 'merged').length;
   const hubSpotResultByContact = new Map(hubSpotSyncReceipt?.records.map((record) => [record.contactId, record]) ?? []);
+  const salesforceResultByContact = new Map(salesforceSyncReceipt?.records.map((record) => [record.contactId, record]) ?? []);
   return (
     <section className="mb-6 overflow-hidden rounded-[30px] border border-white/10 bg-[#0c1d17]" aria-label="Funky CRM contact lab">
       <div className="flex flex-wrap items-start justify-between gap-4 border-b border-white/10 px-5 py-5 sm:px-6">
@@ -782,17 +871,30 @@ function FunkyCrmLab({
         {csvError && <span className="rounded-full bg-[#ff7b55]/10 px-3 py-1 text-[#ff9d7f]">{csvError}</span>}
       </div>
       {mode === 'csv' && (
-        <HubSpotSyncPanel
-          eligibleCount={hubSpotEligibleCount}
-          heldCount={contacts.length - hubSpotEligibleCount}
-          pendingCount={hubSpotPendingCount}
-          status={hubSpotSyncStatus}
-          receipt={hubSpotSyncReceipt}
-          error={hubSpotSyncError}
-          accessKey={hubSpotSyncKey}
-          onAccessKeyChange={onHubSpotSyncKeyChange}
-          onSync={onHubSpotSync}
-        />
+        <div className="grid border-b border-white/10 xl:grid-cols-2 xl:divide-x xl:divide-white/10">
+          <HubSpotSyncPanel
+            eligibleCount={hubSpotEligibleCount}
+            heldCount={contacts.length - hubSpotEligibleCount}
+            pendingCount={hubSpotPendingCount}
+            status={hubSpotSyncStatus}
+            receipt={hubSpotSyncReceipt}
+            error={hubSpotSyncError}
+            accessKey={hubSpotSyncKey}
+            onAccessKeyChange={onHubSpotSyncKeyChange}
+            onSync={onHubSpotSync}
+          />
+          <SalesforceSyncPanel
+            eligibleCount={salesforceEligibleCount}
+            heldCount={contacts.length - salesforceEligibleCount}
+            pendingCount={salesforcePendingCount}
+            status={salesforceSyncStatus}
+            receipt={salesforceSyncReceipt}
+            error={salesforceSyncError}
+            accessKey={salesforceSyncKey}
+            onAccessKeyChange={onSalesforceSyncKeyChange}
+            onSync={onSalesforceSync}
+          />
+        </div>
       )}
       <div className="overflow-x-auto">
         <table className="w-full min-w-[1120px] border-collapse text-left text-xs">
@@ -835,6 +937,11 @@ function FunkyCrmLab({
                   {hubSpotResultByContact.get(contact.contactId) && (
                     <p className={`mt-2 font-mono text-[9px] ${hubSpotResultByContact.get(contact.contactId)?.status === 'synced' ? 'text-[#cdfc54]' : 'text-[#ff9d7f]'}`}>
                       HubSpot {hubSpotResultByContact.get(contact.contactId)?.status}{hubSpotResultByContact.get(contact.contactId)?.hubSpotId ? ` · ${hubSpotResultByContact.get(contact.contactId)?.hubSpotId}` : ''}
+                    </p>
+                  )}
+                  {salesforceResultByContact.get(contact.contactId) && (
+                    <p className={`mt-1 font-mono text-[9px] ${salesforceResultByContact.get(contact.contactId)?.status !== 'failed' ? 'text-[#83bcff]' : 'text-[#ff9d7f]'}`}>
+                      Salesforce {salesforceResultByContact.get(contact.contactId)?.status}{salesforceResultByContact.get(contact.contactId)?.salesforceId ? ` · ${salesforceResultByContact.get(contact.contactId)?.salesforceId}` : ''}
                     </p>
                   )}
                 </td>
@@ -922,6 +1029,78 @@ function HubSpotSyncPanel({
         {receipt && (
           <div className={`rounded-2xl border px-4 py-3 text-xs ${receipt.failed ? 'border-[#e6bd68]/25 bg-[#e6bd68]/[0.06] text-[#e6cf95]' : 'border-[#cdfc54]/20 bg-[#cdfc54]/[0.06] text-[#bfe57d]'}`}>
             <span className="font-semibold">HubSpot receipt:</span> {receipt.synced} synced · {receipt.failed} failed · {pendingCount} still pending
+            <span className="ml-2 font-mono text-[9px] text-[#71877c]">{receipt.syncId}</span>
+          </div>
+        )}
+        {error && <div className="rounded-2xl border border-[#ff7b55]/25 bg-[#ff7b55]/[0.06] px-4 py-3 text-xs text-[#ff9d7f]">{error} No unreceipted batch is shown as complete.</div>}
+        {failedRecords.length > 0 && (
+          <div className="mt-2 space-y-1 font-mono text-[9px] text-[#ff9d7f]">
+            {failedRecords.slice(0, 3).map((record) => <p key={record.contactId}>{record.email}: {record.error}</p>)}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SalesforceSyncPanel({
+  eligibleCount,
+  heldCount,
+  pendingCount,
+  status,
+  receipt,
+  error,
+  accessKey,
+  onAccessKeyChange,
+  onSync,
+}: {
+  eligibleCount: number;
+  heldCount: number;
+  pendingCount: number;
+  status: 'idle' | 'sending' | 'complete' | 'partial' | 'error';
+  receipt: SalesforceSyncReceipt | null;
+  error: string | null;
+  accessKey: string;
+  onAccessKeyChange: (value: string) => void;
+  onSync: () => Promise<void>;
+}) {
+  const failedRecords = receipt?.records.filter((record) => record.status === 'failed') ?? [];
+  const batchCount = Math.min(100, pendingCount);
+  return (
+    <div className="bg-[#07130f]/55 px-5 py-5 sm:px-6">
+      <div className="grid gap-5 lg:grid-cols-[1fr_auto] lg:items-end xl:grid-cols-1">
+        <div>
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-sm font-semibold">Governed Salesforce destination</p>
+            <span className="rounded-full bg-[#83bcff]/10 px-3 py-1 font-mono text-[9px] uppercase text-[#83bcff]">Lead · match by email</span>
+          </div>
+          <p className="mt-2 max-w-3xl text-xs leading-5 text-[#71877c]">{eligibleCount} clean active contacts qualify; {heldCount} rows stay out. Company and last name are required. One email match is updated, no match is created, and duplicate Lead matches are held for review.</p>
+          <p className="mt-1 text-[10px] leading-5 text-[#566b61]">Portable standard fields only: email, name, company, phone, title, and website. Owner, status, score, and custom fields remain untouched.</p>
+        </div>
+        <div className="flex flex-wrap items-end gap-2 lg:justify-end xl:justify-start">
+          <label className="grid gap-1 font-mono text-[8px] uppercase tracking-wider text-[#71877c]">
+            Access key · if configured
+            <input
+              type="password"
+              value={accessKey}
+              onChange={(event) => onAccessKeyChange(event.target.value)}
+              autoComplete="off"
+              className="w-44 rounded-full border border-white/10 bg-white/[0.04] px-4 py-2.5 text-xs normal-case tracking-normal text-[#dce9e2] outline-none focus:border-[#83bcff]/50"
+            />
+          </label>
+          <button
+            onClick={() => void onSync()}
+            disabled={status === 'sending' || pendingCount === 0}
+            className="rounded-full bg-[#83bcff] px-5 py-3 text-xs font-bold text-[#07130f] transition hover:bg-[#a7d0ff] disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {status === 'sending' ? 'Writing to Salesforce…' : pendingCount ? `Sync ${batchCount}${pendingCount > 100 ? ` of ${pendingCount}` : ''} to Salesforce` : eligibleCount ? 'All clean Leads synced' : 'Fix held records first'}
+          </button>
+        </div>
+      </div>
+      <div aria-live="polite" className="mt-4">
+        {receipt && (
+          <div className={`rounded-2xl border px-4 py-3 text-xs ${receipt.failed ? 'border-[#e6bd68]/25 bg-[#e6bd68]/[0.06] text-[#e6cf95]' : 'border-[#83bcff]/20 bg-[#83bcff]/[0.06] text-[#a7d0ff]'}`}>
+            <span className="font-semibold">Salesforce receipt:</span> {receipt.created} created · {receipt.updated} updated · {receipt.failed} failed · {pendingCount} pending
             <span className="ml-2 font-mono text-[9px] text-[#71877c]">{receipt.syncId}</span>
           </div>
         )}
