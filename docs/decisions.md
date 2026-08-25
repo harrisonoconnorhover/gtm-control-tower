@@ -19,3 +19,7 @@ CRM state can arrive late or out of order. Keeping immutable source events permi
 ## CRM-agnostic routing core
 
 Scoring, segmentation, routing, and warehouse logging stay upstream of provider-specific writes. HubSpot is the first live CRM because an authorized account is available now; Salesforce remains a disabled parallel adapter until its access is restored. This proves portability without duplicating the decision logic or pretending the blocked Salesforce path is live.
+
+## Demonstrate transformation, not only monitoring
+
+The portfolio entry point is a guided messy-lead run rather than a static healthy dashboard. It exposes the raw record, each control, the governed output, contained defects, funnel impact, and recommended action so a reviewer can understand both the technical system and the business judgment in under two minutes.

@@ -10,6 +10,7 @@ The browser demo is intentionally self-contained and uses synthetic data. The re
 - n8n scoring, segmentation, routing, idempotent upsert, and warehouse delivery.
 - BigQuery as an append-only CRM event warehouse.
 - dbt models for funnel conversion, routing SLA, and data quality.
+- A guided six-stage walkthrough that visibly ingests, enriches, routes, tests, models, and diagnoses a deliberately messy lead batch.
 - A responsive decision dashboard with three interactive failure simulations and a human-approved repair flow.
 
 ## Try the dashboard
@@ -19,7 +20,7 @@ npm install
 npm run dev
 ```
 
-Open the printed local URL. Click **Trigger chaos mode** to cycle through duplicate-account pressure, routing overload, and lifecycle regression. Click **Approve repair & replay** to restore the baseline.
+Open the printed local URL. Click **Run messy lead batch** to watch eight flawed records move from raw CRM input to governed action. The walkthrough exposes a before/after record, routing outcomes, quarantined writes, the tested funnel, and the resulting revenue diagnosis. Use **Test another failure** to cycle through duplicate-account pressure, routing overload, and lifecycle regression, then **Approve repair & replay** to restore the baseline.
 
 ## Generate synthetic CRM data
 
@@ -47,10 +48,11 @@ The local development stack has been exercised against a dedicated BigQuery proj
 
 ## Portfolio demo script
 
-1. Explain the lineage: **Salesforce → n8n → BigQuery → dbt → decision layer**.
-2. Show the healthy route-time SLA, data-quality score, funnel, and audit trail.
-3. Trigger a failure and explain the revenue consequence—not merely the technical symptom.
-4. Approve the recommended repair and describe how an immutable event log makes replay safe.
+1. Start with **Run messy lead batch**: eight flawed records arrive with duplicates, inconsistent formatting, missing identity, and an impossible lifecycle change.
+2. Follow the six controls as n8n normalizes, enriches, scores, and routes; BigQuery preserves the event history; and dbt tests and rebuilds the funnel.
+3. Compare the raw and governed record, then show how bad writes are contained instead of silently corrupting metrics.
+4. Explain the revenue consequence—not merely the technical symptom—then approve the recommended repair and describe why the immutable event log makes replay safe.
+5. Close on the integration boundary: HubSpot, n8n, BigQuery, and dbt are validated; the dashboard uses deterministic synthetic data; Salesforce is built but awaiting account recovery.
 
 **Résumé-ready bullet:** Built a dual-CRM GTM control tower spanning HubSpot, Salesforce, n8n, BigQuery, dbt, and a decision dashboard; implemented live HubSpot upserts and warehouse logging, modeled funnel and routing SLAs, and designed human-approved recovery for duplicate, capacity, and lifecycle failures.
 

@@ -1,7 +1,9 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
+  demoRunSummary,
+  demoStages,
   funnelForScenario,
   healthHeadline,
   nextScenario,
@@ -11,43 +13,67 @@ import {
 } from '@/lib/control-tower';
 
 const integrations = [
-  { name: 'Salesforce', role: 'system of record', status: 'connected' },
-  { name: 'n8n', role: 'orchestration', status: '14 workflows' },
-  { name: 'BigQuery', role: 'event warehouse', status: '2.8m rows' },
-  { name: 'dbt', role: 'semantic layer', status: '28 tests' },
-  { name: 'Control Tower', role: 'decision layer', status: 'live' },
+  { name: 'HubSpot', role: 'live CRM', status: 'validated', tone: 'live' },
+  { name: 'n8n', role: 'orchestration', status: 'live locally', tone: 'live' },
+  { name: 'BigQuery', role: 'event warehouse', status: 'validated', tone: 'live' },
+  { name: 'dbt', role: 'semantic layer', status: '15 / 15 pass', tone: 'live' },
+  { name: 'Salesforce', role: 'parallel CRM', status: 'access pending', tone: 'staged' },
+  { name: 'Control Tower', role: 'decision layer', status: 'demo model', tone: 'demo' },
 ];
 
 const dbtTests = [
-  ['unique_account_domain', 'pass'],
-  ['valid_lifecycle_progression', 'pass'],
-  ['opportunity_has_owner', 'pass'],
-  ['route_time_under_sla', 'pass'],
-  ['closed_won_has_amount', 'pass'],
-];
-
-const baselineIncidents = [
-  { id: 'capacity', title: 'Capacity warning', detail: 'Northeast pod is at 78% of weekly capacity.', severity: 'warning' },
-  { id: 'repair', title: 'Stage history repaired', detail: 'Three out-of-order events were replayed safely.', severity: 'resolved' },
+  ['unique_account_domain', '2 duplicates contained'],
+  ['valid_lifecycle_progression', '1 regression rejected'],
+  ['opportunity_has_owner', 'complete'],
+  ['route_time_under_sla', '96.4% within SLA'],
+  ['closed_won_has_amount', 'complete'],
 ];
 
 const activity = [
-  ['13:42:18', 'n8n', 'Lead scored 87 and routed to Enterprise East'],
-  ['13:42:16', 'dbt', 'fct_routing_sla passed 28 checks'],
-  ['13:41:59', 'BigQuery', '243 CRM events loaded idempotently'],
-  ['13:41:44', 'Salesforce', 'Opportunity ACME-184 advanced to Proposal'],
+  ['00:05.8', 'Control Tower', 'Duplicate cluster isolated; repair plan ready'],
+  ['00:04.7', 'dbt', 'Trusted funnel rebuilt from accepted events'],
+  ['00:03.5', 'BigQuery', 'Immutable raw and quality events appended'],
+  ['00:02.2', 'n8n', 'Six qualified records scored and routed'],
+  ['00:00.7', 'HubSpot', 'Eight deliberately messy leads received'],
+];
+
+const baselineIncidents = [
+  { id: 'missing-company', title: 'Missing company identity', detail: 'One personal-email lead is held for review instead of contaminating account metrics.', severity: 'warning' },
+  { id: 'lifecycle', title: 'Lifecycle regression blocked', detail: 'A Customer → MQL write was quarantined before it changed source-of-truth state.', severity: 'resolved' },
 ];
 
 export function ControlTowerDashboard() {
   const [activeScenario, setActiveScenario] = useState<ScenarioKey | null>(null);
   const [repaired, setRepaired] = useState(false);
-  const metrics = useMemo(() => scenarioMetrics(repaired ? null : activeScenario), [activeScenario, repaired]);
-  const funnel = useMemo(() => funnelForScenario(repaired ? null : activeScenario), [activeScenario, repaired]);
+  const [demoStage, setDemoStage] = useState(-1);
+  const [demoRunning, setDemoRunning] = useState(false);
   const visibleScenario = repaired ? null : activeScenario;
+  const metrics = useMemo(() => scenarioMetrics(visibleScenario), [visibleScenario]);
+  const funnel = useMemo(() => funnelForScenario(visibleScenario), [visibleScenario]);
+  const runSummary = useMemo(() => demoRunSummary(demoStage), [demoStage]);
+
+  useEffect(() => {
+    if (!demoRunning) return;
+    if (demoStage >= demoStages.length - 1) {
+      const completionTimer = window.setTimeout(() => setDemoRunning(false), 550);
+      return () => window.clearTimeout(completionTimer);
+    }
+    const stageTimer = window.setTimeout(() => setDemoStage((stage) => stage + 1), 780);
+    return () => window.clearTimeout(stageTimer);
+  }, [demoRunning, demoStage]);
+
+  function runMessyBatch() {
+    setDemoStage(0);
+    setDemoRunning(true);
+    setActiveScenario('duplicate-surge');
+    setRepaired(false);
+  }
 
   function triggerChaos() {
     setActiveScenario(nextScenario(activeScenario));
     setRepaired(false);
+    setDemoRunning(false);
+    setDemoStage(demoStages.length - 1);
   }
 
   function approveRepair() {
@@ -55,45 +81,110 @@ export function ControlTowerDashboard() {
   }
 
   return (
-    <main className="min-h-screen bg-[#07130f] text-[#edf8f2]">
-      <div className="mx-auto max-w-[1540px] px-5 py-5 sm:px-8 lg:px-12">
+    <main className="min-h-screen overflow-hidden bg-[#07130f] text-[#edf8f2] selection:bg-[#cdfc54] selection:text-[#07130f]">
+      <div className="pointer-events-none fixed inset-x-0 top-0 h-[520px] bg-[radial-gradient(circle_at_76%_8%,rgba(205,252,84,0.11),transparent_33%),radial-gradient(circle_at_12%_0%,rgba(64,170,127,0.16),transparent_31%)]" />
+      <div className="relative mx-auto max-w-[1540px] px-5 py-5 sm:px-8 lg:px-12">
         <header className="flex flex-wrap items-center justify-between gap-5 border-b border-white/10 pb-5">
           <div className="flex items-center gap-4">
             <span className="grid h-11 w-11 place-items-center rounded-2xl bg-[#cdfc54] font-mono text-sm font-black text-[#07130f] shadow-[0_0_45px_rgba(205,252,84,0.18)]">GT</span>
             <div>
-              <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-[#8fa99d]">Revenue operations lab</p>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-[#8fa99d]">Revenue systems portfolio lab</p>
               <h1 className="text-xl font-semibold tracking-tight">GTM Control Tower</h1>
             </div>
           </div>
-          <div className="flex items-center gap-3">
-            <span className="hidden rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 font-mono text-[11px] text-[#9db1a7] sm:inline">SYNTHETIC DATA · 5,000 LEADS</span>
-            <button
-              data-testid="chaos-trigger"
-              onClick={triggerChaos}
-              className="rounded-full border border-[#ff7b55]/55 bg-[#ff7b55]/10 px-5 py-2.5 text-sm font-semibold text-[#ffb7a1] transition hover:-translate-y-0.5 hover:bg-[#ff7b55]/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#ffb7a1]"
-            >
-              {activeScenario ? 'Trigger next incident' : 'Trigger chaos mode'}
-            </button>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <span className="rounded-full border border-[#cdfc54]/20 bg-[#cdfc54]/[0.07] px-3 py-2 font-mono text-[10px] uppercase tracking-wider text-[#cdfc54]">HubSpot → BigQuery validated</span>
+            <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 font-mono text-[10px] uppercase tracking-wider text-[#9db1a7]">Synthetic demo data</span>
           </div>
         </header>
 
-        <section className="grid gap-6 py-8 lg:grid-cols-[1.45fr_0.75fr]">
+        <section className="grid items-end gap-8 py-10 lg:grid-cols-[1.2fr_0.8fr] lg:py-14">
           <div>
-            <div className="mb-3 flex items-center gap-2 font-mono text-xs uppercase tracking-[0.2em] text-[#cdfc54]">
-              <span className={`h-2 w-2 rounded-full ${visibleScenario ? 'animate-pulse bg-[#ff7b55]' : 'bg-[#cdfc54]'}`} />
-              {visibleScenario ? 'Incident simulation active' : 'All systems live'}
+            <div className="mb-4 flex items-center gap-2 font-mono text-xs uppercase tracking-[0.2em] text-[#cdfc54]">
+              <span className={`h-2 w-2 rounded-full ${demoRunning ? 'animate-pulse bg-[#cdfc54]' : 'bg-[#4fa782]'}`} />
+              {demoRunning ? `Processing · ${demoStages[Math.max(demoStage, 0)].label}` : 'Guided system walkthrough'}
             </div>
-            <h2 data-testid="health-headline" className="max-w-4xl text-4xl font-semibold leading-[1.03] tracking-[-0.045em] sm:text-5xl lg:text-[58px]">
-              {healthHeadline(visibleScenario)}
+            <h2 className="max-w-[980px] text-4xl font-semibold leading-[0.98] tracking-[-0.05em] sm:text-6xl lg:text-[72px]">
+              Watch messy CRM data become a trusted revenue decision.
             </h2>
-            <p className="mt-4 max-w-2xl text-base leading-7 text-[#99afa5]">
-              Synthetic Salesforce events flow through n8n, BigQuery, and dbt into a decision-ready command center with tested metrics and human-approved repairs.
+            <p className="mt-6 max-w-2xl text-base leading-7 text-[#9cb0a7] sm:text-lg">
+              Eight flawed leads enter. The system enriches and routes the usable records, contains bad writes, rebuilds the funnel, and explains what is costing the team revenue.
             </p>
+            <div className="mt-7 flex flex-wrap gap-3">
+              <button
+                data-testid="run-demo"
+                onClick={runMessyBatch}
+                disabled={demoRunning}
+                className="rounded-full bg-[#cdfc54] px-6 py-3 text-sm font-bold text-[#07130f] shadow-[0_12px_40px_rgba(205,252,84,0.16)] transition hover:-translate-y-0.5 hover:bg-[#dcff83] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#cdfc54] disabled:cursor-wait disabled:opacity-65"
+              >
+                {demoRunning ? 'Batch running…' : demoStage >= 0 ? 'Replay messy lead batch' : 'Run messy lead batch'}
+              </button>
+              <button
+                data-testid="chaos-trigger"
+                onClick={triggerChaos}
+                className="rounded-full border border-white/15 bg-white/[0.04] px-6 py-3 text-sm font-semibold text-[#c9d8d0] transition hover:-translate-y-0.5 hover:border-white/25 hover:bg-white/[0.08] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#c9d8d0]"
+              >
+                Test another failure
+              </button>
+            </div>
           </div>
-          <SystemPulse active={Boolean(visibleScenario)} />
+          <article className="rounded-[30px] border border-white/10 bg-[#0c1d17]/90 p-5 shadow-[0_30px_90px_rgba(0,0,0,0.28)] backdrop-blur sm:p-6">
+            <div className="flex items-start justify-between gap-5">
+              <div>
+                <p className="text-sm text-[#8fa99d]">What is real?</p>
+                <h3 className="mt-1 text-xl font-semibold">Honest integration boundary</h3>
+              </div>
+              <span className="rounded-full bg-[#cdfc54]/10 px-3 py-1 font-mono text-[10px] text-[#cdfc54]">PORTFOLIO-SAFE</span>
+            </div>
+            <div className="mt-5 grid gap-3 sm:grid-cols-2">
+              <ProofPoint label="Live path" value="HubSpot · n8n · BigQuery" />
+              <ProofPoint label="Analytics" value="dbt · 15 checks passed" />
+              <ProofPoint label="Demo layer" value="Deterministic synthetic batch" />
+              <ProofPoint label="Salesforce" value="Built · access recovery pending" muted />
+            </div>
+          </article>
         </section>
 
-        <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Pipeline health metrics">
+        <section className="rounded-[34px] border border-white/10 bg-[#091a14]/92 p-4 shadow-[0_30px_100px_rgba(0,0,0,0.22)] sm:p-6" aria-label="Messy lead processing walkthrough">
+          <div className="flex flex-wrap items-end justify-between gap-4 px-1 pb-5">
+            <div>
+              <p className="text-sm text-[#8fa99d]">One batch, six controls</p>
+              <h3 className="mt-1 text-2xl font-semibold tracking-tight">From raw signal to governed action</h3>
+            </div>
+            <p aria-live="polite" className="font-mono text-[10px] uppercase tracking-[0.18em] text-[#8fa99d]">
+              {demoStage < 0 ? 'Ready for input' : demoRunning ? `Step ${demoStage + 1} of ${demoStages.length}` : 'Run complete · diagnosis ready'}
+            </p>
+          </div>
+          <div className="grid gap-2 md:grid-cols-3 xl:grid-cols-6">
+            {demoStages.map((stage, index) => {
+              const complete = demoStage > index || (!demoRunning && demoStage === index);
+              const active = demoRunning && demoStage === index;
+              return (
+                <article
+                  key={stage.id}
+                  className={`relative min-h-[176px] rounded-2xl border p-4 transition-all duration-500 ${active ? 'translate-y-[-3px] border-[#cdfc54]/60 bg-[#cdfc54]/10 shadow-[0_18px_50px_rgba(205,252,84,0.08)]' : complete ? 'border-[#4fa782]/30 bg-[#11251d]' : 'border-white/[0.08] bg-white/[0.025]'}`}
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <span className={`grid h-7 w-7 place-items-center rounded-full font-mono text-[10px] ${active ? 'bg-[#cdfc54] text-[#07130f]' : complete ? 'bg-[#4fa782]/20 text-[#7fddb6]' : 'bg-white/[0.06] text-[#70857b]'}`}>
+                      {complete ? '✓' : String(index + 1).padStart(2, '0')}
+                    </span>
+                    <span className="font-mono text-[9px] uppercase tracking-wider text-[#70857b]">{stage.system}</span>
+                  </div>
+                  <h4 className="mt-5 font-semibold">{stage.label}</h4>
+                  <p className="mt-2 text-xs leading-5 text-[#81978d]">{stage.detail}</p>
+                  <p className={`mt-4 font-mono text-[10px] ${active || complete ? 'text-[#cdfc54]' : 'text-[#566b61]'}`}>{complete ? stage.result : active ? 'working…' : 'queued'}</p>
+                </article>
+              );
+            })}
+          </div>
+        </section>
+
+        <section className="mt-6 grid gap-5 xl:grid-cols-[1.05fr_0.95fr]">
+          <TransformationCard demoStage={demoStage} />
+          <RunOutcomeCard summary={runSummary} demoStage={demoStage} />
+        </section>
+
+        <section className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Pipeline health metrics">
           {metrics.map((metric) => (
             <article key={metric.label} className={`rounded-3xl border p-5 transition-colors ${metric.direction === 'warning' ? 'border-[#ff7b55]/45 bg-[#2b1712]' : 'border-white/10 bg-[#0c1d17]'}`}>
               <p className="text-sm text-[#8fa99d]">{metric.label}</p>
@@ -105,25 +196,20 @@ export function ControlTowerDashboard() {
 
         <section className="mt-6 grid gap-5 xl:grid-cols-[1.18fr_0.82fr]">
           <FunnelCard funnel={funnel} />
-          <IncidentCard
-            activeScenario={visibleScenario}
-            repaired={repaired}
-            onApproveRepair={approveRepair}
-          />
+          <IncidentCard activeScenario={visibleScenario} repaired={repaired} onApproveRepair={approveRepair} />
         </section>
 
         <section className="mt-6 overflow-hidden rounded-[28px] border border-white/10 bg-[#0c1d17]">
           <div className="border-b border-white/10 px-5 py-4 sm:px-6">
             <p className="text-sm text-[#8fa99d]">System lineage</p>
-            <h3 className="mt-1 text-lg font-semibold">One auditable path from signal to decision</h3>
+            <h3 className="mt-1 text-lg font-semibold">One auditable path, with every boundary labeled</h3>
           </div>
-          <div className="grid divide-y divide-white/10 sm:grid-cols-5 sm:divide-x sm:divide-y-0">
-            {integrations.map((integration, index) => (
-              <div key={integration.name} className="relative p-5">
-                {index < integrations.length - 1 && <span aria-hidden="true" className="absolute -right-1 top-1/2 z-10 hidden h-2 w-2 -translate-y-1/2 rotate-45 border-r border-t border-[#cdfc54] sm:block" />}
+          <div className="grid divide-y divide-white/10 sm:grid-cols-3 sm:divide-x sm:divide-y-0 xl:grid-cols-6">
+            {integrations.map((integration) => (
+              <div key={integration.name} className="p-5">
                 <p className="font-semibold">{integration.name}</p>
                 <p className="mt-1 text-xs text-[#81978d]">{integration.role}</p>
-                <p className="mt-4 font-mono text-[10px] uppercase tracking-wider text-[#cdfc54]">{integration.status}</p>
+                <p className={`mt-4 font-mono text-[10px] uppercase tracking-wider ${integration.tone === 'live' ? 'text-[#cdfc54]' : integration.tone === 'staged' ? 'text-[#e6bd68]' : 'text-[#83bcff]'}`}>{integration.status}</p>
               </div>
             ))}
           </div>
@@ -134,15 +220,15 @@ export function ControlTowerDashboard() {
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="text-sm text-[#8fa99d]">dbt quality suite</p>
-                <h3 className="mt-1 text-lg font-semibold">Trusted models, explicit contracts</h3>
+                <h3 className="mt-1 text-lg font-semibold">Business rules that fail loudly</h3>
               </div>
-              <span className="rounded-full bg-[#cdfc54]/10 px-3 py-1 font-mono text-[10px] text-[#cdfc54]">28 / 28 PASS</span>
+              <span className="rounded-full bg-[#cdfc54]/10 px-3 py-1 font-mono text-[10px] text-[#cdfc54]">15 / 15 PASS</span>
             </div>
             <div className="mt-5 space-y-2">
-              {dbtTests.map(([name]) => (
-                <div key={name} className="flex items-center justify-between rounded-xl bg-white/[0.035] px-4 py-3">
-                  <code className="text-xs text-[#b5c6bd]">{name}</code>
-                  <span className="font-mono text-[10px] text-[#cdfc54]">PASS</span>
+              {dbtTests.map(([name, result]) => (
+                <div key={name} className="flex items-center justify-between gap-4 rounded-xl bg-white/[0.035] px-4 py-3">
+                  <code className="min-w-0 truncate text-xs text-[#b5c6bd]">{name}</code>
+                  <span className="shrink-0 font-mono text-[9px] uppercase text-[#cdfc54]">{result}</span>
                 </div>
               ))}
             </div>
@@ -151,14 +237,14 @@ export function ControlTowerDashboard() {
           <article className="rounded-[28px] border border-white/10 bg-[#f0f5e8] p-5 text-[#10221a] sm:p-6">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <p className="text-sm text-[#65736b]">Automation log</p>
-                <h3 className="mt-1 text-lg font-semibold">Recent decisions</h3>
+                <p className="text-sm text-[#65736b]">Automation trace</p>
+                <h3 className="mt-1 text-lg font-semibold">Every decision is explainable</h3>
               </div>
-              <span className="font-mono text-[10px] text-[#65736b]">LIVE REPLAY</span>
+              <span className="font-mono text-[10px] text-[#65736b]">DEMO REPLAY</span>
             </div>
             <div className="mt-5 divide-y divide-[#10221a]/10">
               {activity.map(([time, source, message]) => (
-                <div key={`${time}-${source}`} className="grid grid-cols-[58px_74px_1fr] gap-2 py-3 text-xs">
+                <div key={`${time}-${source}`} className="grid grid-cols-[54px_86px_1fr] gap-2 py-3 text-xs">
                   <code className="text-[#77847d]">{time}</code>
                   <span className="font-semibold">{source}</span>
                   <span className="leading-5 text-[#55645c]">{message}</span>
@@ -170,30 +256,110 @@ export function ControlTowerDashboard() {
 
         <footer className="flex flex-wrap items-center justify-between gap-3 py-8 text-xs text-[#71877c]">
           <p>Portfolio simulation · no employer or customer data</p>
-          <p className="font-mono">SALESFORCE → N8N → BIGQUERY → DBT</p>
+          <p className="font-mono">HUBSPOT / SALESFORCE → N8N → BIGQUERY → DBT → DECISION</p>
         </footer>
       </div>
     </main>
   );
 }
 
-function SystemPulse({ active }: { active: boolean }) {
-  const bars = active
-    ? [88, 32, 95, 41, 91, 38, 97, 47, 89, 45, 94, 39]
-    : [42, 58, 51, 74, 66, 82, 62, 91, 76, 88, 70, 96];
+function ProofPoint({ label, value, muted = false }: { label: string; value: string; muted?: boolean }) {
   return (
-    <div className={`rounded-[28px] border p-5 transition-colors ${active ? 'border-[#ff7b55]/40 bg-[#241611]' : 'border-white/10 bg-white/[0.035]'}`}>
-      <div className="mb-6 flex items-center justify-between">
-        <span className="text-sm font-medium">System pulse</span>
-        <span className={`rounded-full px-3 py-1 font-mono text-[10px] ${active ? 'bg-[#ff7b55]/15 text-[#ff9d7f]' : 'bg-[#cdfc54]/15 text-[#cdfc54]'}`}>
-          {active ? 'GUARDRAILS ENGAGED' : 'HEALTHY'}
-        </span>
+    <div className="rounded-2xl border border-white/[0.07] bg-white/[0.03] p-4">
+      <p className="font-mono text-[9px] uppercase tracking-wider text-[#70857b]">{label}</p>
+      <p className={`mt-2 text-sm font-medium ${muted ? 'text-[#d8bd78]' : 'text-[#dceae3]'}`}>{value}</p>
+    </div>
+  );
+}
+
+function TransformationCard({ demoStage }: { demoStage: number }) {
+  const enriched = demoStage >= 1;
+  const routed = demoStage >= 2;
+  return (
+    <article className="rounded-[30px] border border-white/10 bg-[#f0f5e8] p-5 text-[#10221a] sm:p-6">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-sm text-[#637169]">Record transformation</p>
+          <h3 className="mt-1 text-xl font-semibold">Messy in. Account-ready out.</h3>
+        </div>
+        <span className="rounded-full bg-[#10221a]/[0.06] px-3 py-1 font-mono text-[10px] text-[#637169]">LEAD 04 / 08</span>
       </div>
-      <div className="flex h-28 items-end gap-2" aria-label="Recent pipeline event volume">
-        {bars.map((height, index) => (
-          <span key={index} className={`flex-1 rounded-t-md transition-all ${active ? 'bg-[#ff7b55]' : 'bg-[#cdfc54]'}`} style={{ height: `${height}%`, opacity: 0.42 + index / 22 }} />
+      <div className="mt-5 grid gap-3 sm:grid-cols-[1fr_32px_1fr] sm:items-stretch">
+        <RecordPanel title="Raw CRM record" tone="bad" rows={[
+          ['company', ' North Star Robotics, INC. '],
+          ['domain', 'HTTPS://WWW.NORTHSTAR.AI/'],
+          ['annual_revenue', '$42M'],
+          ['owner', '(blank)'],
+        ]} />
+        <div className="grid place-items-center text-xl text-[#758179]" aria-hidden="true">→</div>
+        <RecordPanel title="Governed record" tone="good" rows={[
+          ['account', enriched ? 'Northstar Robotics' : '—'],
+          ['domain', enriched ? 'northstar.ai' : '—'],
+          ['segment / score', enriched ? 'Enterprise · 92' : '—'],
+          ['route', routed ? 'Enterprise East' : '—'],
+        ]} />
+      </div>
+    </article>
+  );
+}
+
+function RecordPanel({ title, rows, tone }: { title: string; rows: string[][]; tone: 'bad' | 'good' }) {
+  return (
+    <div className={`rounded-2xl border p-4 ${tone === 'bad' ? 'border-[#d97757]/20 bg-[#fff6ef]' : 'border-[#2f956c]/20 bg-[#e9f5ed]'}`}>
+      <p className={`font-mono text-[9px] uppercase tracking-wider ${tone === 'bad' ? 'text-[#b05a40]' : 'text-[#2f7659]'}`}>{title}</p>
+      <dl className="mt-3 space-y-2.5">
+        {rows.map(([label, value]) => (
+          <div key={label} className="grid grid-cols-[112px_1fr] gap-2 text-[11px] sm:grid-cols-[96px_1fr]">
+            <dt className="font-mono text-[#7b8780]">{label}</dt>
+            <dd className="min-w-0 break-words font-medium">{value}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  );
+}
+
+function RunOutcomeCard({ summary, demoStage }: { summary: ReturnType<typeof demoRunSummary>; demoStage: number }) {
+  const checks = [
+    ['Duplicate root domain', demoStage >= 3 ? 'contained' : 'waiting', 'northstar.ai appears twice'],
+    ['Lifecycle regression', demoStage >= 3 ? 'blocked' : 'waiting', 'Customer → MQL rejected'],
+    ['Missing identity', demoStage >= 3 ? 'review' : 'waiting', 'personal email, no company'],
+  ];
+  return (
+    <article className="rounded-[30px] border border-white/10 bg-[#0c1d17] p-5 sm:p-6">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="text-sm text-[#8fa99d]">Control outcomes</p>
+          <h3 className="mt-1 text-xl font-semibold">Bad data becomes visible—not viral</h3>
+        </div>
+        <span className={`rounded-full px-3 py-1 font-mono text-[10px] ${summary.diagnosisReady ? 'bg-[#cdfc54]/10 text-[#cdfc54]' : 'bg-white/[0.05] text-[#8fa99d]'}`}>{summary.diagnosisReady ? 'DIAGNOSIS READY' : 'AWAITING RUN'}</span>
+      </div>
+      <div className="mt-5 grid grid-cols-4 gap-2">
+        <OutcomeStat value={summary.received} label="received" />
+        <OutcomeStat value={summary.enriched} label="enriched" />
+        <OutcomeStat value={summary.routed} label="routed" />
+        <OutcomeStat value={summary.quarantined} label="held" warning />
+      </div>
+      <div className="mt-5 space-y-2">
+        {checks.map(([label, status, detail]) => (
+          <div key={label} className="grid gap-1 rounded-xl border border-white/[0.06] bg-white/[0.025] px-4 py-3 sm:grid-cols-[1fr_auto] sm:gap-4">
+            <div>
+              <p className="text-xs font-semibold text-[#cbdad2]">{label}</p>
+              <p className="mt-1 text-[11px] text-[#71877c]">{detail}</p>
+            </div>
+            <span className={`self-center font-mono text-[9px] uppercase ${status === 'waiting' ? 'text-[#566b61]' : status === 'review' ? 'text-[#e6bd68]' : 'text-[#cdfc54]'}`}>{status}</span>
+          </div>
         ))}
       </div>
+    </article>
+  );
+}
+
+function OutcomeStat({ value, label, warning = false }: { value: number; label: string; warning?: boolean }) {
+  return (
+    <div className="rounded-xl bg-white/[0.035] p-3 text-center">
+      <p className={`text-xl font-semibold ${warning && value > 0 ? 'text-[#ff9d7f]' : 'text-white'}`}>{value}</p>
+      <p className="mt-1 font-mono text-[8px] uppercase tracking-wider text-[#71877c]">{label}</p>
     </div>
   );
 }
@@ -203,8 +369,8 @@ function FunnelCard({ funnel }: { funnel: ReturnType<typeof funnelForScenario> }
     <article className="rounded-[30px] border border-white/10 bg-[#0c1d17] p-5 sm:p-6">
       <div className="flex items-center justify-between gap-4">
         <div>
-          <p className="text-sm text-[#8fa99d]">Funnel movement</p>
-          <h3 className="mt-1 text-xl font-semibold">From signal to revenue</h3>
+          <p className="text-sm text-[#8fa99d]">Trusted funnel model</p>
+          <h3 className="mt-1 text-xl font-semibold">Accepted events only</h3>
         </div>
         <span className="font-mono text-[10px] text-[#8fa99d]">LAST 30 DAYS</span>
       </div>
@@ -224,36 +390,26 @@ function FunnelCard({ funnel }: { funnel: ReturnType<typeof funnelForScenario> }
   );
 }
 
-function IncidentCard({
-  activeScenario,
-  repaired,
-  onApproveRepair,
-}: {
-  activeScenario: ScenarioKey | null;
-  repaired: boolean;
-  onApproveRepair: () => void;
-}) {
+function IncidentCard({ activeScenario, repaired, onApproveRepair }: { activeScenario: ScenarioKey | null; repaired: boolean; onApproveRepair: () => void }) {
   const active = activeScenario ? scenarios[activeScenario] : null;
-  const incidentRows = active
-    ? [active, ...baselineIncidents]
-    : baselineIncidents;
+  const incidentRows = active ? [active, ...baselineIncidents] : baselineIncidents;
   return (
     <article className="rounded-[30px] border border-white/10 bg-[#f0f5e8] p-5 text-[#10221a] sm:p-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-start justify-between gap-4">
         <div>
-          <p className="text-sm text-[#637169]">Incident queue</p>
-          <h3 className="mt-1 text-xl font-semibold">Human judgment required</h3>
+          <p className="text-sm text-[#637169]">What is broken?</p>
+          <h3 className="mt-1 text-xl font-semibold">Revenue impact, then repair</h3>
         </div>
-        <span className={`grid h-9 w-9 place-items-center rounded-full font-semibold text-white ${active ? 'bg-[#ff7b55]' : 'bg-[#2f956c]'}`}>
-          {active ? incidentRows.length : repaired ? '✓' : incidentRows.length}
-        </span>
+        <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-full font-semibold text-white ${active ? 'bg-[#ff7b55]' : 'bg-[#2f956c]'}`}>{active ? incidentRows.length : repaired ? '✓' : incidentRows.length}</span>
       </div>
-      {repaired && (
-        <div data-testid="repair-success" className="mt-5 rounded-2xl border border-[#2f956c]/25 bg-[#dff2e8] p-4 text-sm text-[#236b50]">
-          Repair approved. The event log was replayed and all dependent models are healthy.
+      {active && (
+        <div className="mt-5 rounded-2xl border border-[#d97757]/20 bg-[#fff1e9] p-4">
+          <p className="font-mono text-[9px] uppercase tracking-wider text-[#b05a40]">Revenue consequence</p>
+          <p data-testid="health-headline" className="mt-2 text-sm font-semibold leading-5">{healthHeadline(active)}</p>
         </div>
       )}
-      <div className="mt-5 space-y-3">
+      {repaired && <div data-testid="repair-success" className="mt-5 rounded-2xl border border-[#2f956c]/25 bg-[#dff2e8] p-4 text-sm text-[#236b50]">Repair approved. Quarantined writes stayed isolated; accepted events were replayed and dependent models are healthy.</div>}
+      <div className="mt-4 space-y-3">
         {incidentRows.map((incident) => (
           <div key={incident.id} className="rounded-2xl border border-[#10221a]/10 bg-white/70 p-4">
             <div className="flex items-start gap-3">
@@ -264,13 +420,7 @@ function IncidentCard({
                 {'recommendation' in incident && active && incident.id === active.id && (
                   <div className="mt-3 border-t border-[#10221a]/10 pt-3">
                     <p className="text-xs leading-5 text-[#43534a]">{incident.recommendation}</p>
-                    <button
-                      data-testid="approve-repair"
-                      onClick={onApproveRepair}
-                      className="mt-3 rounded-full bg-[#10221a] px-4 py-2 text-xs font-semibold text-white transition hover:bg-[#234234] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#10221a]"
-                    >
-                      Approve repair & replay
-                    </button>
+                    <button data-testid="approve-repair" onClick={onApproveRepair} className="mt-3 rounded-full bg-[#10221a] px-4 py-2 text-xs font-semibold text-white transition hover:bg-[#234234] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#10221a]">Approve repair & replay</button>
                   </div>
                 )}
               </div>

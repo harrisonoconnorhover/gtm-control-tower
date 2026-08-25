@@ -22,6 +22,79 @@ export type FunnelStage = {
   conversion: number;
 };
 
+export type DemoStage = {
+  id: 'ingest' | 'enrich' | 'route' | 'validate' | 'model' | 'diagnose';
+  label: string;
+  system: string;
+  detail: string;
+  result: string;
+};
+
+export const DEMO_BATCH = {
+  raw: 8,
+  malformed: 3,
+  enriched: 7,
+  routed: 6,
+  quarantined: 2,
+  modeled: 6,
+};
+
+export const demoStages: DemoStage[] = [
+  {
+    id: 'ingest',
+    label: 'Ingest',
+    system: 'HubSpot + n8n',
+    detail: 'Accept a deliberately messy batch without trusting its shape.',
+    result: '8 raw leads received',
+  },
+  {
+    id: 'enrich',
+    label: 'Enrich',
+    system: 'n8n',
+    detail: 'Normalize domains, company names, firmographics, and intent.',
+    result: '7 profiles completed',
+  },
+  {
+    id: 'route',
+    label: 'Route',
+    system: 'n8n + CRM',
+    detail: 'Score fit and intent, then apply territory and capacity rules.',
+    result: '6 owners assigned',
+  },
+  {
+    id: 'validate',
+    label: 'Test',
+    system: 'BigQuery + dbt',
+    detail: 'Catch duplicates, missing identity, and impossible lifecycle moves.',
+    result: '2 records quarantined',
+  },
+  {
+    id: 'model',
+    label: 'Model',
+    system: 'dbt',
+    detail: 'Rebuild trusted funnel, routing SLA, and data-quality marts.',
+    result: '15 checks passed',
+  },
+  {
+    id: 'diagnose',
+    label: 'Decide',
+    system: 'Control Tower',
+    detail: 'Translate the technical fault into revenue impact and a safe action.',
+    result: '1 repair proposed',
+  },
+];
+
+export function demoRunSummary(completedStage: number) {
+  return {
+    received: completedStage >= 0 ? DEMO_BATCH.raw : 0,
+    enriched: completedStage >= 1 ? DEMO_BATCH.enriched : 0,
+    routed: completedStage >= 2 ? DEMO_BATCH.routed : 0,
+    quarantined: completedStage >= 3 ? DEMO_BATCH.quarantined : 0,
+    testsPassed: completedStage >= 4 ? 15 : 0,
+    diagnosisReady: completedStage >= 5,
+  };
+}
+
 export const BASELINE = {
   leads: 5000,
   mql: 3682,

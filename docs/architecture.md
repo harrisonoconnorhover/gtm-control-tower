@@ -35,3 +35,7 @@ The local n8n and BigQuery leg has been validated end to end with a synthetic le
 ## Failure simulations
 
 The web demo models three concrete revenue-system failures: duplicate identity, routing-capacity overload, and impossible lifecycle regression. Each changes the affected metrics and proposes a repair that requires a human click. The UI is a deterministic simulation; the integration artifacts are ready to connect but are not represented as live until credentials and infrastructure are configured.
+
+## Guided demo path
+
+The primary walkthrough uses an eight-record synthetic batch with realistic CRM defects: inconsistent company/domain formatting, duplicate account identity, a missing company, a blank owner, and a regressive lifecycle write. Six visible stages reveal when enrichment, routing, validation, modeling, and diagnosis become available. The UI intentionally distinguishes its deterministic replay from the validated live HubSpot → n8n → BigQuery path.
