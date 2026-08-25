@@ -1,19 +1,19 @@
 # Architecture
 
 ```text
-Synthetic lead / Salesforce webhook
+        Synthetic lead / CRM webhook
                   │
                   ▼
        n8n normalization + scoring
-            │                 │
-            ▼                 ▼
-   Salesforce upsert   BigQuery event log
-                              │
-                              ▼
-                   dbt staging + marts + tests
-                              │
-                              ▼
-                  GTM Control Tower dashboard
+          │          │          │
+          ▼          ▼          ▼
+      HubSpot   Salesforce   BigQuery event log
+       upsert    upsert            │
+                                  ▼
+                       dbt staging + marts + tests
+                                  │
+                                  ▼
+                      GTM Control Tower dashboard
 ```
 
 ## Data contract
@@ -22,7 +22,7 @@ Every CRM event has a stable `event_id`, lead/account identity, lifecycle stage,
 
 ## Operational path
 
-The n8n workflow accepts a lead signal, normalizes fields, derives score/segment/owner, upserts Salesforce, and appends the event to BigQuery. The workflow is disabled on import so credentials and mappings can be reviewed safely.
+The n8n workflow accepts a lead signal, normalizes fields, derives score/segment/owner, fans out to HubSpot and Salesforce, and appends the event to BigQuery. The local production webhook is published with HubSpot and BigQuery live. The Salesforce node is disabled until its development organization is recovered and its mapping can be reviewed safely.
 
 The local n8n and BigQuery leg has been validated end to end with a synthetic lead. Salesforce metadata and mappings are prepared, but the Salesforce leg remains intentionally unpublished until OAuth access to the development organization is restored.
 

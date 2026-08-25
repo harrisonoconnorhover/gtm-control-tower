@@ -4,8 +4,9 @@
 
 - Built the responsive GTM Control Tower with healthy-state metrics, lineage, audit activity, and three interactive chaos scenarios.
 - Added human-approved repair/replay behavior and deterministic unit-tested scenario logic.
-- Provisioned a dedicated BigQuery project, loaded 5,000 synthetic events, and validated the n8n webhook-to-BigQuery write with a real test lead.
-- Added three live dbt marts with quality tests, Salesforce Lead metadata, and a version-pinned local n8n Compose service.
+- Published the local n8n production webhook with a live HubSpot contact upsert and BigQuery event append; Salesforce remains a disabled parallel adapter.
+- Provisioned a dedicated BigQuery project, loaded 5,000 synthetic events, and added three live dbt marts with quality tests.
+- Added Salesforce Lead metadata and a version-pinned local n8n Compose service.
 - Documented architecture, setup, demo narrative, honest simulation boundaries, and a résumé-ready portfolio bullet.
 
 ## Try It
@@ -19,14 +20,15 @@
 - `npm run test`: 3/3 passed.
 - `npm run lint`: passed with no warnings.
 - `npm run build`: passed.
-- n8n test webhook and BigQuery insert: passed; `LEAD-DEMO-001` was verified in `raw_crm_events`.
+- n8n production webhook: HTTP 202; execution 7 completed successfully with HubSpot and BigQuery output.
+- HubSpot upsert: COMPLETE with the expected company, revenue, lifecycle, status, and employee-band fields; the matching event was verified in BigQuery.
 - `dbt build`: PASS=15, WARN=0, ERROR=0.
 
 ## Decisions
 
 - Used a dedicated BigQuery project and a least-privilege service account; kept credentials only in ignored local runtime state.
-- Kept the browser demo deterministic while providing real connector assets separately and labeling that boundary clearly.
-- Kept the workflow unpublished until both external connectors can be verified together.
+- Reused an existing narrow HubSpot OAuth grant in n8n's encrypted local credential store instead of creating another app or broader token.
+- Kept Salesforce disabled while publishing the verified HubSpot-first workflow.
 
 ## Remaining
 

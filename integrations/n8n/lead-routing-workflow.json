@@ -28,6 +28,31 @@
     },
     {
       "parameters": {
+        "method": "POST",
+        "url": "https://api.hubapi.com/crm/objects/2026-03/contacts/batch/upsert",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "hubspotOAuth2Api",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ { inputs: [{ id: $json.email, idProperty: 'email', objectWriteTraceId: $json.event_id, properties: { firstname: $json.first_name ?? '', lastname: $json.last_name ?? '', company: $json.company ?? '', annualrevenue: String($json.annual_revenue ?? 0), hs_lead_status: $json.score >= 70 ? 'IN_PROGRESS' : 'NEW', lifecyclestage: $json.lifecycle_stage === 'mql' ? 'marketingqualifiedlead' : 'lead', numemployees: $json.employee_count >= 1000 ? '1000+' : $json.employee_count >= 500 ? '500-1000' : $json.employee_count >= 100 ? '100-500' : $json.employee_count >= 50 ? '50-100' : $json.employee_count >= 25 ? '25-50' : $json.employee_count >= 5 ? '5-25' : '1-5' } }] } }}",
+        "options": {}
+      },
+      "id": "49c76290-3a5f-4c33-8823-aac2fb997ee9",
+      "name": "Upsert HubSpot Contact",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [-190, -120],
+      "credentials": {
+        "hubspotOAuth2Api": {
+          "id": "gtmHubSpotOAuth01",
+          "name": "GTM Control Tower HubSpot"
+        }
+      },
+      "notes": "Primary live CRM path. Uses HubSpot's current contacts batch-upsert API because the bundled HubSpot node still calls a legacy contacts endpoint."
+    },
+    {
+      "parameters": {
         "authentication": "oAuth2",
         "operation": "upsert",
         "resource": "lead",
@@ -56,8 +81,9 @@
       "name": "Upsert Salesforce Lead",
       "type": "n8n-nodes-base.salesforce",
       "typeVersion": 1,
-      "position": [-190, 80],
-      "notes": "Attach a Salesforce OAuth2 credential after import."
+      "position": [-190, 180],
+      "disabled": true,
+      "notes": "Prepared secondary CRM path. Keep disabled until Salesforce access is restored and OAuth is verified."
     },
     {
       "parameters": {
@@ -97,7 +123,7 @@
   ],
   "connections": {
     "Receive CRM Signal": { "main": [[{ "node": "Normalize, Score & Route", "type": "main", "index": 0 }]] },
-    "Normalize, Score & Route": { "main": [[{ "node": "Upsert Salesforce Lead", "type": "main", "index": 0 }, { "node": "Append BigQuery Event", "type": "main", "index": 0 }]] },
+    "Normalize, Score & Route": { "main": [[{ "node": "Upsert HubSpot Contact", "type": "main", "index": 0 }, { "node": "Upsert Salesforce Lead", "type": "main", "index": 0 }, { "node": "Append BigQuery Event", "type": "main", "index": 0 }]] },
     "Append BigQuery Event": { "main": [[{ "node": "Return Routing Decision", "type": "main", "index": 0 }]] }
   },
   "pinData": {},

@@ -43,7 +43,7 @@ n8n node parameters can vary slightly by installed version; review the Salesforc
 
 ## Live connector validation
 
-The local development stack has been exercised against a dedicated BigQuery project with 5,000 synthetic events. A test lead traveled through the n8n webhook and scoring node, was inserted by the n8n BigQuery node, and was then visible in the warehouse. A subsequent dbt build completed all 15 models and tests successfully. The workflow remains unpublished until the Salesforce development organization is recovered and its OAuth credential is attached.
+The local development stack has been exercised against a dedicated BigQuery project with 5,000 synthetic events. Its production webhook is published locally with HubSpot as the live CRM adapter and Salesforce staged as a disabled parallel adapter. A valid synthetic lead was upserted through HubSpot's current contacts API, appended to BigQuery, and verified by a subsequent dbt build with all 15 models and tests passing. Salesforce remains disabled until its development organization is recovered and OAuth is attached.
 
 ## Portfolio demo script
 
@@ -52,6 +52,6 @@ The local development stack has been exercised against a dedicated BigQuery proj
 3. Trigger a failure and explain the revenue consequence—not merely the technical symptom.
 4. Approve the recommended repair and describe how an immutable event log makes replay safe.
 
-**Résumé-ready bullet:** Built a synthetic GTM control tower spanning Salesforce, n8n, BigQuery, dbt, and a decision dashboard; modeled funnel and routing SLAs, added data-quality tests, and designed human-approved recovery for duplicate, capacity, and lifecycle failures.
+**Résumé-ready bullet:** Built a dual-CRM GTM control tower spanning HubSpot, Salesforce, n8n, BigQuery, dbt, and a decision dashboard; implemented live HubSpot upserts and warehouse logging, modeled funnel and routing SLAs, and designed human-approved recovery for duplicate, capacity, and lifecycle failures.
 
 See [`docs/architecture.md`](docs/architecture.md) for system design and [`HANDOFF.md`](HANDOFF.md) for current status.

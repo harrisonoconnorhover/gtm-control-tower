@@ -15,3 +15,7 @@ Automatic detection is valuable, but destructive merges and lifecycle rewrites s
 ## Append-only event history
 
 CRM state can arrive late or out of order. Keeping immutable source events permits deduplication, reconstruction, and controlled replay without treating the current Salesforce row as complete history.
+
+## CRM-agnostic routing core
+
+Scoring, segmentation, routing, and warehouse logging stay upstream of provider-specific writes. HubSpot is the first live CRM because an authorized account is available now; Salesforce remains a disabled parallel adapter until its access is restored. This proves portability without duplicating the decision logic or pretending the blocked Salesforce path is live.
