@@ -1,0 +1,74 @@
+{
+  "name": "GTM Control Tower - Google Sheets Read",
+  "active": false,
+  "nodes": [
+    {
+      "id": "sheets-read-webhook",
+      "name": "Receive Sheet Preview",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "gtm-control-tower-sheets-read",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "sheets-read-validate",
+      "name": "Validate Sheet Source",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [240, 0],
+      "parameters": {
+        "jsCode": "const body = $json.body ?? $json;\nconst spreadsheetId = String(body.spreadsheetId ?? '');\nconst sourceSheet = String(body.sourceSheet ?? '');\nif (!/^[a-zA-Z0-9_-]{20,200}$/.test(spreadsheetId)) throw new Error('Invalid spreadsheet ID');\nif (!sourceSheet || sourceSheet.length > 100 || /[\\\\/?*\\[\\]:]/.test(sourceSheet)) throw new Error('Invalid worksheet name');\nreturn [{ json: { spreadsheetId, sourceSheet } }];"
+      }
+    },
+    {
+      "id": "sheets-read-node",
+      "name": "Read Source Worksheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.6,
+      "position": [480, 0],
+      "parameters": {
+        "resource": "sheet",
+        "operation": "read",
+        "documentId": { "__rl": true, "mode": "id", "value": "={{ $json.spreadsheetId }}" },
+        "sheetName": { "__rl": true, "mode": "name", "value": "={{ $json.sourceSheet }}" },
+        "options": {}
+      }
+    },
+    {
+      "id": "sheets-read-shape",
+      "name": "Shape Preview Receipt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [720, 0],
+      "parameters": {
+        "jsCode": "const rows = $input.all().map((item) => item.json);\nreturn [{ json: { rows, recordsRead: rows.length, runId: `sheets-read-${Date.now()}` } }];"
+      }
+    },
+    {
+      "id": "sheets-read-response",
+      "name": "Return Sheet Preview",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [960, 0],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": { "responseCode": 200 }
+      }
+    }
+  ],
+  "connections": {
+    "Receive Sheet Preview": { "main": [[{ "node": "Validate Sheet Source", "type": "main", "index": 0 }]] },
+    "Validate Sheet Source": { "main": [[{ "node": "Read Source Worksheet", "type": "main", "index": 0 }]] },
+    "Read Source Worksheet": { "main": [[{ "node": "Shape Preview Receipt", "type": "main", "index": 0 }]] },
+    "Shape Preview Receipt": { "main": [[{ "node": "Return Sheet Preview", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" },
+  "meta": { "templateCredsSetupCompleted": false },
+  "tags": []
+}

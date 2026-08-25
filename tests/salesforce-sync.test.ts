@@ -101,7 +101,8 @@ describe('Salesforce sync contracts', () => {
     expect(receipt).toMatchObject({ status: 'partial', created: 1, updated: 1, failed: 1 });
     expect(receipt.records.map((record) => record.status)).toEqual(['updated', 'created', 'failed']);
     expect(receipt.records[2].error).toMatch(/2 active Leads/);
-    const createBody = JSON.parse(String(fetchMock.mock.calls[1][1]?.body));
+    const createCall = fetchMock.mock.calls[1] as unknown as [string, RequestInit];
+    const createBody = JSON.parse(String(createCall[1]?.body));
     expect(createBody.records[0]).toMatchObject({ Email: 'new@example.com', Company: 'Synthetic Lab' });
     expect(createBody.records[0]).not.toHaveProperty('OwnerId');
   });

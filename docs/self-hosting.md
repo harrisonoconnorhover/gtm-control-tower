@@ -3,24 +3,44 @@
 GTM Control Tower works at three levels. Start with CSV-only mode, then add only
 the connectors you actually use.
 
-## 1. CSV-only dashboard
+## 1. CSV + SQLite dashboard
 
-Requirements: Node.js 22.13 or newer.
+Requirements: Docker.
 
 ```bash
 git clone https://github.com/harrisonoconnorhover/gtm-control-tower.git
 cd gtm-control-tower
+docker compose up --build
+```
+
+Open `http://localhost:3000`, choose **CSV file**, and use the included
+[`control-tower-csv-template.csv`](../public/control-tower-csv-template.csv).
+Preview the first rows, map the source columns, and choose **Validate + load**.
+Imports, mappings, repair history, connector receipts, and the latest twenty
+revisions persist in `.runtime/sqlite/gtm-control-tower.db`. The browser stores
+only an unguessable workspace key; SQLite remains the source of truth.
+
+Plain `docker compose up` also starts n8n at `http://localhost:5678` so it is
+ready when you add Google Sheets. Use `docker compose up app` for the app alone.
+Set `CONTROL_TOWER_PORT=3100` before the command if port 3000 is occupied.
+
+For local development without Docker, use Node.js 22.13 or newer:
+
+```bash
 npm ci
-npm run setup
 npm run dev
 ```
 
-Open the printed URL, choose **Import your CSV**, and use the included
-[`control-tower-csv-template.csv`](../public/control-tower-csv-template.csv).
-Parsing and repairs stay in browser memory. Export the repaired CSV before
-refreshing if you want to keep it.
+## 2. Add Google Sheets through n8n
 
-## 2. Add HubSpot or Salesforce
+Import the two generated Google Sheets workflows, bind your own Google Sheets
+OAuth credential, and publish both webhooks. The read path diagnoses a chosen
+worksheet through the same visual mapper as CSV. The write path creates a
+separate `GTM Clean` worksheet if needed and appends governed active records.
+
+Follow [Google Sheets setup](google-sheets-setup.md). BigQuery is not required.
+
+## 3. Add HubSpot or Salesforce
 
 Copy `.env.example` to `.env.local`, then configure only the destination you
 need. Use [HubSpot setup](hubspot-csv-setup.md) or
@@ -31,7 +51,7 @@ For any internet-accessible deployment, set `CONTROL_TOWER_SYNC_KEY`, use
 HTTPS, and put the entire application behind authentication. The repository
 does not provide multi-tenant identity or secret storage.
 
-## 3. Add BigQuery, n8n, and dbt
+## 4. Add BigQuery and dbt
 
 Requirements: a Google Cloud project with BigQuery enabled, Docker, and a
 least-privilege Google service account for n8n.
@@ -71,4 +91,5 @@ store and refreshable OAuth for a long-running instance; do not bake `.env`
 files into a build artifact.
 
 Run `npm run doctor` after setup and `npm run check:secrets` before publishing a
-fork.
+fork. For an internet-accessible self-host, put the whole application behind
+authentication: workspace keys are capabilities, not user accounts.

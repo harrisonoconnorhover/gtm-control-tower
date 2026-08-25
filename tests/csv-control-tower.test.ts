@@ -5,6 +5,7 @@ import {
   executeCsvRepair,
   exportContactsCsv,
   importContactsCsv,
+  previewContactsCsv,
 } from '../lib/csv-control-tower';
 
 const funkyCsv = `contact_id,full_name,email,normalized_email,company,region,segment,lifecycle_stage,expected_lifecycle_stage,owner_id
@@ -53,6 +54,27 @@ describe('CSV control tower', () => {
 
   it('rejects files without a usable identity column', () => {
     expect(() => importContactsCsv('company,region\nAcme,West')).toThrow(/email or full_name/);
+  });
+
+  it('previews and imports arbitrary columns through an explicit visual mapping', () => {
+    const csv = 'Person label,Primary inbox,Organization label\nAda Lovelace,ada@example.com,Analytical Engines';
+    const preview = previewContactsCsv(csv);
+    expect(preview.headers).toEqual(['Person label', 'Primary inbox', 'Organization label']);
+    expect(preview.sampleRows[0]['Primary inbox']).toBe('ada@example.com');
+    const imported = importContactsCsv(csv, {
+      fullName: 'Person label',
+      rawEmail: 'Primary inbox',
+      company: 'Organization label',
+    });
+    expect(imported.contacts[0]).toMatchObject({
+      fullName: 'Ada Lovelace',
+      normalizedEmail: 'ada@example.com',
+      company: 'Analytical Engines',
+    });
+  });
+
+  it('rejects duplicate normalized headers before mapping', () => {
+    expect(() => previewContactsCsv('Email,email!\na@example.com,b@example.com')).toThrow(/duplicate column names/i);
   });
 
   it('keeps the downloadable template importable with HubSpot standard fields', () => {

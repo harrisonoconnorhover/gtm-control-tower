@@ -36,9 +36,28 @@ The interface never reports a repair from an optimistic click. It requires an al
 
 The portfolio lab should prove operating behavior without risking destructive CRM changes. Merge, reroute, and replay therefore execute against named synthetic BigQuery or browser-local state. CRM writes are explicit, receipt-verified, standard-field-only syncs. Deletion, provider-side merge, owner mutation, and lifecycle mutation remain separate portal-aware boundaries.
 
-## Browser-local CSV fallback
+## SQLite-first local workspace
 
-CSV mode exists for teams without BigQuery and requires no persistent database. Imported rows, inferred flags, and repairs stay in React memory; the user explicitly exports the result or sends governed fields to HubSpot. Identity matching defaults to exact normalized email. Plus-addresses are flagged rather than silently collapsed because that alias behavior is not universal across corporate mail systems.
+CSV mode is the default product, not a temporary fallback. A local SQLite file
+stores validated imports, visual mapping presets, repair history, receipts, and
+twenty undo revisions. Hosted Sites builds use D1, which preserves the same
+SQLite contract. The browser keeps only a random workspace capability key.
+Identity matching defaults to exact normalized email; plus-addresses are flagged
+rather than silently collapsed because that behavior is not universal.
+
+## One connector lifecycle
+
+CSV, Google Sheets, HubSpot, Salesforce, and BigQuery declare the same Preview,
+Validate, Execute, Receipt, Undo, and Export phases. A phase can be unavailable
+or non-reversible, but it cannot be silently skipped or reported complete
+without a receipt. Unconfigured connectors are removed from operational choices.
+
+## Google Sheets through n8n first
+
+Google Sheets is the first non-CSV source because it is familiar and does not
+require a warehouse. n8n owns Google OAuth and creates a separate `GTM Clean`
+worksheet instead of overwriting source data. Direct Google OAuth in the web app
+is deferred because it would duplicate n8n's credential boundary.
 
 ## Portable HubSpot authentication
 

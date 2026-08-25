@@ -6,6 +6,15 @@ export type CsvImportResult = {
   sourceRows: number;
 };
 
+export type CsvFieldKey = keyof typeof fieldAliases;
+export type CsvColumnMapping = Partial<Record<CsvFieldKey, string>>;
+export type CsvPreview = {
+  headers: string[];
+  sampleRows: Record<string, string>[];
+  suggestedMapping: CsvColumnMapping;
+  sourceRows: number;
+};
+
 export type CsvRepairResult = {
   contacts: LiveContactState[];
   receipt: RepairReceipt;
@@ -34,6 +43,28 @@ const fieldAliases = {
   qualityFlags: ['quality_flags', 'qualityflags', 'issues', 'flags'],
 } as const;
 
+export const csvFieldLabels: Record<CsvFieldKey, string> = {
+  contactId: 'Contact ID',
+  fullName: 'Full name',
+  firstName: 'First name',
+  lastName: 'Last name',
+  rawEmail: 'Email',
+  normalizedEmail: 'Normalized email',
+  company: 'Company',
+  phone: 'Phone',
+  jobTitle: 'Job title',
+  website: 'Website',
+  region: 'Region / territory',
+  segment: 'Segment',
+  lifecycleStage: 'Lifecycle stage',
+  expectedLifecycleStage: 'Expected lifecycle stage',
+  ownerId: 'Owner',
+  canonicalContactId: 'Canonical contact ID',
+  recordStatus: 'Record status',
+  lastAction: 'Last action',
+  qualityFlags: 'Quality flags',
+};
+
 const stageRank: Record<string, number> = {
   lead: 1,
   mql: 2,
@@ -49,12 +80,43 @@ const repairActions: Record<ScenarioKey, string> = {
   'stage-regression': 'replay_expected_lifecycle_state',
 };
 
-export function importContactsCsv(csv: string): CsvImportResult {
+export function previewContactsCsv(csv: string): CsvPreview {
+  const rows = parseCsv(csv);
+  if (rows.length < 2) throw new Error('The CSV needs a header row and at least one contact.');
+
+  const originalHeaders = rows[0].map((header) => header.trim());
+  if (new Set(originalHeaders.map(normalizeHeader)).size !== originalHeaders.length) {
+    throw new Error('The CSV has duplicate column names after normalization. Rename those columns and try again.');
+  }
+  const dataRows = rows.slice(1).filter((row) => row.some((cell) => cell.trim() !== ''));
+  const suggestedMapping = suggestCsvMapping(originalHeaders);
+  return {
+    headers: originalHeaders,
+    sampleRows: dataRows.slice(0, 5).map((cells) => Object.fromEntries(
+      originalHeaders.map((header, index) => [header, cells[index]?.trim() ?? '']),
+    )),
+    suggestedMapping,
+    sourceRows: dataRows.length,
+  };
+}
+
+export function suggestCsvMapping(headers: string[]): CsvColumnMapping {
+  const normalizedHeaders = headers.map((header) => ({ original: header, normalized: normalizeHeader(header) }));
+  return Object.fromEntries(
+    Object.entries(fieldAliases).flatMap(([field, aliases]) => {
+      const match = normalizedHeaders.find((header) => (aliases as readonly string[]).includes(header.normalized));
+      return match ? [[field, match.original]] : [];
+    }),
+  ) as CsvColumnMapping;
+}
+
+export function importContactsCsv(csv: string, mapping: CsvColumnMapping = {}): CsvImportResult {
   const rows = parseCsv(csv);
   if (rows.length < 2) throw new Error('The CSV needs a header row and at least one contact.');
 
   const headers = rows[0].map(normalizeHeader);
-  if (!hasAnyAlias(headers, fieldAliases.rawEmail) && !hasAnyAlias(headers, fieldAliases.fullName)) {
+  const effectiveMapping = { ...suggestCsvMapping(rows[0]), ...mapping };
+  if (!effectiveMapping.rawEmail && !effectiveMapping.fullName && !effectiveMapping.firstName && !effectiveMapping.lastName) {
     throw new Error('Add an email or full_name column so contacts can be identified.');
   }
 
@@ -62,24 +124,25 @@ export function importContactsCsv(csv: string): CsvImportResult {
   const dataRows = rows.slice(1).filter((row) => row.some((cell) => cell.trim() !== ''));
   const contacts = dataRows.map((cells, index) => {
     const row = Object.fromEntries(headers.map((header, cellIndex) => [header, cells[cellIndex]?.trim() ?? '']));
-    const contactId = readAlias(row, fieldAliases.contactId) || `CSV-${String(index + 1).padStart(3, '0')}`;
-    const firstName = readAlias(row, fieldAliases.firstName);
-    const lastName = readAlias(row, fieldAliases.lastName);
-    const fullName = readAlias(row, fieldAliases.fullName) || [firstName, lastName].filter(Boolean).join(' ') || contactId;
-    const rawEmail = readAlias(row, fieldAliases.rawEmail);
-    const suppliedNormalizedEmail = readAlias(row, fieldAliases.normalizedEmail);
+    const readField = (field: CsvFieldKey) => row[normalizeHeader(effectiveMapping[field] ?? '')] ?? '';
+    const contactId = readField('contactId') || `CSV-${String(index + 1).padStart(3, '0')}`;
+    const firstName = readField('firstName');
+    const lastName = readField('lastName');
+    const fullName = readField('fullName') || [firstName, lastName].filter(Boolean).join(' ') || contactId;
+    const rawEmail = readField('rawEmail');
+    const suppliedNormalizedEmail = readField('normalizedEmail');
     const normalizedEmail = suppliedNormalizedEmail
       ? suppliedNormalizedEmail.trim().toLowerCase()
       : normalizeEmail(rawEmail);
-    const company = nullable(readAlias(row, fieldAliases.company));
-    const region = readAlias(row, fieldAliases.region) || 'Unassigned';
-    const segment = readAlias(row, fieldAliases.segment) || 'Unassigned';
-    const lifecycleStage = normalizeStage(readAlias(row, fieldAliases.lifecycleStage) || 'lead');
-    const expectedLifecycleStage = normalizeStage(readAlias(row, fieldAliases.expectedLifecycleStage) || lifecycleStage);
-    const ownerId = nullable(readAlias(row, fieldAliases.ownerId));
-    const canonicalContactId = nullable(readAlias(row, fieldAliases.canonicalContactId));
-    const recordStatus = readAlias(row, fieldAliases.recordStatus).toLowerCase() === 'merged' ? 'merged' : 'active';
-    const qualityFlags = new Set(splitFlags(readAlias(row, fieldAliases.qualityFlags)));
+    const company = nullable(readField('company'));
+    const region = readField('region') || 'Unassigned';
+    const segment = readField('segment') || 'Unassigned';
+    const lifecycleStage = normalizeStage(readField('lifecycleStage') || 'lead');
+    const expectedLifecycleStage = normalizeStage(readField('expectedLifecycleStage') || lifecycleStage);
+    const ownerId = nullable(readField('ownerId'));
+    const canonicalContactId = nullable(readField('canonicalContactId'));
+    const recordStatus = readField('recordStatus').toLowerCase() === 'merged' ? 'merged' : 'active';
+    const qualityFlags = new Set(splitFlags(readField('qualityFlags')));
 
     if (!normalizedEmail) qualityFlags.add('invalid_email');
     if (!company) qualityFlags.add('missing_company');
@@ -96,9 +159,9 @@ export function importContactsCsv(csv: string): CsvImportResult {
       rawEmail,
       normalizedEmail,
       company,
-      phone: nullable(readAlias(row, fieldAliases.phone)),
-      jobTitle: nullable(readAlias(row, fieldAliases.jobTitle)),
-      website: nullable(readAlias(row, fieldAliases.website)),
+      phone: nullable(readField('phone')),
+      jobTitle: nullable(readField('jobTitle')),
+      website: nullable(readField('website')),
       region,
       segment,
       lifecycleStage,
@@ -106,7 +169,7 @@ export function importContactsCsv(csv: string): CsvImportResult {
       ownerId,
       canonicalContactId,
       recordStatus,
-      lastAction: readAlias(row, fieldAliases.lastAction) || 'csv_imported',
+      lastAction: readField('lastAction') || 'csv_imported',
       qualityFlags: [...qualityFlags],
       updatedAt: now,
     } satisfies LiveContactState;
@@ -312,17 +375,6 @@ function parseCsv(csv: string): string[][] {
 
 function normalizeHeader(value: string): string {
   return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
-}
-
-function readAlias(row: Record<string, string>, aliases: readonly string[]): string {
-  for (const alias of aliases) {
-    if (row[alias]) return row[alias];
-  }
-  return '';
-}
-
-function hasAnyAlias(headers: string[], aliases: readonly string[]): boolean {
-  return aliases.some((alias) => headers.includes(alias));
 }
 
 function nullable(value: string): string | null {

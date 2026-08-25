@@ -25,8 +25,8 @@ Usage:
   npm run setup
   npm run setup -- --project your-gcp-project [--dataset gtm_control_tower] [--dbt-dataset gtm_control_tower_dbt]
 
-Without a project, the CSV-only dashboard is ready immediately. With a project,
-portable BigQuery SQL and n8n workflows are rendered under .runtime/generated.`);
+Without a project, the SQLite-backed CSV and Google Sheets paths are ready.
+With a project, portable BigQuery SQL and n8n workflows are rendered under .runtime/generated.`);
   process.exit(0);
 }
 
@@ -40,19 +40,22 @@ const dbtDatasetId = option('--dbt-dataset') ?? process.env.DBT_BIGQUERY_DATASET
 const output = resolve(option('--output') ?? defaultOutput);
 
 await mkdir(resolve(output, 'n8n'), { recursive: true });
-const csvWorkflowSource = await readFile(resolve(root, 'integrations/n8n/csv-hubspot-sync-workflow.json'), 'utf8');
-const csvWorkflow = JSON.parse(csvWorkflowSource);
-for (const node of csvWorkflow.nodes ?? []) delete node.credentials;
-csvWorkflow.active = false;
-csvWorkflow.meta = { ...(csvWorkflow.meta ?? {}), templateCredsSetupCompleted: false };
-await writeFile(
-  resolve(output, 'n8n/csv-hubspot-sync-workflow.json'),
-  `${JSON.stringify(csvWorkflow, null, 2)}\n`,
-);
+for (const filename of [
+  'csv-hubspot-sync-workflow.json',
+  'google-sheets-read-workflow.json',
+  'google-sheets-write-workflow.json',
+]) {
+  const workflowSource = await readFile(resolve(root, 'integrations/n8n', filename), 'utf8');
+  const workflow = JSON.parse(workflowSource);
+  for (const node of workflow.nodes ?? []) delete node.credentials;
+  workflow.active = false;
+  workflow.meta = { ...(workflow.meta ?? {}), templateCredsSetupCompleted: false };
+  await writeFile(resolve(output, 'n8n', filename), `${JSON.stringify(workflow, null, 2)}\n`);
+}
 
 if (!projectId) {
-  console.log('CSV-only mode is ready. Run `npm run dev`, then import a CSV in the contact lab.');
-  console.log(`A credential-free HubSpot workflow was copied to ${resolve(output, 'n8n')}.`);
+  console.log('SQLite-backed CSV mode is ready. Run `docker compose up --build` or `npm run dev`.');
+  console.log(`Credential-free HubSpot and Google Sheets workflows were copied to ${resolve(output, 'n8n')}.`);
   console.log('Add --project YOUR_GCP_PROJECT later to render the BigQuery and n8n warehouse assets.');
   process.exit(0);
 }

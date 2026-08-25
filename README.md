@@ -15,8 +15,13 @@ the repository.
 
 ## What it does
 
-- Imports a CSV locally, recognizes common CRM headers, and diagnoses duplicate
+- Previews any CSV, lets the operator map arbitrary headers, saves reusable
+  mapping presets, and diagnoses duplicate
   identity, missing fields, bad email, owner gaps, and lifecycle regression.
+- Persists imports, repairs, receipts, and twenty undo snapshots in a local
+  SQLite workspace; hosted Sites builds use D1's SQLite-compatible storage.
+- Reads Google Sheets through n8n and writes governed records to a separate
+  `GTM Clean` worksheet without requiring BigQuery.
 - Executes reviewed merge, reroute, and lifecycle-replay workers and exports the
   repaired state.
 - Syncs eligible contacts to HubSpot Contacts or Salesforce Leads with strict
@@ -26,22 +31,30 @@ the repository.
 - Shows how operational defects change revenue metrics instead of presenting a
   static dashboard.
 
-## Quick start: no accounts required
+## Quick start: one command, no accounts required
 
-Requires Node.js 22.13 or newer.
+Requires Docker. This starts the application and a local n8n Community Edition
+instance; neither needs a paid account.
 
 ```bash
 git clone https://github.com/harrisonoconnorhover/gtm-control-tower.git
 cd gtm-control-tower
-npm ci
-npm run setup
-npm run dev
+docker compose up --build
 ```
 
-Open the printed URL, choose **Import your CSV**, and try
+Open [http://localhost:3000](http://localhost:3000), choose **CSV file**, and try
 [`public/control-tower-csv-template.csv`](public/control-tower-csv-template.csv).
-CSV contents and repairs stay in browser memory until you explicitly export or
-sync governed records.
+The workspace survives browser and container restarts in
+`.runtime/sqlite/gtm-control-tower.db`. n8n is available at
+[http://localhost:5678](http://localhost:5678). Run `docker compose up app` if
+you do not want n8n.
+
+The Node.js development path remains available:
+
+```bash
+npm ci
+npm run dev
+```
 
 ## Add the warehouse and workflow layer
 
@@ -65,12 +78,15 @@ Lead webhook -> n8n normalize/score/route -> CRM + BigQuery -> dbt -> dashboard
 ```
 
 Full instructions: [self-hosting](docs/self-hosting.md),
+[Google Sheets](docs/google-sheets-setup.md),
 [HubSpot](docs/hubspot-csv-setup.md), and
 [Salesforce](docs/salesforce-csv-setup.md).
 
 ## Safe-by-default boundaries
 
 - The browser never receives CRM, n8n, or Google credentials.
+- Unconfigured connectors do not appear as operational choices.
+- Every connector follows Preview → Validate → Execute → Receipt → Undo/Export.
 - Public templates contain no credential bindings or private project IDs.
 - CRM writes are explicit, allow-listed, standard-field-only, and reconciled by
   native receipt.

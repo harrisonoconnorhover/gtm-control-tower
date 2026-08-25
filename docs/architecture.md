@@ -18,20 +18,30 @@
 
 The dashboard browser never receives Google or n8n credentials. It calls same-origin `/api/control-tower/state`, `/api/control-tower/funky`, and `/api/control-tower/repair` handlers. Those server routes validate request and response contracts before proxying to a separate n8n Operations API workflow.
 
-Users without a warehouse can choose a separate local path:
+Users without a warehouse use the default local path:
 
 ```text
-CSV file → browser parser + field aliases → in-memory contact state
-                                              │
-                                  merge / reroute / replay
-                                      │               │
-                              repaired CSV      clean-record gate
-                                                        │
-                                      HubSpot Contacts  Salesforce Leads
-                                         batch upsert   query + create/update
+CSV / Google Sheet → preview + visual mapping → governed contact state
+                                                       │
+                                             SQLite revisions + receipts
+                                                       │
+                                          merge / reroute / replay
+                                             │                 │
+                                      repaired CSV       destination gate
+                                                            │    │    │
+                                                    GTM Clean  CRM  BigQuery
 ```
 
-No CSV bytes cross a network boundary or persist after a refresh. Explicit destination actions send only allow-listed, governed fields through server-validated batch contracts. The browser produces receipt-shaped local repair records and preserves each CRM's per-record results so the same table shows both boundaries without conflating them.
+CSV parsing stays local to the browser. Validated contact state persists in a
+local SQLite file (or hosted D1), addressed by a random browser-held workspace
+key. Google Sheets data crosses only the operator's same-origin server and n8n;
+Google credentials remain in n8n. Explicit destination actions send only
+allow-listed, governed fields through server-validated batch contracts.
+
+Every adapter implements the same lifecycle: Preview → Validate → Execute →
+Receipt → Undo/Export. External systems may not support native undo, so the
+receipt says so explicitly while the local pre-write workspace revision remains
+available.
 
 ## Data contract
 
@@ -63,9 +73,15 @@ The state webhook executes a bounded BigQuery query with a 100 MB billing ceilin
 
 The merge is deliberately non-destructive: source rows remain queryable but are marked `merged` and point at the canonical contact. CSV destinations write governed standard fields only after an explicit click. They do not delete or provider-merge records. Production mutation routes require an access key.
 
-## CSV compatibility path
+## CSV and worksheet compatibility path
 
-The CSV parser accepts quoted cells and newlines, maps common CRM header aliases, and infers missing email/company/owner, lifecycle regression, Unicode-domain, plus-address, and exact normalized-email duplicate flags. It does not guess fuzzy name/company identity. A user may provide `normalized_email` when aliases are already governed upstream. Imports are capped at 10 MB to keep synchronous browser work bounded.
+The CSV parser accepts quoted cells and newlines, suggests common CRM header
+aliases, and exposes an explicit arbitrary-column mapper before import. Saved
+presets make recurring exports repeatable. Google Sheets rows convert into the
+same preview and mapping contract. The validator infers missing
+email/company/owner, lifecycle regression, Unicode-domain, plus-address, and
+exact normalized-email duplicate flags. It does not guess fuzzy name/company
+identity. Imports are capped at 10 MB; saved workspaces at 5,000 contacts.
 
 HubSpot sync uses the current contacts batch-upsert API, email identity, a 100-record request ceiling, and `objectWriteTraceId` for per-record reconciliation. The server can call HubSpot directly with a private-app bearer token or proxy through the included n8n OAuth workflow. Both produce the same strict receipt contract.
 

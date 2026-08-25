@@ -81,8 +81,10 @@ export function isHubSpotSyncReceipt(value: unknown): value is HubSpotSyncReceip
   if (!isBoundedString(value.syncId, 1, 120) || typeof value.completedAt !== 'string') return false;
   if (![value.requested, value.synced, value.failed].every(isFiniteNonNegativeNumber)) return false;
   if (!Array.isArray(value.records) || !value.records.every(isHubSpotSyncRecord)) return false;
-  return value.requested === value.records.length
-    && value.synced + value.failed === value.requested;
+  const requested = value.requested as number;
+  const synced = value.synced as number;
+  const failed = value.failed as number;
+  return requested === value.records.length && synced + failed === requested;
 }
 
 export function combineHubSpotSyncReceipts(

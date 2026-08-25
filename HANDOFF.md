@@ -2,41 +2,40 @@
 
 ## Finished
 
-- Converted the project into a portable MIT-licensed self-hosted release.
-- Added zero-account CSV mode plus credential-free BigQuery/n8n asset rendering.
-- Added a ten-record browser fallback so the public demo works without connectors.
-- Removed personal project IDs and n8n credential bindings from public templates.
-- Added CI, setup/doctor tooling, dependency auditing, and history secret scanning.
+- Added SQLite/D1 workspaces for imports, mapping presets, receipts, repair history, and twenty undo revisions.
+- Added a configured-only source/destination picker and shared Preview → Validate → Execute → Receipt → Undo/Export contract.
+- Added arbitrary-column CSV mapping and Google Sheets read/write workflows through local n8n.
+- Added a production standalone Docker image; `docker compose up --build` starts the app and n8n.
+- Preserved the existing CSV, HubSpot, Salesforce, BigQuery, dbt, and credential-free demo paths.
 
 ## Try It
 
-- Run `npm ci && npm run setup && npm run dev` for the credential-free demo.
-- Import `public/control-tower-csv-template.csv`, then execute merge, reroute, and replay.
-- Add `--project your-gcp-project` to `npm run setup` for generated warehouse assets.
+- Run `docker compose up --build`, then open `http://localhost:3000`.
+- Map and import `public/control-tower-csv-template.csv`; repair, refresh, undo, and export it.
+- Follow `docs/google-sheets-setup.md` to bind Google OAuth only inside n8n.
 
 ## Checks
 
-- `npm test`: 24/24 passed.
-- `npm run lint`: passed.
-- `npm run build`: passed.
-- `npm run audit`: zero known vulnerabilities.
-- `npm run doctor`, custom history scan, and Gitleaks: passed with no leaks.
-- Public smoke test: loaded anonymously and ran all ten browser-local demo contacts.
+- `npm test`: 31/31 passed; TypeScript and ESLint passed.
+- `npm run build`: passed and emitted standalone output.
+- Docker Compose config/build passed; the 91.6 MB app image served the page and created a persistent workspace.
+- Production API proof passed: create, save, reload, and undo against the local SQLite file.
+- Doctor and Git-history secret scan passed; high-severity audit gate passed (four moderate Drizzle CLI advisories remain).
 
 ## Decisions
 
-- Ship as an open-source self-hosted toolkit, not a shared multi-tenant SaaS.
-- Keep the public demo credential-free; CRM writes stay server-side and disabled by default.
-- Render local connector assets under ignored `.runtime` rather than storing account IDs.
+- Use a file-backed SQLite adapter in Node/Docker and the same storage contract over D1 on Sites.
+- Keep Google credentials in n8n and always write to a separate `GTM Clean` worksheet.
+- Hide unconfigured operational connectors instead of presenting broken buttons.
 
 ## Remaining
 
-- Connectors remain optional and must be configured by each self-hosting operator.
-- Use refreshable OAuth and app-level authentication before enabling hosted CRM writes.
-- Add a custom domain only if the generated demo URL becomes a presentation concern.
+- Exercise the Google Sheets workflows with an operator-owned OAuth credential after import.
+- Put internet-accessible self-hosts behind authentication before storing confidential CRM data.
+- Upgrade Drizzle Kit when its dependency chain removes the moderate development-server advisory.
 
 ## Review First
 
-- `README.md`
-- `scripts/setup.mjs`
-- `docs/self-hosting.md`
+- `components/self-host-console.tsx`
+- `lib/workspace-store.ts`
+- `compose.yaml`

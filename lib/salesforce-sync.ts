@@ -87,8 +87,11 @@ export function isSalesforceSyncReceipt(value: unknown): value is SalesforceSync
   if (!isBoundedString(value.syncId, 1, 120) || typeof value.completedAt !== 'string') return false;
   if (![value.requested, value.created, value.updated, value.failed].every(isFiniteNonNegativeNumber)) return false;
   if (!Array.isArray(value.records) || !value.records.every(isSalesforceSyncRecord)) return false;
-  return value.requested === value.records.length
-    && value.created + value.updated + value.failed === value.requested;
+  const requested = value.requested as number;
+  const created = value.created as number;
+  const updated = value.updated as number;
+  const failed = value.failed as number;
+  return requested === value.records.length && created + updated + failed === requested;
 }
 
 export function combineSalesforceSyncReceipts(

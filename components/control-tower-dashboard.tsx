@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   demoRunSummary,
   demoStages,
@@ -16,7 +16,10 @@ import {
   executeCsvRepair,
   exportContactsCsv,
   importContactsCsv,
+  type CsvColumnMapping,
 } from '@/lib/csv-control-tower';
+import { SelfHostConsole } from '@/components/self-host-console';
+import type { ConnectorCatalog, ConnectorId, ConnectorReceipt } from '@/lib/connector-contract';
 import {
   combineHubSpotSyncReceipts,
   isHubSpotEligible,
@@ -41,15 +44,7 @@ import {
   type RepairRun,
   type SeedReceipt,
 } from '@/lib/live-control-tower';
-
-const integrations = [
-  { name: 'HubSpot', role: 'live CRM', status: 'validated', tone: 'live' },
-  { name: 'n8n', role: 'orchestration', status: 'live locally', tone: 'live' },
-  { name: 'BigQuery', role: 'event warehouse', status: 'validated', tone: 'live' },
-  { name: 'dbt', role: 'semantic layer', status: '15 / 15 pass', tone: 'live' },
-  { name: 'Salesforce', role: 'parallel CRM', status: 'validated', tone: 'live' },
-  { name: 'Control Tower', role: 'decision layer', status: 'demo model', tone: 'demo' },
-];
+import type { MappingPreset, SavedWorkspace, WorkspaceState } from '@/lib/workspace';
 
 const dbtTests = [
   ['unique_account_domain', '2 duplicates contained'],
@@ -121,7 +116,7 @@ function metricsFromCsvContacts(contacts: LiveContactState[]): ReturnType<typeof
   const assigned = active.filter((contact) => Boolean(contact.ownerId)).length;
   const qualityRate = active.length ? (clean / active.length) * 100 : 0;
   return [
-    { label: 'CSV rows', value: contacts.length.toLocaleString(), detail: 'kept in this browser tab', direction: 'good' },
+    { label: 'Workspace rows', value: contacts.length.toLocaleString(), detail: 'saved locally when SQLite is enabled', direction: 'good' },
     { label: 'Active identities', value: active.length.toLocaleString(), detail: `${contacts.length - active.length} logically merged`, direction: 'good' },
     { label: 'Data quality', value: `${qualityRate.toFixed(1)}%`, detail: `${active.length - clean} active rows need attention`, direction: qualityRate < 95 ? 'warning' : 'good' },
     { label: 'Assigned owners', value: assigned.toLocaleString(), detail: `${active.length - assigned} unassigned`, direction: assigned < active.length ? 'warning' : 'good' },
@@ -170,7 +165,7 @@ export function ControlTowerDashboard() {
   const [originalCsvContacts, setOriginalCsvContacts] = useState<LiveContactState[]>([]);
   const [csvRepairHistory, setCsvRepairHistory] = useState<RepairRun[]>([]);
   const [csvFileName, setCsvFileName] = useState<string | null>(null);
-  const [csvStatus, setCsvStatus] = useState<'idle' | 'reading' | 'ready' | 'error'>('idle');
+  const [, setCsvStatus] = useState<'idle' | 'reading' | 'ready' | 'error'>('idle');
   const [csvError, setCsvError] = useState<string | null>(null);
   const [hubSpotSyncStatus, setHubSpotSyncStatus] = useState<'idle' | 'sending' | 'complete' | 'partial' | 'error'>('idle');
   const [hubSpotSyncReceipt, setHubSpotSyncReceipt] = useState<HubSpotSyncReceipt | null>(null);
@@ -180,6 +175,15 @@ export function ControlTowerDashboard() {
   const [salesforceSyncReceipt, setSalesforceSyncReceipt] = useState<SalesforceSyncReceipt | null>(null);
   const [salesforceSyncError, setSalesforceSyncError] = useState<string | null>(null);
   const [salesforceSyncKey, setSalesforceSyncKey] = useState('');
+  const [connectorCatalog, setConnectorCatalog] = useState<ConnectorCatalog | null>(null);
+  const [sourceType, setSourceType] = useState<ConnectorId>('csv');
+  const [destinationType, setDestinationType] = useState<ConnectorId>('csv');
+  const [csvMapping, setCsvMapping] = useState<CsvColumnMapping>({});
+  const [connectorReceipts, setConnectorReceipts] = useState<ConnectorReceipt[]>([]);
+  const [workspaceId, setWorkspaceId] = useState<string | null>(null);
+  const [workspaceRevision, setWorkspaceRevision] = useState<number | null>(null);
+  const [mappingPresets, setMappingPresets] = useState<MappingPreset[]>([]);
+  const [persistenceStatus, setPersistenceStatus] = useState<'loading' | 'saved' | 'saving' | 'disabled' | 'error'>('loading');
   const hubSpotEligibleContacts = useMemo(() => csvContacts.filter(isHubSpotEligible), [csvContacts]);
   const syncedHubSpotContactIds = useMemo(
     () => new Set(hubSpotSyncReceipt?.records.filter((record) => record.status === 'synced').map((record) => record.contactId) ?? []),
@@ -198,6 +202,22 @@ export function ControlTowerDashboard() {
     () => salesforceEligibleContacts.filter((contact) => !syncedSalesforceContactIds.has(contact.contactId)),
     [salesforceEligibleContacts, syncedSalesforceContactIds],
   );
+  const bigQueryConfigured = connectorCatalog?.connectors.some((connector) => connector.id === 'bigquery' && connector.configured) ?? false;
+  const hubSpotConfigured = connectorCatalog?.connectors.some((connector) => connector.id === 'hubspot' && connector.configured) ?? false;
+  const salesforceConfigured = connectorCatalog?.connectors.some((connector) => connector.id === 'salesforce' && connector.configured) ?? false;
+  const googleSheetsConfigured = connectorCatalog?.connectors.some((connector) => connector.id === 'google-sheets' && connector.configured) ?? false;
+  const visibleIntegrations = useMemo(() => [
+    { name: 'CSV', role: 'free source + export', status: 'always ready', tone: 'live' },
+    ...(googleSheetsConfigured ? [{ name: 'Google Sheets', role: 'worksheet source + destination', status: 'configured', tone: 'live' }] : []),
+    ...(googleSheetsConfigured || bigQueryConfigured ? [{ name: 'n8n', role: 'credentialed orchestration', status: 'configured', tone: 'live' }] : []),
+    ...(bigQueryConfigured ? [
+      { name: 'BigQuery', role: 'event warehouse', status: 'configured', tone: 'live' },
+      { name: 'dbt', role: 'semantic layer', status: 'available', tone: 'live' },
+    ] : []),
+    ...(hubSpotConfigured ? [{ name: 'HubSpot', role: 'CRM destination', status: 'configured', tone: 'live' }] : []),
+    ...(salesforceConfigured ? [{ name: 'Salesforce', role: 'CRM destination', status: 'configured', tone: 'live' }] : []),
+    { name: 'Control Tower', role: 'decision layer', status: 'active', tone: 'demo' },
+  ], [bigQueryConfigured, googleSheetsConfigured, hubSpotConfigured, salesforceConfigured]);
   const visibleScenario = repaired ? null : activeScenario;
   const metrics = useMemo(
     () => dataMode === 'csv'
@@ -235,13 +255,137 @@ export function ControlTowerDashboard() {
     };
   }, [refreshLiveState]);
 
-  function loadCsvWorkspace(source: string, fileName: string, startWalkthrough = false) {
-    const imported = importContactsCsv(source);
+  useEffect(() => {
+    let cancelled = false;
+    async function initializeSelfHostWorkspace() {
+      try {
+        const response = await fetch('/api/control-tower/connectors', { cache: 'no-store' });
+        const catalog = await response.json() as ConnectorCatalog;
+        if (cancelled) return;
+        setConnectorCatalog(catalog);
+        const availableSources = catalog.connectors.filter((connector) => connector.configured && connector.directions.includes('source'));
+        const availableDestinations = catalog.connectors.filter((connector) => connector.configured && connector.directions.includes('destination'));
+        if (!availableSources.some((connector) => connector.id === sourceType)) setSourceType(availableSources[0]?.id ?? 'csv');
+        if (!availableDestinations.some((connector) => connector.id === destinationType)) setDestinationType(availableDestinations[0]?.id ?? 'csv');
+        if (!catalog.persistenceEnabled) {
+          setPersistenceStatus('disabled');
+          return;
+        }
+        const storedId = window.localStorage.getItem('gtm-control-tower-workspace-id');
+        if (storedId) {
+          const savedResponse = await fetch(`/api/control-tower/workspace?id=${encodeURIComponent(storedId)}`, { cache: 'no-store' });
+          if (savedResponse.ok) {
+            const saved = await savedResponse.json() as { workspace: SavedWorkspace };
+            if (!cancelled) applySavedWorkspace(saved.workspace);
+            return;
+          }
+        }
+        const createdResponse = await fetch('/api/control-tower/workspace', {
+          method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'create' }),
+        });
+        if (!createdResponse.ok) throw new Error('Persistent workspace unavailable.');
+        const created = await createdResponse.json() as { workspace: SavedWorkspace };
+        if (!cancelled) applySavedWorkspace(created.workspace);
+      } catch {
+        if (!cancelled) setPersistenceStatus('error');
+      }
+    }
+    void initializeSelfHostWorkspace();
+    return () => { cancelled = true; };
+    // Connector availability and the saved workspace are loaded once per page session.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function applySavedWorkspace(workspace: SavedWorkspace) {
+    setWorkspaceId(workspace.id);
+    setWorkspaceRevision(workspace.revision);
+    setMappingPresets(workspace.presets);
+    setSourceType(workspace.state.sourceType);
+    setDestinationType(workspace.state.destinationType);
+    setCsvMapping(workspace.state.mapping);
+    setConnectorReceipts(workspace.state.receipts);
+    setCsvContacts(workspace.state.contacts);
+    setOriginalCsvContacts(workspace.state.originalContacts);
+    setCsvRepairHistory(workspace.state.repairHistory);
+    setCsvFileName(workspace.state.fileName);
+    if (workspace.state.contacts.length) {
+      setDataMode('csv');
+      setCsvStatus('ready');
+      setDemoStage(demoStages.length - 1);
+    }
+    window.localStorage.setItem('gtm-control-tower-workspace-id', workspace.id);
+    setPersistenceStatus('saved');
+  }
+
+  async function ensureWorkspace(): Promise<string | null> {
+    if (persistenceStatus === 'disabled') return null;
+    if (workspaceId) return workspaceId;
+    const response = await fetch('/api/control-tower/workspace', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'create' }),
+    });
+    if (!response.ok) return null;
+    const created = await response.json() as { workspace: SavedWorkspace };
+    setWorkspaceId(created.workspace.id);
+    setWorkspaceRevision(created.workspace.revision);
+    setMappingPresets(created.workspace.presets);
+    window.localStorage.setItem('gtm-control-tower-workspace-id', created.workspace.id);
+    return created.workspace.id;
+  }
+
+  async function persistWorkspace(reason: string, overrides: Partial<WorkspaceState> = {}) {
+    if (persistenceStatus === 'disabled') return;
+    setPersistenceStatus('saving');
+    try {
+      const id = await ensureWorkspace();
+      if (!id) throw new Error('Workspace persistence is unavailable.');
+      const state: WorkspaceState = {
+        contacts: overrides.contacts ?? csvContacts,
+        originalContacts: overrides.originalContacts ?? originalCsvContacts,
+        repairHistory: overrides.repairHistory ?? csvRepairHistory,
+        receipts: overrides.receipts ?? connectorReceipts,
+        mapping: overrides.mapping ?? csvMapping,
+        fileName: overrides.fileName === undefined ? csvFileName : overrides.fileName,
+        sourceType: overrides.sourceType ?? sourceType,
+        destinationType: overrides.destinationType ?? destinationType,
+        sourceLabel: overrides.sourceLabel,
+      };
+      const response = await fetch('/api/control-tower/workspace', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action: 'save', id, state, reason }),
+      });
+      if (!response.ok) throw new Error('Workspace save failed.');
+      const saved = await response.json() as { workspace: SavedWorkspace };
+      setWorkspaceRevision(saved.workspace.revision);
+      setMappingPresets(saved.workspace.presets);
+      setPersistenceStatus('saved');
+    } catch {
+      setPersistenceStatus('error');
+    }
+  }
+
+  async function loadCsvWorkspace(
+    source: string,
+    fileName: string,
+    mapping: CsvColumnMapping = {},
+    importedSource: ConnectorId = 'csv',
+    startWalkthrough = false,
+  ) {
+    const imported = importContactsCsv(source, mapping);
     const snapshot = imported.contacts.map((contact) => ({ ...contact, qualityFlags: [...contact.qualityFlags] }));
+    const receipt: ConnectorReceipt = {
+      id: globalThis.crypto.randomUUID(), connectorId: importedSource, phase: 'validate', status: 'executed',
+      summary: `Validated ${snapshot.length} mapped contacts.`, recordsRead: snapshot.length,
+      createdAt: new Date().toISOString(), undoAvailable: false,
+    };
+    const receipts = [receipt, ...connectorReceipts].slice(0, 30);
     setCsvContacts(snapshot);
     setOriginalCsvContacts(snapshot.map((contact) => ({ ...contact, qualityFlags: [...contact.qualityFlags] })));
     setCsvRepairHistory([]);
     setCsvFileName(fileName);
+    setCsvMapping(mapping);
+    setConnectorReceipts(receipts);
+    setSourceType(importedSource);
     setCsvStatus('ready');
     setCsvError(null);
     setHubSpotSyncStatus('idle');
@@ -258,6 +402,11 @@ export function ControlTowerDashboard() {
     setRepairError(null);
     setDemoStage(startWalkthrough ? 0 : demoStages.length - 1);
     setDemoRunning(startWalkthrough);
+    await persistWorkspace('import_validated', {
+      contacts: snapshot,
+      originalContacts: snapshot.map((contact) => ({ ...contact, qualityFlags: [...contact.qualityFlags] })),
+      repairHistory: [], receipts, mapping, fileName, sourceType: importedSource,
+    });
   }
 
   useEffect(() => {
@@ -300,7 +449,7 @@ export function ControlTowerDashboard() {
         try {
           const localDemo = await fetch('/control-tower-csv-template.csv', { cache: 'no-store' });
           if (!localDemo.ok) throw new Error('The bundled CSV demo is unavailable.');
-          loadCsvWorkspace(await localDemo.text(), 'synthetic-funky-crm.csv', true);
+          await loadCsvWorkspace(await localDemo.text(), 'synthetic-funky-crm.csv', {}, 'csv', true);
           setSeedStatus('error');
           setSeedError('Warehouse connectors are not configured, so this run is using the browser-local synthetic batch.');
           return;
@@ -317,20 +466,9 @@ export function ControlTowerDashboard() {
     await resetFunkyBatch(true);
   }
 
-  async function importCsvFile(file: File) {
-    setCsvStatus('reading');
-    setCsvError(null);
-    try {
-      if (file.size > 10 * 1024 * 1024) throw new Error('Use a CSV smaller than 10 MB for this browser-local workspace.');
-      loadCsvWorkspace(await file.text(), file.name);
-    } catch (error) {
-      setCsvStatus('error');
-      setCsvError(error instanceof Error ? error.message : 'The CSV could not be imported.');
-    }
-  }
-
-  function resetCsvWorkspace() {
-    setCsvContacts(originalCsvContacts.map((contact) => ({ ...contact, qualityFlags: [...contact.qualityFlags] })));
+  async function resetCsvWorkspace() {
+    const contacts = originalCsvContacts.map((contact) => ({ ...contact, qualityFlags: [...contact.qualityFlags] }));
+    setCsvContacts(contacts);
     setCsvRepairHistory([]);
     setHubSpotSyncStatus('idle');
     setHubSpotSyncReceipt(null);
@@ -343,6 +481,7 @@ export function ControlTowerDashboard() {
     setRepairStatus('idle');
     setRepairReceipt(null);
     setRepairError(null);
+    await persistWorkspace('import_reset', { contacts, repairHistory: [] });
   }
 
   function exportCsvWorkspace() {
@@ -353,9 +492,60 @@ export function ControlTowerDashboard() {
     link.download = `${csvFileName?.replace(/\.csv$/i, '') || 'control-tower'}-repaired.csv`;
     link.click();
     URL.revokeObjectURL(url);
+    const receipt: ConnectorReceipt = {
+      id: globalThis.crypto.randomUUID(), connectorId: 'csv', phase: 'export', status: 'executed',
+      summary: `Exported ${csvContacts.length} contacts as CSV.`, recordsWritten: csvContacts.length,
+      createdAt: new Date().toISOString(), undoAvailable: false,
+    };
+    void recordConnectorReceipt(receipt);
   }
 
-  function useWarehouseMode() {
+  async function recordConnectorReceipt(receipt: ConnectorReceipt) {
+    const receipts = [receipt, ...connectorReceipts].slice(0, 30);
+    setConnectorReceipts(receipts);
+    await persistWorkspace('connector_receipt', { receipts });
+  }
+
+  async function undoSavedWorkspace() {
+    if (!workspaceId || !workspaceRevision) return;
+    setPersistenceStatus('saving');
+    try {
+      const response = await fetch('/api/control-tower/workspace', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action: 'undo', id: workspaceId }),
+      });
+      if (!response.ok) throw new Error('Undo failed.');
+      const restored = await response.json() as { workspace: SavedWorkspace };
+      applySavedWorkspace(restored.workspace);
+    } catch {
+      setPersistenceStatus('error');
+    }
+  }
+
+  async function saveMappingPreset(name: string, mapping: CsvColumnMapping) {
+    const id = await ensureWorkspace();
+    if (!id) throw new Error('Persistent workspaces are disabled.');
+    const response = await fetch('/api/control-tower/workspace', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ action: 'save-preset', id, name, mapping }),
+    });
+    if (!response.ok) throw new Error('Mapping preset could not be saved.');
+    const result = await response.json() as { presets: MappingPreset[] };
+    setMappingPresets(result.presets);
+  }
+
+  function changeSourceType(next: ConnectorId) {
+    setSourceType(next);
+    if (next === 'bigquery') activateWarehouseMode();
+    void persistWorkspace('source_changed', { sourceType: next });
+  }
+
+  function changeDestinationType(next: ConnectorId) {
+    setDestinationType(next);
+    void persistWorkspace('destination_changed', { destinationType: next });
+  }
+
+  function activateWarehouseMode() {
     setDataMode('warehouse');
     setRepaired(false);
     setRepairStatus('idle');
@@ -396,6 +586,13 @@ export function ControlTowerDashboard() {
       );
       setHubSpotSyncReceipt(combined);
       setHubSpotSyncStatus(combined.status);
+      await recordConnectorReceipt({
+        id: globalThis.crypto.randomUUID(), connectorId: 'hubspot', phase: 'receipt',
+        status: combined.failed ? 'partial' : 'executed',
+        summary: `${combined.synced} HubSpot contacts synced; ${combined.failed} failed.`,
+        recordsWritten: combined.synced, recordsFailed: combined.failed,
+        createdAt: combined.completedAt, undoAvailable: false, nativeReceiptId: combined.syncId,
+      });
     } catch (error) {
       setHubSpotSyncStatus('error');
       setHubSpotSyncError(error instanceof Error ? error.message : 'The HubSpot sync failed before a valid receipt returned.');
@@ -434,6 +631,13 @@ export function ControlTowerDashboard() {
       );
       setSalesforceSyncReceipt(combined);
       setSalesforceSyncStatus(combined.status);
+      await recordConnectorReceipt({
+        id: globalThis.crypto.randomUUID(), connectorId: 'salesforce', phase: 'receipt',
+        status: combined.failed ? 'partial' : 'executed',
+        summary: `${combined.created} Salesforce Leads created, ${combined.updated} updated; ${combined.failed} failed.`,
+        recordsWritten: combined.created + combined.updated, recordsFailed: combined.failed,
+        createdAt: combined.completedAt, undoAvailable: false, nativeReceiptId: combined.syncId,
+      });
     } catch (error) {
       setSalesforceSyncStatus('error');
       setSalesforceSyncError(error instanceof Error ? error.message : 'The Salesforce sync failed before a valid receipt returned.');
@@ -456,11 +660,21 @@ export function ControlTowerDashboard() {
     setRepairError(null);
     if (dataMode === 'csv') {
       const result = executeCsvRepair(csvContacts, activeScenario);
+      const history = [result.run, ...csvRepairHistory].slice(0, 6);
+      const connectorReceipt: ConnectorReceipt = {
+        id: globalThis.crypto.randomUUID(), connectorId: sourceType, phase: 'execute', status: 'executed',
+        summary: `${result.receipt.action} changed ${result.receipt.affectedRecords} records.`,
+        recordsWritten: result.receipt.affectedRecords, createdAt: result.receipt.approvedAt,
+        undoAvailable: true, nativeReceiptId: result.receipt.requestId,
+      };
+      const receipts = [connectorReceipt, ...connectorReceipts].slice(0, 30);
       setCsvContacts(result.contacts);
-      setCsvRepairHistory((history) => [result.run, ...history].slice(0, 6));
+      setCsvRepairHistory(history);
+      setConnectorReceipts(receipts);
       setRepairReceipt(result.receipt);
       setRepairStatus('executed');
       setRepaired(true);
+      await persistWorkspace('repair_executed', { contacts: result.contacts, repairHistory: history, receipts });
       return;
     }
     try {
@@ -554,33 +768,53 @@ export function ControlTowerDashboard() {
           </article>
         </section>
 
-        <LiveWarehouseCard state={liveState} status={liveStatus} onRefresh={refreshLiveState} />
+        <SelfHostConsole
+          catalog={connectorCatalog}
+          contacts={csvContacts}
+          sourceType={sourceType}
+          destinationType={destinationType}
+          mapping={csvMapping}
+          presets={mappingPresets}
+          workspaceRevision={workspaceRevision}
+          persistenceStatus={persistenceStatus}
+          lastReceipt={connectorReceipts[0] ?? null}
+          onMappedImport={(csv, fileName, mapping, source) => loadCsvWorkspace(csv, fileName, mapping, source)}
+          onSourceChange={changeSourceType}
+          onDestinationChange={changeDestinationType}
+          onSavePreset={saveMappingPreset}
+          onUndo={undoSavedWorkspace}
+          onExport={exportCsvWorkspace}
+          onReceipt={recordConnectorReceipt}
+        />
+
+        {bigQueryConfigured && <LiveWarehouseCard state={liveState} status={liveStatus} onRefresh={refreshLiveState} />}
 
         <FunkyCrmLab
           mode={dataMode}
           contacts={dataMode === 'csv' ? csvContacts : liveState?.contacts ?? []}
           repairHistory={dataMode === 'csv' ? csvRepairHistory : liveState?.repairHistory ?? []}
           csvFileName={csvFileName}
-          csvStatus={csvStatus}
           csvError={csvError}
+          bigQueryConfigured={bigQueryConfigured}
           hubSpotEligibleCount={hubSpotEligibleContacts.length}
           hubSpotPendingCount={pendingHubSpotContacts.length}
           hubSpotSyncStatus={hubSpotSyncStatus}
           hubSpotSyncReceipt={hubSpotSyncReceipt}
           hubSpotSyncError={hubSpotSyncError}
           hubSpotSyncKey={hubSpotSyncKey}
+          hubSpotConfigured={hubSpotConfigured && destinationType === 'hubspot'}
           salesforceEligibleCount={salesforceEligibleContacts.length}
           salesforcePendingCount={pendingSalesforceContacts.length}
           salesforceSyncStatus={salesforceSyncStatus}
           salesforceSyncReceipt={salesforceSyncReceipt}
           salesforceSyncError={salesforceSyncError}
           salesforceSyncKey={salesforceSyncKey}
+          salesforceConfigured={salesforceConfigured && destinationType === 'salesforce'}
           seedStatus={seedStatus}
           seedReceipt={seedReceipt}
           seedError={seedError}
-          onImport={importCsvFile}
           onExport={exportCsvWorkspace}
-          onUseWarehouse={useWarehouseMode}
+          onUseWarehouse={activateWarehouseMode}
           onHubSpotSync={syncNextCsvBatchToHubSpot}
           onHubSpotSyncKeyChange={setHubSpotSyncKey}
           onSalesforceSync={syncNextCsvBatchToSalesforce}
@@ -666,7 +900,7 @@ export function ControlTowerDashboard() {
             <h3 className="mt-1 text-lg font-semibold">One auditable path, with every boundary labeled</h3>
           </div>
           <div className="grid divide-y divide-white/10 sm:grid-cols-3 sm:divide-x sm:divide-y-0 xl:grid-cols-6">
-            {integrations.map((integration) => (
+            {visibleIntegrations.map((integration) => (
               <div key={integration.name} className="p-5">
                 <p className="font-semibold">{integration.name}</p>
                 <p className="mt-1 text-xs text-[#81978d]">{integration.role}</p>
@@ -786,24 +1020,25 @@ function FunkyCrmLab({
   contacts,
   repairHistory,
   csvFileName,
-  csvStatus,
   csvError,
+  bigQueryConfigured,
   hubSpotEligibleCount,
   hubSpotPendingCount,
   hubSpotSyncStatus,
   hubSpotSyncReceipt,
   hubSpotSyncError,
   hubSpotSyncKey,
+  hubSpotConfigured,
   salesforceEligibleCount,
   salesforcePendingCount,
   salesforceSyncStatus,
   salesforceSyncReceipt,
   salesforceSyncError,
   salesforceSyncKey,
+  salesforceConfigured,
   seedStatus,
   seedReceipt,
   seedError,
-  onImport,
   onExport,
   onUseWarehouse,
   onHubSpotSync,
@@ -816,24 +1051,25 @@ function FunkyCrmLab({
   contacts: LiveContactState[];
   repairHistory: RepairRun[];
   csvFileName: string | null;
-  csvStatus: 'idle' | 'reading' | 'ready' | 'error';
   csvError: string | null;
+  bigQueryConfigured: boolean;
   hubSpotEligibleCount: number;
   hubSpotPendingCount: number;
   hubSpotSyncStatus: 'idle' | 'sending' | 'complete' | 'partial' | 'error';
   hubSpotSyncReceipt: HubSpotSyncReceipt | null;
   hubSpotSyncError: string | null;
   hubSpotSyncKey: string;
+  hubSpotConfigured: boolean;
   salesforceEligibleCount: number;
   salesforcePendingCount: number;
   salesforceSyncStatus: 'idle' | 'sending' | 'complete' | 'partial' | 'error';
   salesforceSyncReceipt: SalesforceSyncReceipt | null;
   salesforceSyncError: string | null;
   salesforceSyncKey: string;
+  salesforceConfigured: boolean;
   seedStatus: 'idle' | 'sending' | 'seeded' | 'error';
   seedReceipt: SeedReceipt | null;
   seedError: string | null;
-  onImport: (file: File) => Promise<void>;
   onExport: () => void;
   onUseWarehouse: () => void;
   onHubSpotSync: () => Promise<void>;
@@ -842,7 +1078,6 @@ function FunkyCrmLab({
   onSalesforceSyncKeyChange: (value: string) => void;
   onReset: () => Promise<void>;
 }) {
-  const fileInput = useRef<HTMLInputElement>(null);
   const active = contacts.filter((contact) => contact.recordStatus === 'active').length;
   const merged = contacts.filter((contact) => contact.recordStatus === 'merged').length;
   const hubSpotResultByContact = new Map(hubSpotSyncReceipt?.records.map((record) => [record.contactId, record]) ?? []);
@@ -851,29 +1086,11 @@ function FunkyCrmLab({
     <section className="mb-6 overflow-hidden rounded-[30px] border border-white/10 bg-[#0c1d17]" aria-label="Funky CRM contact lab">
       <div className="flex flex-wrap items-start justify-between gap-4 border-b border-white/10 px-5 py-5 sm:px-6">
         <div>
-          <p className="text-sm text-[#8fa99d]">{mode === 'csv' ? 'Browser-local CSV workspace' : 'Executed-repair lab'}</p>
+          <p className="text-sm text-[#8fa99d]">{mode === 'csv' ? 'Saved contact workspace' : 'Executed-repair lab'}</p>
           <h3 className="mt-1 text-xl font-semibold">{mode === 'csv' ? `${contacts.length} imported contacts · no warehouse required` : 'Ten genuinely funky contacts in mutable BigQuery state'}</h3>
-          <p className="mt-2 max-w-3xl text-xs leading-5 text-[#71877c]">{mode === 'csv' ? 'Your file stays in this browser tab. Common CRM headers are mapped automatically; inferred quality flags and every repair remain local until you export the result.' : 'Duplicates, plus-addressing, malformed email, Unicode, conflicting companies, routing overload, and impossible lifecycle changes. The workers below change these rows and return native execution receipts.'}</p>
+          <p className="mt-2 max-w-3xl text-xs leading-5 text-[#71877c]">{mode === 'csv' ? 'Mapped imports, quality flags, repairs, receipts, and undo snapshots persist in the self-hosted SQLite workspace. Explicit destination actions still control every external write.' : 'Duplicates, plus-addressing, malformed email, Unicode, conflicting companies, routing overload, and impossible lifecycle changes. The workers below change these rows and return native execution receipts.'}</p>
         </div>
         <div className="flex flex-wrap justify-end gap-2">
-          <input
-            ref={fileInput}
-            type="file"
-            accept=".csv,text/csv"
-            className="sr-only"
-            onChange={(event) => {
-              const file = event.currentTarget.files?.[0];
-              if (file) void onImport(file);
-              event.currentTarget.value = '';
-            }}
-          />
-          <button
-            onClick={() => fileInput.current?.click()}
-            disabled={csvStatus === 'reading'}
-            className="rounded-full border border-[#83bcff]/25 bg-[#83bcff]/[0.07] px-4 py-2 text-xs font-semibold text-[#83bcff] transition hover:bg-[#83bcff]/[0.12] disabled:cursor-wait disabled:opacity-60"
-          >
-            {csvStatus === 'reading' ? 'Reading CSV…' : mode === 'csv' ? 'Import another CSV' : 'Import your CSV'}
-          </button>
           <a href="/control-tower-csv-template.csv" download className="rounded-full border border-white/10 px-4 py-2 text-xs font-semibold text-[#a9bbb2] transition hover:bg-white/[0.05]">CSV template</a>
           {mode === 'csv' && <button onClick={onExport} className="rounded-full border border-[#cdfc54]/25 bg-[#cdfc54]/[0.07] px-4 py-2 text-xs font-semibold text-[#cdfc54] transition hover:bg-[#cdfc54]/[0.12]">Export repaired CSV</button>}
           <button
@@ -883,7 +1100,7 @@ function FunkyCrmLab({
           >
             {mode === 'csv' ? 'Reset imported file' : seedStatus === 'sending' ? 'Resetting in BigQuery…' : 'Reset funky batch'}
           </button>
-          {mode === 'csv' && <button onClick={onUseWarehouse} className="rounded-full border border-white/10 px-4 py-2 text-xs font-semibold text-[#a9bbb2] transition hover:bg-white/[0.05]">Use BigQuery demo</button>}
+          {mode === 'csv' && bigQueryConfigured && <button onClick={onUseWarehouse} className="rounded-full border border-white/10 px-4 py-2 text-xs font-semibold text-[#a9bbb2] transition hover:bg-white/[0.05]">Use BigQuery demo</button>}
         </div>
       </div>
       <div className="flex flex-wrap gap-2 border-b border-white/10 px-5 py-3 font-mono text-[9px] uppercase tracking-wider text-[#8fa99d] sm:px-6">
@@ -895,9 +1112,9 @@ function FunkyCrmLab({
         {mode === 'warehouse' && seedError && <span className="rounded-full bg-[#ff7b55]/10 px-3 py-1 text-[#ff9d7f]">{seedError}</span>}
         {csvError && <span className="rounded-full bg-[#ff7b55]/10 px-3 py-1 text-[#ff9d7f]">{csvError}</span>}
       </div>
-      {mode === 'csv' && (
-        <div className="grid border-b border-white/10 xl:grid-cols-2 xl:divide-x xl:divide-white/10">
-          <HubSpotSyncPanel
+      {mode === 'csv' && (hubSpotConfigured || salesforceConfigured) && (
+        <div className={`grid border-b border-white/10 ${hubSpotConfigured && salesforceConfigured ? 'xl:grid-cols-2 xl:divide-x xl:divide-white/10' : ''}`}>
+          {hubSpotConfigured && <HubSpotSyncPanel
             eligibleCount={hubSpotEligibleCount}
             heldCount={contacts.length - hubSpotEligibleCount}
             pendingCount={hubSpotPendingCount}
@@ -907,8 +1124,8 @@ function FunkyCrmLab({
             accessKey={hubSpotSyncKey}
             onAccessKeyChange={onHubSpotSyncKeyChange}
             onSync={onHubSpotSync}
-          />
-          <SalesforceSyncPanel
+          />}
+          {salesforceConfigured && <SalesforceSyncPanel
             eligibleCount={salesforceEligibleCount}
             heldCount={contacts.length - salesforceEligibleCount}
             pendingCount={salesforcePendingCount}
@@ -918,7 +1135,7 @@ function FunkyCrmLab({
             accessKey={salesforceSyncKey}
             onAccessKeyChange={onSalesforceSyncKeyChange}
             onSync={onSalesforceSync}
-          />
+          />}
         </div>
       )}
       <div className="overflow-x-auto">
@@ -1305,7 +1522,7 @@ function IncidentCard({
       {active && (
         <div className="mt-5 rounded-2xl border border-[#d97757]/20 bg-[#fff1e9] p-4">
           <p className="font-mono text-[9px] uppercase tracking-wider text-[#b05a40]">Revenue consequence</p>
-          <p data-testid="health-headline" className="mt-2 text-sm font-semibold leading-5">{healthHeadline(active)}</p>
+          <p data-testid="health-headline" className="mt-2 text-sm font-semibold leading-5">{healthHeadline(active.scenario)}</p>
         </div>
       )}
       {repaired && repairReceipt && (
@@ -1329,7 +1546,7 @@ function IncidentCard({
                 <p className="mt-1 text-xs leading-5 text-[#637169]">{incident.detail}</p>
                 {'recommendation' in incident && active && incident.id === active.id && (
                   <div className="mt-3 border-t border-[#10221a]/10 pt-3">
-                    <p className="text-xs leading-5 text-[#43534a]">{incident.recommendation}</p>
+                    <p className="text-xs leading-5 text-[#43534a]">{typeof incident.recommendation === 'string' ? incident.recommendation : ''}</p>
                     <button
                       data-testid="approve-repair"
                       onClick={() => void onApproveRepair()}

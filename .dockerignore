@@ -1,0 +1,13 @@
+.git
+.github
+.runtime
+.wrangler
+.vinext
+dist
+node_modules
+.env*
+npm-debug.log*
+coverage
+data
+outputs
+work

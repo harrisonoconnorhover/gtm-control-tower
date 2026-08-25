@@ -1,0 +1,119 @@
+{
+  "name": "GTM Control Tower - Google Sheets Clean Output",
+  "active": false,
+  "nodes": [
+    {
+      "id": "sheets-write-webhook",
+      "name": "Receive Clean Rows",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "gtm-control-tower-sheets-write",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "sheets-write-validate",
+      "name": "Validate and Shape Clean Rows",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [240, 0],
+      "parameters": {
+        "jsCode": "const body = $json.body ?? $json;\nconst spreadsheetId = String(body.spreadsheetId ?? '');\nconst destinationSheet = String(body.destinationSheet ?? '');\nconst contacts = Array.isArray(body.contacts) ? body.contacts : [];\nif (!/^[a-zA-Z0-9_-]{20,200}$/.test(spreadsheetId)) throw new Error('Invalid spreadsheet ID');\nif (destinationSheet !== 'GTM Clean') throw new Error('Destination must be GTM Clean');\nif (!contacts.length || contacts.length > 1000) throw new Error('Expected 1-1000 clean contacts');\nreturn [{ json: { spreadsheetId, destinationSheet, contacts } }];"
+      }
+    },
+    {
+      "id": "sheets-write-create",
+      "name": "Ensure GTM Clean Worksheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.6,
+      "position": [480, 0],
+      "alwaysOutputData": true,
+      "parameters": {
+        "resource": "sheet",
+        "operation": "create",
+        "documentId": { "__rl": true, "mode": "id", "value": "={{ $('Validate and Shape Clean Rows').first().json.spreadsheetId }}" },
+        "title": "GTM Clean",
+        "options": {}
+      }
+    },
+    {
+      "id": "sheets-write-shape",
+      "name": "Prepare GTM Clean Rows",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [720, 0],
+      "parameters": {
+        "jsCode": "const batch = $('Validate and Shape Clean Rows').first().json;\nreturn batch.contacts.filter((contact) => contact.recordStatus === 'active').map((contact) => ({ json: {\n  contact_id: String(contact.contactId ?? ''), full_name: String(contact.fullName ?? ''),\n  email: String(contact.normalizedEmail ?? contact.rawEmail ?? '').toLowerCase(),\n  company: String(contact.company ?? ''), phone: String(contact.phone ?? ''),\n  job_title: String(contact.jobTitle ?? ''), website: String(contact.website ?? ''),\n  region: String(contact.region ?? ''), segment: String(contact.segment ?? ''),\n  lifecycle_stage: String(contact.lifecycleStage ?? ''), owner_id: String(contact.ownerId ?? ''),\n  quality_flags: Array.isArray(contact.qualityFlags) ? contact.qualityFlags.join('|') : '',\n  _spreadsheetId: batch.spreadsheetId\n} }));"
+      }
+    },
+    {
+      "id": "sheets-write-append",
+      "name": "Append to GTM Clean",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.6,
+      "position": [960, 0],
+      "parameters": {
+        "operation": "append",
+        "documentId": { "__rl": true, "mode": "id", "value": "={{ $json._spreadsheetId }}" },
+        "sheetName": { "__rl": true, "mode": "name", "value": "GTM Clean" },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "contact_id": "={{ $json.contact_id }}",
+            "full_name": "={{ $json.full_name }}",
+            "email": "={{ $json.email }}",
+            "company": "={{ $json.company }}",
+            "phone": "={{ $json.phone }}",
+            "job_title": "={{ $json.job_title }}",
+            "website": "={{ $json.website }}",
+            "region": "={{ $json.region }}",
+            "segment": "={{ $json.segment }}",
+            "lifecycle_stage": "={{ $json.lifecycle_stage }}",
+            "owner_id": "={{ $json.owner_id }}",
+            "quality_flags": "={{ $json.quality_flags }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "sheets-write-receipt",
+      "name": "Shape Write Receipt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1200, 0],
+      "parameters": {
+        "jsCode": "const recordsWritten = $input.all().length;\nreturn [{ json: { accepted: true, recordsWritten, destinationSheet: 'GTM Clean', runId: `sheets-write-${Date.now()}` } }];"
+      }
+    },
+    {
+      "id": "sheets-write-response",
+      "name": "Return Write Receipt",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [1440, 0],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": { "responseCode": 202 }
+      }
+    }
+  ],
+  "connections": {
+    "Receive Clean Rows": { "main": [[{ "node": "Validate and Shape Clean Rows", "type": "main", "index": 0 }]] },
+    "Validate and Shape Clean Rows": { "main": [[{ "node": "Ensure GTM Clean Worksheet", "type": "main", "index": 0 }]] },
+    "Ensure GTM Clean Worksheet": { "main": [[{ "node": "Prepare GTM Clean Rows", "type": "main", "index": 0 }]] },
+    "Prepare GTM Clean Rows": { "main": [[{ "node": "Append to GTM Clean", "type": "main", "index": 0 }]] },
+    "Append to GTM Clean": { "main": [[{ "node": "Shape Write Receipt", "type": "main", "index": 0 }]] },
+    "Shape Write Receipt": { "main": [[{ "node": "Return Write Receipt", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" },
+  "meta": { "templateCredsSetupCompleted": false },
+  "tags": []
+}
