@@ -1,0 +1,10 @@
+gtm_control_tower:
+  target: dev
+  outputs:
+    dev:
+      type: bigquery
+      method: oauth
+      project: "{{ env_var('GOOGLE_CLOUD_PROJECT') }}"
+      dataset: "{{ env_var('BIGQUERY_DATASET', 'gtm_control_tower_dbt') }}"
+      location: US
+      threads: 4

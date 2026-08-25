@@ -1,0 +1,36 @@
+version: 2
+
+models:
+  - name: stg_crm_events
+    description: Deduplicated, normalized CRM lifecycle events.
+    columns:
+      - name: event_id
+        tests: [not_null, unique]
+      - name: lead_id
+        tests: [not_null]
+      - name: lifecycle_stage
+        tests:
+          - accepted_values:
+              arguments:
+                values: [lead, mql, sql, opportunity, closed_won]
+      - name: route_seconds
+        tests: [not_null, nonnegative]
+  - name: fct_funnel
+    description: Monthly conversion and revenue metrics by segment and region.
+    columns:
+      - name: month
+        tests: [not_null]
+      - name: leads
+        tests: [not_null]
+  - name: fct_routing_sla
+    description: Daily lead-routing service-level performance.
+    columns:
+      - name: median_route_seconds
+        tests: [not_null]
+      - name: sla_attainment_rate
+        tests: [not_null]
+  - name: fct_data_quality
+    description: Daily quality score and issue counts.
+    columns:
+      - name: quality_rate
+        tests: [not_null]

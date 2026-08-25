@@ -1,0 +1,91 @@
+{
+  "name": "GTM Control Tower - Lead Routing",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "gtm-lead",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "0e6ad5f7-02c1-44d0-a86e-15d0ed5cb203",
+      "name": "Receive CRM Signal",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-700, 80],
+      "webhookId": "gtm-control-tower-lead"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $json.body ?? $json;\nconst revenue = Number(body.annual_revenue ?? 0);\nconst employees = Number(body.employee_count ?? 0);\nconst score = Math.min(100, Math.round((revenue / 500000) + (employees / 20) + (body.intent_signal ? 25 : 0)));\nconst segment = revenue >= 20000000 ? 'Enterprise' : revenue >= 5000000 ? 'Mid-Market' : 'SMB';\nconst region = body.region ?? 'Central';\nconst owner = `${region.slice(0, 2).toUpperCase()}-${segment === 'Enterprise' ? 'ENT' : segment === 'Mid-Market' ? 'MM' : 'SMB'}`;\nconst eventTimestamp = new Date().toISOString();\nconst leadId = body.lead_id ?? `LEAD-${Date.now()}`;\nreturn [{ json: { ...body, lead_id: leadId, account_id: body.account_id ?? `ACC-${leadId}`, event_id: `${leadId}-${eventTimestamp}`, event_type: 'lead_routed', lifecycle_stage: score >= 70 ? 'mql' : 'lead', event_timestamp: eventTimestamp, score, segment, region, owner_id: owner, route_seconds: 0, is_duplicate: false } }];"
+      },
+      "id": "d7a6c42e-6637-4fc6-84ef-ae9bb3be1bbb",
+      "name": "Normalize, Score & Route",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-450, 80]
+    },
+    {
+      "parameters": {
+        "operation": "upsert",
+        "object": "Lead",
+        "externalIdField": "Email",
+        "externalId": "={{ $json.email }}",
+        "fieldsToSend": {
+          "fields": [
+            { "fieldName": "Company", "fieldValue": "={{ $json.company ?? 'Unknown' }}" },
+            { "fieldName": "LastName", "fieldValue": "={{ $json.last_name ?? 'Unknown' }}" },
+            { "fieldName": "LeadSource", "fieldValue": "={{ $json.source ?? 'Web' }}" },
+            { "fieldName": "Rating", "fieldValue": "={{ $json.score >= 70 ? 'Hot' : 'Warm' }}" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "c15b7f89-8319-47ec-b687-0306c7dd0d6c",
+      "name": "Upsert Salesforce Lead",
+      "type": "n8n-nodes-base.salesforce",
+      "typeVersion": 1,
+      "position": [-190, 80],
+      "notes": "Attach a Salesforce OAuth2 credential after import."
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "projectId": "={{ $env.GOOGLE_CLOUD_PROJECT }}",
+        "datasetId": "gtm_control_tower",
+        "tableId": "raw_crm_events",
+        "dataMode": "autoMapInputData",
+        "options": {}
+      },
+      "id": "75e1691f-11ee-477b-bf4a-7dcb77f1f1be",
+      "name": "Append BigQuery Event",
+      "type": "n8n-nodes-base.googleBigQuery",
+      "typeVersion": 2.1,
+      "position": [70, 80],
+      "notes": "Attach Google BigQuery OAuth2 or service-account credentials after import."
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { accepted: true, lead_id: $json.lead_id ?? $('Normalize, Score & Route').item.json.lead_id, score: $('Normalize, Score & Route').item.json.score, owner_id: $('Normalize, Score & Route').item.json.owner_id } }}",
+        "options": { "responseCode": 202 }
+      },
+      "id": "848c1bd7-faf1-4ad2-88e0-63f0e39a6d2d",
+      "name": "Return Routing Decision",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [330, 80]
+    }
+  ],
+  "connections": {
+    "Receive CRM Signal": { "main": [[{ "node": "Normalize, Score & Route", "type": "main", "index": 0 }]] },
+    "Normalize, Score & Route": { "main": [[{ "node": "Upsert Salesforce Lead", "type": "main", "index": 0 }, { "node": "Append BigQuery Event", "type": "main", "index": 0 }]] },
+    "Append BigQuery Event": { "main": [[{ "node": "Return Routing Decision", "type": "main", "index": 0 }]] }
+  },
+  "pinData": {},
+  "active": false,
+  "settings": { "executionOrder": "v1", "saveManualExecutions": true },
+  "versionId": "8455fc67-af18-4cfb-b76b-ec3d7f32b9ec",
+  "meta": { "templateCredsSetupCompleted": false },
+  "tags": []
+}

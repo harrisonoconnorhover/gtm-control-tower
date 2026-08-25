@@ -1,0 +1,11 @@
+{
+  "lead_id": "LEAD-DEMO-001",
+  "email": "alex@northstar.example",
+  "last_name": "Morgan",
+  "company": "Northstar Robotics",
+  "source": "event",
+  "region": "Northeast",
+  "annual_revenue": 28000000,
+  "employee_count": 420,
+  "intent_signal": true
+}
