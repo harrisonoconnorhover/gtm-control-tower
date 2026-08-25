@@ -1,0 +1,97 @@
+{
+  "id": "gtmControlTowerCsvHubSpot01",
+  "name": "GTM Control Tower - CSV to HubSpot",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "gtm-control-tower-hubspot-sync",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "b03c8064-e373-439d-9693-cfe7b9c50916",
+      "name": "Receive Governed CSV Batch",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-620, 80],
+      "webhookId": "gtm-control-tower-hubspot-sync"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $json.body ?? $json;\nconst contacts = Array.isArray(body.contacts) ? body.contacts : [];\nconst syncId = String(body.syncId ?? '').slice(0, 120);\nif (!syncId || contacts.length < 1 || contacts.length > 100) throw new Error('Expected 1-100 governed contacts');\nconst emailPattern = /^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/u;\nconst clean = (value, maximum) => String(value ?? '').trim().slice(0, maximum);\nconst nullable = (value, maximum) => { const result = clean(value, maximum); return result || null; };\nconst seenEmails = new Set();\nconst governed = contacts.map((contact) => {\n  const contactId = clean(contact.contactId, 120);\n  const email = clean(contact.email, 254).toLowerCase();\n  if (!contactId || !emailPattern.test(email)) throw new Error('Every contact needs a valid contactId and email');\n  if (seenEmails.has(email)) throw new Error('Duplicate email in governed batch');\n  seenEmails.add(email);\n  return {\n    contactId, email,\n    firstName: clean(contact.firstName, 255),\n    lastName: clean(contact.lastName, 255),\n    company: nullable(contact.company, 255),\n    phone: nullable(contact.phone, 50),\n    jobTitle: nullable(contact.jobTitle, 255),\n    website: nullable(contact.website, 500),\n  };\n});\nconst inputs = governed.map((contact) => {\n  const properties = { firstname: contact.firstName, lastname: contact.lastName };\n  if (contact.company) properties.company = contact.company;\n  if (contact.phone) properties.phone = contact.phone;\n  if (contact.jobTitle) properties.jobtitle = contact.jobTitle;\n  if (contact.website) properties.website = contact.website;\n  return {\n    id: contact.email,\n    idProperty: 'email',\n    objectWriteTraceId: `${syncId}:${contact.contactId}`.slice(0, 255),\n    properties,\n  };\n});\nreturn [{ json: { syncId, sourceFile: clean(body.sourceFile, 255), contacts: governed, inputs } }];"
+      },
+      "id": "75114328-55d3-4071-b4aa-615154c0be17",
+      "name": "Validate and Shape HubSpot Batch",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-360, 80]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.hubapi.com/crm/objects/2026-03/contacts/batch/upsert",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "hubspotOAuth2Api",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ { inputs: $json.inputs } }}",
+        "options": {}
+      },
+      "id": "189b29a5-bb4d-4789-81b3-cdcaeb7f1dac",
+      "name": "Batch Upsert HubSpot Contacts",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [-90, 80],
+      "credentials": {
+        "hubspotOAuth2Api": {
+          "id": "gtmHubSpotOAuth01",
+          "name": "GTM Control Tower HubSpot"
+        }
+      },
+      "notes": "Bind a HubSpot OAuth2 credential with crm.objects.contacts.write after import. Uses only portable standard contact properties."
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $json;\nconst batch = $('Validate and Shape HubSpot Batch').item.json;\nconst results = Array.isArray(response.results) ? response.results : [];\nconst errors = Array.isArray(response.errors) ? response.errors : [];\nconst byTrace = new Map(results.map((result) => [String(result.objectWriteTraceId ?? ''), result]));\nconst errorByTrace = new Map(errors.map((error) => {\n  const contextTrace = error.context?.objectWriteTraceId;\n  const traceId = Array.isArray(contextTrace) ? String(contextTrace[0] ?? '') : String(contextTrace ?? '');\n  return [traceId, error];\n}));\nconst records = batch.contacts.map((contact, index) => {\n  const traceId = `${batch.syncId}:${contact.contactId}`.slice(0, 255);\n  const result = byTrace.get(traceId) ?? (results.length === batch.contacts.length ? results[index] : null);\n  if (result) return { contactId: contact.contactId, email: contact.email, status: 'synced', hubSpotId: String(result.id ?? ''), created: typeof result.new === 'boolean' ? result.new : null, error: null };\n  const error = errorByTrace.get(traceId);\n  return { contactId: contact.contactId, email: contact.email, status: 'failed', hubSpotId: null, created: null, error: String(error?.message ?? 'HubSpot did not return a result for this record.').slice(0, 1000) };\n});\nconst synced = records.filter((record) => record.status === 'synced').length;\nconst failed = records.length - synced;\nreturn [{ json: { accepted: true, status: failed ? 'partial' : 'complete', syncId: batch.syncId, requested: records.length, synced, failed, records, completedAt: response.completedAt ?? new Date().toISOString() } }];"
+      },
+      "id": "db087198-2910-4397-933d-7b7abcb4d02c",
+      "name": "Shape HubSpot Sync Receipt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [180, 80]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": { "responseCode": 202 }
+      },
+      "id": "37d2632c-fdf0-4a1c-a01a-b22a1605da39",
+      "name": "Return Per-record Receipt",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [450, 80]
+    }
+  ],
+  "connections": {
+    "Receive Governed CSV Batch": {
+      "main": [[{ "node": "Validate and Shape HubSpot Batch", "type": "main", "index": 0 }]]
+    },
+    "Validate and Shape HubSpot Batch": {
+      "main": [[{ "node": "Batch Upsert HubSpot Contacts", "type": "main", "index": 0 }]]
+    },
+    "Batch Upsert HubSpot Contacts": {
+      "main": [[{ "node": "Shape HubSpot Sync Receipt", "type": "main", "index": 0 }]]
+    },
+    "Shape HubSpot Sync Receipt": {
+      "main": [[{ "node": "Return Per-record Receipt", "type": "main", "index": 0 }]]
+    }
+  },
+  "pinData": {},
+  "active": false,
+  "settings": { "executionOrder": "v1", "saveManualExecutions": true },
+  "versionId": "46896991-f415-4cff-954d-5413657c1c30",
+  "meta": { "templateCredsSetupCompleted": false },
+  "tags": []
+}

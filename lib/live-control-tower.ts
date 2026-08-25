@@ -17,9 +17,14 @@ export type LiveFunnelStage = {
 export type LiveContactState = {
   contactId: string;
   fullName: string;
+  firstName?: string;
+  lastName?: string;
   rawEmail: string;
   normalizedEmail: string | null;
   company: string | null;
+  phone?: string | null;
+  jobTitle?: string | null;
+  website?: string | null;
   region: string;
   segment: string;
   lifecycleStage: string;

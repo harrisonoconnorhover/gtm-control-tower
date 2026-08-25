@@ -2,41 +2,41 @@
 
 ## Finished
 
-- Added a browser-local CSV operating mode that needs no BigQuery, n8n, account, or upload.
-- Mapped common CRM headers and inferred duplicate, missing-field, plus-address, Unicode-domain, and lifecycle-regression flags.
-- Reused the contact table and incident controls for local logical merge, Northeast enterprise reroute, and lifecycle replay.
-- Added local execution receipts, original-file reset, repaired CSV export, and a downloadable four-contact template.
-- Preserved the existing receipt-verified n8n/BigQuery mode and explicit execution-boundary labels.
+- Turned CSV mode into a governed HubSpot pipeline: local import and repair, clean-record gate, explicit write, and per-email receipts.
+- Added standard-property mapping for email, name, company, phone, job title, and website; unsafe rows remain held.
+- Added a server-validated 100-contact batch API with direct private-app-token and n8n OAuth connector paths.
+- Added production access-key enforcement, retryable batch progress, native error display, and HubSpot IDs on synced rows.
+- Completed a live HubSpot proof: synthetic contact `540806575835` was created; an invalid email returned its exact validation failure.
 
 ## Try It
 
-- Open `http://localhost:3001/` and click **Import your CSV** in the contact lab.
-- Use **CSV template** for a ready-made funky file, then execute merge, reroute, and replay in sequence.
-- Click **Export repaired CSV** or **Use BigQuery demo** at any time.
+- Open `http://localhost:3001/`, import the CSV template, and execute merge then lifecycle replay.
+- Review **Governed HubSpot destination**; eligible and held counts update after each repair.
+- Click **Sync to HubSpot**. Batches are capped at 100 and additional clicks continue remaining contacts.
 
 ## Checks
 
-- `npm test`: 12/12 passed across parser, import/export, repairs, contracts, and scenarios.
+- `npm test`: 16/16 passed across CSV, repair, HubSpot eligibility, contracts, receipt aggregation, and template import.
 - `npm run lint`: passed with no warnings.
-- `npm run build`: passed; page plus all three API routes built.
-- Local page and CSV template returned HTTP 200.
-- Existing warehouse state remained valid: BigQuery source with 10 contact rows.
+- `npm run build`: passed; the HubSpot sync API route built with the existing site.
+- Page/template/invalid-sync HTTP checks: `200 / 200 / 400`.
+- n8n executions 94 and 95 succeeded; live receipts proved native failure and successful create paths.
 
 ## Decisions
 
-- Keep imported CSV bytes and repair state only in browser memory; export is the explicit persistence step.
-- Match duplicates only on exact normalized email; never infer identity from fuzzy name/company similarity.
-- Flag plus-addresses without collapsing them unless `normalized_email` is supplied deliberately.
+- Send only governed standard contact fields; never upload the original CSV.
+- Do not write lifecycle or owner values until portal-aware preflight reads exist.
+- Require `CONTROL_TOWER_SYNC_KEY` for production writes; keep tokens server-side and out of Git.
 
 ## Remaining
 
-- Add a column-mapping screen only if real user files reveal unsupported headers.
-- Add authenticated HubSpot/Salesforce provider-specific workers if live-CRM mutation becomes valuable.
+- Optionally archive the clearly labeled synthetic proof contact after review.
+- Add lifecycle/owner preflight only if those provider-side writes become valuable.
 - Recover Salesforce access and validate its disabled parallel adapter.
-- Add authentication and stable HTTPS n8n hosting before publishing warehouse repair controls.
+- Add stable HTTPS hosting before publishing any CRM mutation controls.
 
 ## Review First
 
-- `lib/csv-control-tower.ts`
-- `components/control-tower-dashboard.tsx`
-- `tests/csv-control-tower.test.ts`
+- `app/api/control-tower/hubspot-sync/route.ts`
+- `integrations/n8n/csv-hubspot-sync-workflow.json`
+- `docs/hubspot-csv-setup.md`

@@ -18,6 +18,13 @@ import {
   importContactsCsv,
 } from '@/lib/csv-control-tower';
 import {
+  combineHubSpotSyncReceipts,
+  isHubSpotEligible,
+  isHubSpotSyncReceipt,
+  toHubSpotSyncContact,
+  type HubSpotSyncReceipt,
+} from '@/lib/hubspot-sync';
+import {
   isLiveControlTowerState,
   isRepairReceipt,
   isSeedReceipt,
@@ -158,6 +165,19 @@ export function ControlTowerDashboard() {
   const [csvFileName, setCsvFileName] = useState<string | null>(null);
   const [csvStatus, setCsvStatus] = useState<'idle' | 'reading' | 'ready' | 'error'>('idle');
   const [csvError, setCsvError] = useState<string | null>(null);
+  const [hubSpotSyncStatus, setHubSpotSyncStatus] = useState<'idle' | 'sending' | 'complete' | 'partial' | 'error'>('idle');
+  const [hubSpotSyncReceipt, setHubSpotSyncReceipt] = useState<HubSpotSyncReceipt | null>(null);
+  const [hubSpotSyncError, setHubSpotSyncError] = useState<string | null>(null);
+  const [hubSpotSyncKey, setHubSpotSyncKey] = useState('');
+  const hubSpotEligibleContacts = useMemo(() => csvContacts.filter(isHubSpotEligible), [csvContacts]);
+  const syncedHubSpotContactIds = useMemo(
+    () => new Set(hubSpotSyncReceipt?.records.filter((record) => record.status === 'synced').map((record) => record.contactId) ?? []),
+    [hubSpotSyncReceipt],
+  );
+  const pendingHubSpotContacts = useMemo(
+    () => hubSpotEligibleContacts.filter((contact) => !syncedHubSpotContactIds.has(contact.contactId)),
+    [hubSpotEligibleContacts, syncedHubSpotContactIds],
+  );
   const visibleScenario = repaired ? null : activeScenario;
   const metrics = useMemo(
     () => dataMode === 'csv'
@@ -252,6 +272,9 @@ export function ControlTowerDashboard() {
       setCsvRepairHistory([]);
       setCsvFileName(file.name);
       setCsvStatus('ready');
+      setHubSpotSyncStatus('idle');
+      setHubSpotSyncReceipt(null);
+      setHubSpotSyncError(null);
       setDataMode('csv');
       setActiveScenario('duplicate-surge');
       setRepaired(false);
@@ -269,6 +292,9 @@ export function ControlTowerDashboard() {
   function resetCsvWorkspace() {
     setCsvContacts(originalCsvContacts.map((contact) => ({ ...contact, qualityFlags: [...contact.qualityFlags] })));
     setCsvRepairHistory([]);
+    setHubSpotSyncStatus('idle');
+    setHubSpotSyncReceipt(null);
+    setHubSpotSyncError(null);
     setActiveScenario('duplicate-surge');
     setRepaired(false);
     setRepairStatus('idle');
@@ -293,6 +319,44 @@ export function ControlTowerDashboard() {
     setRepairReceipt(null);
     setRepairError(null);
     void refreshLiveState();
+  }
+
+  async function syncNextCsvBatchToHubSpot() {
+    if (hubSpotSyncStatus === 'sending' || !pendingHubSpotContacts.length) return;
+    const batch = pendingHubSpotContacts.slice(0, 100).map(toHubSpotSyncContact);
+    const parentSyncId = hubSpotSyncReceipt?.syncId ?? globalThis.crypto.randomUUID();
+    setHubSpotSyncStatus('sending');
+    setHubSpotSyncError(null);
+    try {
+      const response = await fetch('/api/control-tower/hubspot-sync', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          ...(hubSpotSyncKey ? { 'x-control-tower-key': hubSpotSyncKey } : {}),
+        },
+        body: JSON.stringify({
+          syncId: `${parentSyncId}-${Date.now()}`,
+          sourceFile: csvFileName ?? 'imported-contacts.csv',
+          contacts: batch,
+        }),
+      });
+      const payload: unknown = await response.json();
+      if (!response.ok || !isHubSpotSyncReceipt(payload)) {
+        const message = typeof payload === 'object' && payload !== null && 'error' in payload
+          ? String(payload.error)
+          : 'HubSpot did not return a per-record receipt.';
+        throw new Error(message);
+      }
+      const combined = combineHubSpotSyncReceipts(
+        hubSpotSyncReceipt ? [hubSpotSyncReceipt, payload] : [payload],
+        parentSyncId,
+      );
+      setHubSpotSyncReceipt(combined);
+      setHubSpotSyncStatus(combined.status);
+    } catch (error) {
+      setHubSpotSyncStatus('error');
+      setHubSpotSyncError(error instanceof Error ? error.message : 'The HubSpot sync failed before a valid receipt returned.');
+    }
   }
 
   function triggerChaos() {
@@ -410,12 +474,20 @@ export function ControlTowerDashboard() {
           csvFileName={csvFileName}
           csvStatus={csvStatus}
           csvError={csvError}
+          hubSpotEligibleCount={hubSpotEligibleContacts.length}
+          hubSpotPendingCount={pendingHubSpotContacts.length}
+          hubSpotSyncStatus={hubSpotSyncStatus}
+          hubSpotSyncReceipt={hubSpotSyncReceipt}
+          hubSpotSyncError={hubSpotSyncError}
+          hubSpotSyncKey={hubSpotSyncKey}
           seedStatus={seedStatus}
           seedReceipt={seedReceipt}
           seedError={seedError}
           onImport={importCsvFile}
           onExport={exportCsvWorkspace}
           onUseWarehouse={useWarehouseMode}
+          onHubSpotSync={syncNextCsvBatchToHubSpot}
+          onHubSpotSyncKeyChange={setHubSpotSyncKey}
           onReset={() => dataMode === 'csv' ? Promise.resolve(resetCsvWorkspace()) : resetFunkyBatch(false)}
         />
 
@@ -619,12 +691,20 @@ function FunkyCrmLab({
   csvFileName,
   csvStatus,
   csvError,
+  hubSpotEligibleCount,
+  hubSpotPendingCount,
+  hubSpotSyncStatus,
+  hubSpotSyncReceipt,
+  hubSpotSyncError,
+  hubSpotSyncKey,
   seedStatus,
   seedReceipt,
   seedError,
   onImport,
   onExport,
   onUseWarehouse,
+  onHubSpotSync,
+  onHubSpotSyncKeyChange,
   onReset,
 }: {
   mode: 'warehouse' | 'csv';
@@ -633,17 +713,26 @@ function FunkyCrmLab({
   csvFileName: string | null;
   csvStatus: 'idle' | 'reading' | 'ready' | 'error';
   csvError: string | null;
+  hubSpotEligibleCount: number;
+  hubSpotPendingCount: number;
+  hubSpotSyncStatus: 'idle' | 'sending' | 'complete' | 'partial' | 'error';
+  hubSpotSyncReceipt: HubSpotSyncReceipt | null;
+  hubSpotSyncError: string | null;
+  hubSpotSyncKey: string;
   seedStatus: 'idle' | 'sending' | 'seeded' | 'error';
   seedReceipt: SeedReceipt | null;
   seedError: string | null;
   onImport: (file: File) => Promise<void>;
   onExport: () => void;
   onUseWarehouse: () => void;
+  onHubSpotSync: () => Promise<void>;
+  onHubSpotSyncKeyChange: (value: string) => void;
   onReset: () => Promise<void>;
 }) {
   const fileInput = useRef<HTMLInputElement>(null);
   const active = contacts.filter((contact) => contact.recordStatus === 'active').length;
   const merged = contacts.filter((contact) => contact.recordStatus === 'merged').length;
+  const hubSpotResultByContact = new Map(hubSpotSyncReceipt?.records.map((record) => [record.contactId, record]) ?? []);
   return (
     <section className="mb-6 overflow-hidden rounded-[30px] border border-white/10 bg-[#0c1d17]" aria-label="Funky CRM contact lab">
       <div className="flex flex-wrap items-start justify-between gap-4 border-b border-white/10 px-5 py-5 sm:px-6">
@@ -692,6 +781,19 @@ function FunkyCrmLab({
         {mode === 'warehouse' && seedError && <span className="rounded-full bg-[#ff7b55]/10 px-3 py-1 text-[#ff9d7f]">{seedError}</span>}
         {csvError && <span className="rounded-full bg-[#ff7b55]/10 px-3 py-1 text-[#ff9d7f]">{csvError}</span>}
       </div>
+      {mode === 'csv' && (
+        <HubSpotSyncPanel
+          eligibleCount={hubSpotEligibleCount}
+          heldCount={contacts.length - hubSpotEligibleCount}
+          pendingCount={hubSpotPendingCount}
+          status={hubSpotSyncStatus}
+          receipt={hubSpotSyncReceipt}
+          error={hubSpotSyncError}
+          accessKey={hubSpotSyncKey}
+          onAccessKeyChange={onHubSpotSyncKeyChange}
+          onSync={onHubSpotSync}
+        />
+      )}
       <div className="overflow-x-auto">
         <table className="w-full min-w-[1120px] border-collapse text-left text-xs">
           <thead className="bg-white/[0.025] font-mono text-[9px] uppercase tracking-wider text-[#71877c]">
@@ -716,7 +818,11 @@ function FunkyCrmLab({
                   <p className="max-w-[240px] break-all">{contact.rawEmail}</p>
                   <p className="mt-1 break-all font-mono text-[9px] text-[#7fddb6]">→ {contact.normalizedEmail ?? 'invalid / held'}</p>
                 </td>
-                <td className="max-w-[170px] px-4 py-3.5 align-top">{contact.company ?? '— missing —'}</td>
+                <td className="max-w-[170px] px-4 py-3.5 align-top">
+                  <p>{contact.company ?? '— missing —'}</p>
+                  {contact.jobTitle && <p className="mt-1 text-[10px] text-[#71877c]">{contact.jobTitle}</p>}
+                  {contact.phone && <p className="mt-1 font-mono text-[9px] text-[#71877c]">{contact.phone}</p>}
+                </td>
                 <td className="px-4 py-3.5 align-top">
                   <p className={contact.lifecycleStage !== contact.expectedLifecycleStage ? 'text-[#ff9d7f]' : ''}>{contact.lifecycleStage}</p>
                   {contact.lifecycleStage !== contact.expectedLifecycleStage && <p className="mt-1 font-mono text-[9px] text-[#cdfc54]">expected {contact.expectedLifecycleStage}</p>}
@@ -726,6 +832,11 @@ function FunkyCrmLab({
                   <p className={contact.recordStatus === 'merged' ? 'text-[#83bcff]' : 'text-[#cdfc54]'}>{contact.recordStatus}</p>
                   <p className="mt-1 font-mono text-[9px] text-[#71877c]">{contact.lastAction.replaceAll('_', ' ')}</p>
                   {contact.canonicalContactId && <p className="mt-1 font-mono text-[9px] text-[#83bcff]">→ {contact.canonicalContactId}</p>}
+                  {hubSpotResultByContact.get(contact.contactId) && (
+                    <p className={`mt-2 font-mono text-[9px] ${hubSpotResultByContact.get(contact.contactId)?.status === 'synced' ? 'text-[#cdfc54]' : 'text-[#ff9d7f]'}`}>
+                      HubSpot {hubSpotResultByContact.get(contact.contactId)?.status}{hubSpotResultByContact.get(contact.contactId)?.hubSpotId ? ` · ${hubSpotResultByContact.get(contact.contactId)?.hubSpotId}` : ''}
+                    </p>
+                  )}
                 </td>
                 <td className="px-5 py-3.5 align-top">
                   <div className="flex max-w-[230px] flex-wrap gap-1">
@@ -750,6 +861,78 @@ function FunkyCrmLab({
         </div>
       ) : null}
     </section>
+  );
+}
+
+function HubSpotSyncPanel({
+  eligibleCount,
+  heldCount,
+  pendingCount,
+  status,
+  receipt,
+  error,
+  accessKey,
+  onAccessKeyChange,
+  onSync,
+}: {
+  eligibleCount: number;
+  heldCount: number;
+  pendingCount: number;
+  status: 'idle' | 'sending' | 'complete' | 'partial' | 'error';
+  receipt: HubSpotSyncReceipt | null;
+  error: string | null;
+  accessKey: string;
+  onAccessKeyChange: (value: string) => void;
+  onSync: () => Promise<void>;
+}) {
+  const failedRecords = receipt?.records.filter((record) => record.status === 'failed') ?? [];
+  const batchCount = Math.min(100, pendingCount);
+  return (
+    <div className="border-b border-white/10 bg-[#07130f]/55 px-5 py-5 sm:px-6">
+      <div className="grid gap-5 lg:grid-cols-[1fr_auto] lg:items-end">
+        <div>
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-sm font-semibold">Governed HubSpot destination</p>
+            <span className="rounded-full bg-[#cdfc54]/10 px-3 py-1 font-mono text-[9px] uppercase text-[#cdfc54]">Upsert by email</span>
+          </div>
+          <p className="mt-2 max-w-3xl text-xs leading-5 text-[#71877c]">{eligibleCount} clean active contacts qualify; {heldCount} merged or unresolved rows stay out. Each click writes at most 100 contacts and returns a result for every email. Portable fields: name, company, phone, job title, and website.</p>
+          <p className="mt-1 text-[10px] leading-5 text-[#566b61]">Lifecycle and symbolic owner routes remain local because safely changing those fields requires reading each portal’s current stages and owner IDs first.</p>
+        </div>
+        <div className="flex flex-wrap items-end gap-2 lg:justify-end">
+          <label className="grid gap-1 font-mono text-[8px] uppercase tracking-wider text-[#71877c]">
+            Access key · if configured
+            <input
+              type="password"
+              value={accessKey}
+              onChange={(event) => onAccessKeyChange(event.target.value)}
+              autoComplete="off"
+              className="w-44 rounded-full border border-white/10 bg-white/[0.04] px-4 py-2.5 text-xs normal-case tracking-normal text-[#dce9e2] outline-none focus:border-[#83bcff]/50"
+            />
+          </label>
+          <button
+            onClick={() => void onSync()}
+            disabled={status === 'sending' || pendingCount === 0}
+            className="rounded-full bg-[#cdfc54] px-5 py-3 text-xs font-bold text-[#07130f] transition hover:bg-[#dcff83] disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {status === 'sending' ? 'Writing to HubSpot…' : pendingCount ? `Sync ${batchCount}${pendingCount > 100 ? ` of ${pendingCount}` : ''} to HubSpot` : eligibleCount ? 'All clean contacts synced' : 'Fix held records first'}
+          </button>
+        </div>
+      </div>
+      <div aria-live="polite" className="mt-4">
+        {receipt && (
+          <div className={`rounded-2xl border px-4 py-3 text-xs ${receipt.failed ? 'border-[#e6bd68]/25 bg-[#e6bd68]/[0.06] text-[#e6cf95]' : 'border-[#cdfc54]/20 bg-[#cdfc54]/[0.06] text-[#bfe57d]'}`}>
+            <span className="font-semibold">HubSpot receipt:</span> {receipt.synced} synced · {receipt.failed} failed · {pendingCount} still pending
+            <span className="ml-2 font-mono text-[9px] text-[#71877c]">{receipt.syncId}</span>
+          </div>
+        )}
+        {error && <div className="rounded-2xl border border-[#ff7b55]/25 bg-[#ff7b55]/[0.06] px-4 py-3 text-xs text-[#ff9d7f]">{error} No unreceipted batch is shown as complete.</div>}
+        {failedRecords.length > 0 && (
+          <div className="mt-2 space-y-1 font-mono text-[9px] text-[#ff9d7f]">
+            {failedRecords.slice(0, 3).map((record) => <p key={record.contactId}>{record.email}: {record.error}</p>)}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 

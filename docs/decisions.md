@@ -34,8 +34,12 @@ The interface never reports a repair from an optimistic click. It requires an al
 
 ## Real mutations, synthetic boundary
 
-The portfolio lab should prove operating behavior without risking a real CRM. Its merge, reroute, and replay workers therefore execute against named synthetic BigQuery contact state. Logical merges retain source rows and canonical pointers for an obvious before/after audit trail. Provider-specific HubSpot and Salesforce mutations remain a later, separately authenticated boundary.
+The portfolio lab should prove operating behavior without risking destructive CRM changes. Merge, reroute, and replay therefore execute against named synthetic BigQuery or browser-local state. The only live CSV destination is an explicit, receipt-verified HubSpot upsert of governed standard contact properties. Deletion, provider-side merge, owner mutation, lifecycle mutation, and Salesforce writes remain separate portal-aware boundaries.
 
 ## Browser-local CSV fallback
 
-CSV mode exists for teams without BigQuery and requires no alternate backend. Imported rows, inferred flags, repairs, and receipts stay in React memory; the user explicitly exports the result. Identity matching defaults to exact normalized email. Plus-addresses are flagged rather than silently collapsed because that alias behavior is not universal across corporate mail systems.
+CSV mode exists for teams without BigQuery and requires no persistent database. Imported rows, inferred flags, and repairs stay in React memory; the user explicitly exports the result or sends governed fields to HubSpot. Identity matching defaults to exact normalized email. Plus-addresses are flagged rather than silently collapsed because that alias behavior is not universal across corporate mail systems.
+
+## Portable HubSpot authentication
+
+Single-portal users can supply a scoped private-app token; teams already using n8n can bind their own HubSpot OAuth credential to the included workflow. The same server contract and receipt validator wrap both paths. Production writes require a separate Control Tower access key so publishing the UI does not publish an open CRM write endpoint.

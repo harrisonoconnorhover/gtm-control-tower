@@ -1,5 +1,5 @@
-contact_id,full_name,email,normalized_email,company,region,segment,lifecycle_stage,expected_lifecycle_stage,owner_id
-CSV-001,Alex Morgan,alex@northstar.ai,,North Star Robotics,Northeast,Enterprise,customer,customer,NE-ENT
-CSV-002," Alex Morgan ",ALEX+EVENT@NORTHSTAR.AI,alex@northstar.ai,"Northstar Robotics, Inc.",Northeast,Enterprise,mql,customer,NE-ENT
-CSV-003,Mia Santos,mia.santos @ gmail.com,,,West,SMB,lead,lead,
-CSV-004,Robin Cho,robin@oakandpine.co,,Oak & Pine,Northeast,Mid-Market,mql,sql,NE-MM
+contact_id,full_name,email,normalized_email,company,phone,job_title,website,region,segment,lifecycle_stage,expected_lifecycle_stage,owner_id
+CSV-001,Alex Morgan,alex@northstar.ai,,North Star Robotics,+14125550101,VP Sales,https://northstar.ai,Northeast,Enterprise,customer,customer,NE-ENT
+CSV-002," Alex Morgan ",ALEX+EVENT@NORTHSTAR.AI,alex@northstar.ai,"Northstar Robotics, Inc.",+14125550101,VP of Sales,https://www.northstar.ai,Northeast,Enterprise,mql,customer,NE-ENT
+CSV-003,Mia Santos,mia.santos @ gmail.com,,,,,,West,SMB,lead,lead,
+CSV-004,Robin Cho,robin@oakandpine.co,,Oak & Pine,+14125550102,Revenue Analyst,https://oakandpine.co,Northeast,Mid-Market,mql,sql,NE-MM

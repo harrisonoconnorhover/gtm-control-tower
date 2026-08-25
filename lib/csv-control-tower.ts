@@ -20,6 +20,9 @@ const fieldAliases = {
   rawEmail: ['raw_email', 'email', 'email_address', 'emailaddress'],
   normalizedEmail: ['normalized_email', 'normalizedemail'],
   company: ['company', 'company_name', 'companyname', 'account', 'account_name'],
+  phone: ['phone', 'phone_number', 'phonenumber', 'mobile_phone', 'mobile'],
+  jobTitle: ['job_title', 'jobtitle', 'title', 'position'],
+  website: ['website', 'website_url', 'company_website', 'url'],
   region: ['region', 'territory', 'sales_region'],
   segment: ['segment', 'market_segment', 'company_segment'],
   lifecycleStage: ['lifecycle_stage', 'lifecyclestage', 'stage', 'status'],
@@ -88,9 +91,14 @@ export function importContactsCsv(csv: string): CsvImportResult {
     return {
       contactId,
       fullName,
+      firstName,
+      lastName,
       rawEmail,
       normalizedEmail,
       company,
+      phone: nullable(readAlias(row, fieldAliases.phone)),
+      jobTitle: nullable(readAlias(row, fieldAliases.jobTitle)),
+      website: nullable(readAlias(row, fieldAliases.website)),
       region,
       segment,
       lifecycleStage,
@@ -231,16 +239,22 @@ export function countCsvRepairCandidates(
 
 export function exportContactsCsv(contacts: LiveContactState[]): string {
   const headers = [
-    'contact_id', 'full_name', 'email', 'normalized_email', 'company', 'region',
+    'contact_id', 'full_name', 'first_name', 'last_name', 'email', 'normalized_email',
+    'company', 'phone', 'job_title', 'website', 'region',
     'segment', 'lifecycle_stage', 'expected_lifecycle_stage', 'owner_id',
     'canonical_contact_id', 'record_status', 'last_action', 'quality_flags',
   ];
   const rows = contacts.map((contact) => [
     contact.contactId,
     contact.fullName,
+    contact.firstName ?? '',
+    contact.lastName ?? '',
     contact.rawEmail,
     contact.normalizedEmail ?? '',
     contact.company ?? '',
+    contact.phone ?? '',
+    contact.jobTitle ?? '',
+    contact.website ?? '',
     contact.region,
     contact.segment,
     contact.lifecycleStage,

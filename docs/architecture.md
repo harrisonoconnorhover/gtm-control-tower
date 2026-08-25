@@ -24,11 +24,13 @@ Users without a warehouse can choose a separate local path:
 CSV file → browser parser + field aliases → in-memory contact state
                                               │
                                   merge / reroute / replay
-                                              │
-                                      repaired CSV export
+                                      │               │
+                              repaired CSV      clean-record gate
+                                                        │
+                                           HubSpot batch upsert
 ```
 
-No CSV bytes cross a network boundary or persist after a refresh. The browser produces receipt-shaped run records so the same contact table and incident controls work in either mode, but the UI clearly labels local execution versus n8n/BigQuery execution.
+No CSV bytes cross a network boundary or persist after a refresh. An explicit HubSpot sync sends only allow-listed, governed contact fields through a server-validated batch contract. The browser produces receipt-shaped local repair records and preserves HubSpot's per-record results so the same contact table shows both boundaries without conflating them.
 
 ## Data contract
 
@@ -58,8 +60,10 @@ The primary walkthrough uses a ten-record synthetic batch with realistic CRM def
 
 The state webhook executes a bounded BigQuery query with a 100 MB billing ceiling, shapes events, funnel measures, contact state, and repair history into a strict dashboard contract, and returns it server-side. The seed webhook replaces only the named synthetic batch. The repair webhook accepts three known scenario keys and executes one parameterized worker: logical duplicate merge, Northeast enterprise reroute, or expected-lifecycle replay. Every run writes a repair receipt and immutable event. The dashboard reports success only after contract validation, then refreshes the changed rows from BigQuery.
 
-The merge is deliberately non-destructive: source rows remain queryable but are marked `merged` and point at the canonical contact. The lab does not mutate live HubSpot or Salesforce records. Public repair access stays disabled until the same-origin mutation routes are authenticated.
+The merge is deliberately non-destructive: source rows remain queryable but are marked `merged` and point at the canonical contact. The CSV destination can upsert governed contact fields to HubSpot only after an explicit click. It does not delete or merge HubSpot records, and Salesforce remains untouched. Production mutation routes require an access key.
 
 ## CSV compatibility path
 
 The CSV parser accepts quoted cells and newlines, maps common CRM header aliases, and infers missing email/company/owner, lifecycle regression, Unicode-domain, plus-address, and exact normalized-email duplicate flags. It does not guess fuzzy name/company identity. A user may provide `normalized_email` when aliases are already governed upstream. Imports are capped at 10 MB to keep synchronous browser work bounded.
+
+HubSpot sync uses the current contacts batch-upsert API, email identity, a 100-record request ceiling, and `objectWriteTraceId` for per-record reconciliation. The server can call HubSpot directly with a private-app bearer token or proxy through the included n8n OAuth workflow. Both produce the same strict receipt contract.
