@@ -4,13 +4,14 @@
 
 - Built the responsive GTM Control Tower with healthy-state metrics, lineage, audit activity, and three interactive chaos scenarios.
 - Added human-approved repair/replay behavior and deterministic unit-tested scenario logic.
-- Added a 5,000-event synthetic CRM generator, BigQuery warehouse schema, three dbt marts with quality tests, and an importable n8n Salesforce-routing workflow.
+- Provisioned a dedicated BigQuery project, loaded 5,000 synthetic events, and validated the n8n webhook-to-BigQuery write with a real test lead.
+- Added three live dbt marts with quality tests, Salesforce Lead metadata, and a version-pinned local n8n Compose service.
 - Documented architecture, setup, demo narrative, honest simulation boundaries, and a résumé-ready portfolio bullet.
-- Upgraded Next.js to 16.3.2; the production dependency audit is clean.
 
 ## Try It
 
 - The local preview is running at `http://localhost:3001/`; click **Trigger chaos mode**, then **Approve repair & replay**.
+- Open n8n at `http://localhost:5678/`; use `docker compose up -d` to restart it later.
 - From this directory, use `npm run dev`, `npm run test`, or `npm run generate:data`.
 
 ## Checks
@@ -18,23 +19,24 @@
 - `npm run test`: 3/3 passed.
 - `npm run lint`: passed with no warnings.
 - `npm run build`: passed.
-- 5,000-event generator check: exact funnel distribution and unique event IDs passed; n8n JSON and dbt YAML parsed successfully.
-- `npm audit --omit=dev --audit-level=high`: 0 vulnerabilities.
+- n8n test webhook and BigQuery insert: passed; `LEAD-DEMO-001` was verified in `raw_crm_events`.
+- `dbt build`: PASS=15, WARN=0, ERROR=0.
 
 ## Decisions
 
-- Chose BigQuery for the first small, credible warehouse slice; documented portability to Snowflake.
+- Used a dedicated BigQuery project and a least-privilege service account; kept credentials only in ignored local runtime state.
 - Kept the browser demo deterministic while providing real connector assets separately and labeling that boundary clearly.
-- Required a human decision before repairs that would merge identities or rewrite lifecycle state.
+- Kept the workflow unpublished until both external connectors can be verified together.
 
 ## Remaining
 
 - Public deployment needs explicit approval.
-- Live Salesforce, BigQuery, and n8n execution needs the user's own credentials and a final node-mapping review in the installed n8n version.
+- Salesforce Support must unfreeze the sole Developer Edition admin before OAuth, metadata deployment, and the final full-workflow test.
 - The dashboard is currently fed by the deterministic scenario model, not a live warehouse API.
+- Remove the superseded fallback BigQuery resources after the Salesforce-to-BigQuery test succeeds.
 
 ## Review First
 
 - `components/control-tower-dashboard.tsx`
 - `integrations/n8n/lead-routing-workflow.json`
-- `README.md`
+- `compose.yaml`

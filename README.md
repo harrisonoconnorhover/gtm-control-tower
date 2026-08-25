@@ -32,13 +32,18 @@ The output is deterministic for a given seed and ignored by Git.
 
 ## Connect the real tools
 
-1. Run [`warehouse/bigquery/setup.sql`](warehouse/bigquery/setup.sql) after replacing `YOUR_PROJECT`.
-2. Import [`integrations/n8n/lead-routing-workflow.json`](integrations/n8n/lead-routing-workflow.json) into n8n.
-3. Attach your own Salesforce and BigQuery credentials in n8n. No secrets are stored here.
-4. Copy `analytics/profiles.yml.example` to your local dbt profiles directory, set the two Google Cloud variables in `.env.example`, and run `dbt build --project-dir analytics`.
-5. POST [`fixtures/lead-signal.json`](fixtures/lead-signal.json) to the n8n webhook and inspect the Salesforce lead, raw BigQuery event, dbt marts, and dashboard.
+1. Start the private local n8n instance with `docker compose up -d`, then open `http://localhost:5678` and create its local owner login.
+2. Run [`warehouse/bigquery/setup.sql`](warehouse/bigquery/setup.sql) after replacing `YOUR_PROJECT`.
+3. Import [`integrations/n8n/lead-routing-workflow.json`](integrations/n8n/lead-routing-workflow.json) into n8n.
+4. Attach your own Salesforce and BigQuery credentials in n8n. No credentials are stored in Git.
+5. Copy `analytics/profiles.yml.example` to your local dbt profiles directory, set the Google Cloud variables in `.env.example`, and run `dbt build --project-dir analytics`.
+6. POST [`fixtures/lead-signal.json`](fixtures/lead-signal.json) to the n8n webhook and inspect the Salesforce lead, raw BigQuery event, dbt marts, and dashboard.
 
 n8n node parameters can vary slightly by installed version; review the Salesforce and BigQuery nodes after import before activating the workflow.
+
+## Live connector validation
+
+The local development stack has been exercised against a dedicated BigQuery project with 5,000 synthetic events. A test lead traveled through the n8n webhook and scoring node, was inserted by the n8n BigQuery node, and was then visible in the warehouse. A subsequent dbt build completed all 15 models and tests successfully. The workflow remains unpublished until the Salesforce development organization is recovered and its OAuth credential is attached.
 
 ## Portfolio demo script
 

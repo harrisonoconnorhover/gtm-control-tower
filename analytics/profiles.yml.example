@@ -3,8 +3,9 @@ gtm_control_tower:
   outputs:
     dev:
       type: bigquery
-      method: oauth
-      project: "{{ env_var('GOOGLE_CLOUD_PROJECT') }}"
+      method: service-account
+      project: "{{ env_var('GOOGLE_CLOUD_PROJECT', 'harrison-gtm-control-tower') }}"
       dataset: "{{ env_var('BIGQUERY_DATASET', 'gtm_control_tower_dbt') }}"
+      keyfile: "{{ env_var('GOOGLE_APPLICATION_CREDENTIALS') }}"
       location: US
       threads: 4

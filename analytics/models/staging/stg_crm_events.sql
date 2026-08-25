@@ -1,4 +1,4 @@
-with source as (
+with raw_events as (
   select * from {{ source('crm', 'raw_crm_events') }}
 ),
 
@@ -20,7 +20,7 @@ deduplicated as (
     lower(trim(email_domain)) as email_domain,
     is_duplicate,
     ingested_at
-  from source
+  from raw_events
   qualify row_number() over (partition by event_id order by ingested_at desc) = 1
 )
 

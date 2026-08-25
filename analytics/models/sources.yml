@@ -7,7 +7,8 @@ sources:
     tables:
       - name: raw_crm_events
         description: Synthetic lifecycle events emitted by the n8n routing workflow.
-        loaded_at_field: ingested_at
-        freshness:
-          warn_after: {count: 2, period: hour}
-          error_after: {count: 6, period: hour}
+        config:
+          loaded_at_field: ingested_at
+          freshness:
+            warn_after: {count: 2, period: hour}
+            error_after: {count: 6, period: hour}

@@ -1,4 +1,5 @@
 {
+  "id": "gtmControlTower01",
   "name": "GTM Control Tower - Lead Routing",
   "nodes": [
     {
@@ -27,17 +28,27 @@
     },
     {
       "parameters": {
+        "authentication": "oAuth2",
         "operation": "upsert",
-        "object": "Lead",
-        "externalIdField": "Email",
-        "externalId": "={{ $json.email }}",
-        "fieldsToSend": {
-          "fields": [
-            { "fieldName": "Company", "fieldValue": "={{ $json.company ?? 'Unknown' }}" },
-            { "fieldName": "LastName", "fieldValue": "={{ $json.last_name ?? 'Unknown' }}" },
-            { "fieldName": "LeadSource", "fieldValue": "={{ $json.source ?? 'Web' }}" },
-            { "fieldName": "Rating", "fieldValue": "={{ $json.score >= 70 ? 'Hot' : 'Warm' }}" }
-          ]
+        "resource": "lead",
+        "externalId": "GTM_Lead_Id__c",
+        "externalIdValue": "={{ $json.lead_id }}",
+        "company": "={{ $json.company ?? 'Unknown' }}",
+        "lastname": "={{ $json.last_name ?? 'Unknown' }}",
+        "additionalFields": {
+          "email": "={{ $json.email }}",
+          "annualRevenue": "={{ $json.annual_revenue }}",
+          "numberOfEmployees": "={{ $json.employee_count }}",
+          "leadSource": "={{ $json.source ?? 'Web' }}",
+          "rating": "={{ $json.score >= 70 ? 'Hot' : 'Warm' }}",
+          "customFieldsUi": {
+            "customFieldsValues": [
+              { "fieldId": "GTM_Score__c", "value": "={{ $json.score }}" },
+              { "fieldId": "GTM_Segment__c", "value": "={{ $json.segment }}" },
+              { "fieldId": "GTM_Routed_Owner__c", "value": "={{ $json.owner_id }}" },
+              { "fieldId": "GTM_Last_Routed_At__c", "value": "={{ $json.event_timestamp }}" }
+            ]
+          }
         },
         "options": {}
       },
@@ -50,19 +61,26 @@
     },
     {
       "parameters": {
+        "authentication": "serviceAccount",
         "operation": "insert",
-        "projectId": "={{ $env.GOOGLE_CLOUD_PROJECT }}",
-        "datasetId": "gtm_control_tower",
-        "tableId": "raw_crm_events",
-        "dataMode": "autoMapInputData",
-        "options": {}
+        "projectId": { "mode": "id", "value": "harrison-gtm-control-tower" },
+        "datasetId": { "mode": "id", "value": "gtm_control_tower" },
+        "tableId": { "mode": "id", "value": "raw_crm_events" },
+        "dataMode": "autoMap",
+        "options": { "ignoreUnknownValues": true }
       },
       "id": "75e1691f-11ee-477b-bf4a-7dcb77f1f1be",
       "name": "Append BigQuery Event",
       "type": "n8n-nodes-base.googleBigQuery",
       "typeVersion": 2.1,
       "position": [70, 80],
-      "notes": "Attach Google BigQuery OAuth2 or service-account credentials after import."
+      "credentials": {
+        "googleApi": {
+          "id": "gtmBigQuerySA01",
+          "name": "GTM Control Tower BigQuery"
+        }
+      },
+      "notes": "Uses the least-privilege GTM Control Tower service account in the local n8n instance."
     },
     {
       "parameters": {

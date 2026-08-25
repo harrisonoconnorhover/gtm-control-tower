@@ -1,0 +1,21 @@
+services:
+  n8n:
+    image: n8nio/n8n@sha256:14c4285bc3034dc5b51034aea393711d27053588e460722bce523453a626f23c
+    container_name: gtm-control-tower-n8n
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5678:5678"
+    environment:
+      GENERIC_TIMEZONE: America/New_York
+      GOOGLE_CLOUD_PROJECT: harrison-gtm-control-tower
+      N8N_DIAGNOSTICS_ENABLED: "false"
+      N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS: "true"
+      N8N_HOST: localhost
+      N8N_PERSONALIZATION_ENABLED: "false"
+      N8N_PORT: "5678"
+      N8N_PROTOCOL: http
+      N8N_SECURE_COOKIE: "false"
+      N8N_VERSION_NOTIFICATIONS_ENABLED: "false"
+      TZ: America/New_York
+    volumes:
+      - ./.runtime/n8n:/home/node/.n8n

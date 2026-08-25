@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>GTM_Segment__c</fullName>
+    <description>Commercial segment assigned by the GTM routing workflow.</description>
+    <label>GTM Segment</label>
+    <required>false</required>
+    <type>Picklist</type>
+    <valueSet>
+        <restricted>true</restricted>
+        <valueSetDefinition>
+            <sorted>false</sorted>
+            <value><fullName>SMB</fullName><default>true</default><label>SMB</label></value>
+            <value><fullName>Mid-Market</fullName><default>false</default><label>Mid-Market</label></value>
+            <value><fullName>Enterprise</fullName><default>false</default><label>Enterprise</label></value>
+        </valueSetDefinition>
+    </valueSet>
+</CustomField>
