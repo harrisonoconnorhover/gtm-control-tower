@@ -1,5 +1,11 @@
 contact_id,full_name,email,normalized_email,company,phone,job_title,website,region,segment,lifecycle_stage,expected_lifecycle_stage,owner_id
 CSV-001,Alex Morgan,alex@northstar.ai,,North Star Robotics,+14125550101,VP Sales,https://northstar.ai,Northeast,Enterprise,customer,customer,NE-ENT
-CSV-002," Alex Morgan ",ALEX+EVENT@NORTHSTAR.AI,alex@northstar.ai,"Northstar Robotics, Inc.",+14125550101,VP of Sales,https://www.northstar.ai,Northeast,Enterprise,mql,customer,NE-ENT
-CSV-003,Mia Santos,mia.santos @ gmail.com,,,,,,West,SMB,lead,lead,
-CSV-004,Robin Cho,robin@oakandpine.co,,Oak & Pine,+14125550102,Revenue Analyst,https://oakandpine.co,Northeast,Mid-Market,mql,sql,NE-MM
+CSV-002," Alex Morgan ",ALEX@NORTHSTAR.AI,alex@northstar.ai,"NORTHSTAR ROBOTICS, INC.",+14125550101,VP of Sales,https://www.northstar.ai,Northeast,Enterprise,mql,customer,NE-ENT
+CSV-003,Jamie Ortega,jamie.ortega@northstar.ai,,Northstar Robotics LLC,+14125550103,Revenue Operations,https://northstar.ai,Northeast,Enterprise,sql,sql,NE-ENT
+CSV-004,Priya Shah,priya@arc-labs.com,,Arc Labs,+14155550104,COO,https://arc-labs.com,Northeast,Enterprise,mql,mql,NE-ENT
+CSV-005,Priya S.,Priya+EVENT@ARC-LABS.COM,priya@arc-labs.com,"ARC LABS, LTD",+14155550104,Operations Lead,https://www.arc-labs.com,Northeast,Enterprise,lead,mql,NE-ENT
+CSV-006,Mia Santos,mia.santos @ gmail.com,,,,,,West,SMB,lead,lead,
+CSV-007,Lukas Müller,lukas@überdata.example,lukas@uberdata.example,ÜberData GmbH,+49305550107,Sales Systems,https://uberdata.example,Central,Mid-Market,sql,sql,CE-MM
+CSV-008,Sam Lee,sales@acme.test,,Acme Corp.,+12125550108,VP Revenue,https://acme.test,Northeast,Enterprise,opportunity,opportunity,NE-ENT
+CSV-009,Sam Lee,sam.lee@acme.test,,ACME,+12125550109,Account Executive,https://www.acme.test,Northeast,Enterprise,sql,sql,NE-ENT
+CSV-010,Robin Cho,robin@oakandpine.co,,Oak & Pine,+14125550102,Revenue Analyst,https://oakandpine.co,Northeast,Mid-Market,mql,sql,NE-MM

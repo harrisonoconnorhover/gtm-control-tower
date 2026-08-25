@@ -6,8 +6,8 @@ services:
     ports:
       - "127.0.0.1:5678:5678"
     environment:
-      GENERIC_TIMEZONE: America/New_York
-      GOOGLE_CLOUD_PROJECT: harrison-gtm-control-tower
+      GENERIC_TIMEZONE: ${GENERIC_TIMEZONE:-UTC}
+      GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-}
       N8N_DIAGNOSTICS_ENABLED: "false"
       N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS: "true"
       N8N_HOST: localhost
@@ -16,6 +16,6 @@ services:
       N8N_PROTOCOL: http
       N8N_SECURE_COOKIE: "false"
       N8N_VERSION_NOTIFICATIONS_ENABLED: "false"
-      TZ: America/New_York
+      TZ: ${GENERIC_TIMEZONE:-UTC}
     volumes:
       - ./.runtime/n8n:/home/node/.n8n

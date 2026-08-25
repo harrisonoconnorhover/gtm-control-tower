@@ -235,6 +235,31 @@ export function ControlTowerDashboard() {
     };
   }, [refreshLiveState]);
 
+  function loadCsvWorkspace(source: string, fileName: string, startWalkthrough = false) {
+    const imported = importContactsCsv(source);
+    const snapshot = imported.contacts.map((contact) => ({ ...contact, qualityFlags: [...contact.qualityFlags] }));
+    setCsvContacts(snapshot);
+    setOriginalCsvContacts(snapshot.map((contact) => ({ ...contact, qualityFlags: [...contact.qualityFlags] })));
+    setCsvRepairHistory([]);
+    setCsvFileName(fileName);
+    setCsvStatus('ready');
+    setCsvError(null);
+    setHubSpotSyncStatus('idle');
+    setHubSpotSyncReceipt(null);
+    setHubSpotSyncError(null);
+    setSalesforceSyncStatus('idle');
+    setSalesforceSyncReceipt(null);
+    setSalesforceSyncError(null);
+    setDataMode('csv');
+    setActiveScenario('duplicate-surge');
+    setRepaired(false);
+    setRepairStatus('idle');
+    setRepairReceipt(null);
+    setRepairError(null);
+    setDemoStage(startWalkthrough ? 0 : demoStages.length - 1);
+    setDemoRunning(startWalkthrough);
+  }
+
   useEffect(() => {
     if (!demoRunning) return;
     if (demoStage >= demoStages.length - 1) {
@@ -271,6 +296,18 @@ export function ControlTowerDashboard() {
       }
       await refreshLiveState();
     } catch (error) {
+      if (startWalkthrough) {
+        try {
+          const localDemo = await fetch('/control-tower-csv-template.csv', { cache: 'no-store' });
+          if (!localDemo.ok) throw new Error('The bundled CSV demo is unavailable.');
+          loadCsvWorkspace(await localDemo.text(), 'synthetic-funky-crm.csv', true);
+          setSeedStatus('error');
+          setSeedError('Warehouse connectors are not configured, so this run is using the browser-local synthetic batch.');
+          return;
+        } catch {
+          // Keep the native connector error below if the local demo also fails.
+        }
+      }
       setSeedStatus('error');
       setSeedError(error instanceof Error ? error.message : 'The synthetic CRM batch could not be reset.');
     }
@@ -285,27 +322,7 @@ export function ControlTowerDashboard() {
     setCsvError(null);
     try {
       if (file.size > 10 * 1024 * 1024) throw new Error('Use a CSV smaller than 10 MB for this browser-local workspace.');
-      const imported = importContactsCsv(await file.text());
-      const snapshot = imported.contacts.map((contact) => ({ ...contact, qualityFlags: [...contact.qualityFlags] }));
-      setCsvContacts(snapshot);
-      setOriginalCsvContacts(snapshot.map((contact) => ({ ...contact, qualityFlags: [...contact.qualityFlags] })));
-      setCsvRepairHistory([]);
-      setCsvFileName(file.name);
-      setCsvStatus('ready');
-      setHubSpotSyncStatus('idle');
-      setHubSpotSyncReceipt(null);
-      setHubSpotSyncError(null);
-      setSalesforceSyncStatus('idle');
-      setSalesforceSyncReceipt(null);
-      setSalesforceSyncError(null);
-      setDataMode('csv');
-      setActiveScenario('duplicate-surge');
-      setRepaired(false);
-      setRepairStatus('idle');
-      setRepairReceipt(null);
-      setRepairError(null);
-      setDemoRunning(false);
-      setDemoStage(demoStages.length - 1);
+      loadCsvWorkspace(await file.text(), file.name);
     } catch (error) {
       setCsvStatus('error');
       setCsvError(error instanceof Error ? error.message : 'The CSV could not be imported.');
@@ -477,7 +494,15 @@ export function ControlTowerDashboard() {
             </div>
           </div>
           <div className="flex flex-wrap items-center justify-end gap-2">
-            <span className="rounded-full border border-[#cdfc54]/20 bg-[#cdfc54]/[0.07] px-3 py-2 font-mono text-[10px] uppercase tracking-wider text-[#cdfc54]">HubSpot → BigQuery validated</span>
+            <a
+              href="https://github.com/harrisonoconnorhover/gtm-control-tower"
+              target="_blank"
+              rel="noreferrer"
+              className="rounded-full border border-[#cdfc54]/20 bg-[#cdfc54]/[0.07] px-3 py-2 font-mono text-[10px] uppercase tracking-wider text-[#cdfc54] transition hover:border-[#cdfc54]/45 hover:bg-[#cdfc54]/[0.12] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#cdfc54]"
+            >
+              Open source · GitHub ↗
+            </a>
+            <span className="rounded-full border border-[#cdfc54]/20 bg-[#cdfc54]/[0.07] px-3 py-2 font-mono text-[10px] uppercase tracking-wider text-[#cdfc54]">Self-hosted · MIT</span>
             <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 font-mono text-[10px] uppercase tracking-wider text-[#9db1a7]">Synthetic demo data</span>
           </div>
         </header>

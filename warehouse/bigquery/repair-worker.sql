@@ -6,7 +6,7 @@ declare approved_at timestamp default current_timestamp();
 declare event_id string default concat('REPAIR-', @scenario, '-', @request_id);
 
 if @scenario = 'duplicate-surge' then
-  update `harrison-gtm-control-tower.gtm_control_tower.crm_contact_state` as target
+  update `__GCP_PROJECT_ID__.__BIGQUERY_SOURCE_DATASET__.crm_contact_state` as target
   set
     canonical_contact_id = duplicates.canonical_contact_id,
     record_status = 'merged',
@@ -19,7 +19,7 @@ if @scenario = 'duplicate-surge' then
         partition by normalized_email
         order by if(raw_email = lower(trim(raw_email)), 0, 1), contact_id
       ) as canonical_contact_id
-    from `harrison-gtm-control-tower.gtm_control_tower.crm_contact_state`
+    from `__GCP_PROJECT_ID__.__BIGQUERY_SOURCE_DATASET__.crm_contact_state`
     where seed_batch = 'funky-v1'
       and normalized_email is not null
       and 'duplicate_identity' in unnest(quality_flags)
@@ -30,7 +30,7 @@ if @scenario = 'duplicate-surge' then
     and target.record_status = 'active';
   set affected = @@row_count;
 
-  update `harrison-gtm-control-tower.gtm_control_tower.crm_contact_state`
+  update `__GCP_PROJECT_ID__.__BIGQUERY_SOURCE_DATASET__.crm_contact_state`
   set
     quality_flags = array(
       select flag from unnest(quality_flags) as flag where flag != 'duplicate_identity'
@@ -42,7 +42,7 @@ if @scenario = 'duplicate-surge' then
     and 'duplicate_identity' in unnest(quality_flags);
 
 elseif @scenario = 'routing-overload' then
-  update `harrison-gtm-control-tower.gtm_control_tower.crm_contact_state`
+  update `__GCP_PROJECT_ID__.__BIGQUERY_SOURCE_DATASET__.crm_contact_state`
   set
     owner_id = 'CE-ENT-OVERFLOW',
     last_action = 'rerouted_from_ne_enterprise',
@@ -55,7 +55,7 @@ elseif @scenario = 'routing-overload' then
   set affected = @@row_count;
 
 elseif @scenario = 'stage-regression' then
-  update `harrison-gtm-control-tower.gtm_control_tower.crm_contact_state`
+  update `__GCP_PROJECT_ID__.__BIGQUERY_SOURCE_DATASET__.crm_contact_state`
   set
     lifecycle_stage = expected_lifecycle_stage,
     quality_flags = array(
@@ -72,12 +72,12 @@ else
   raise using message = 'Unsupported repair scenario';
 end if;
 
-insert into `harrison-gtm-control-tower.gtm_control_tower.repair_runs` (
+insert into `__GCP_PROJECT_ID__.__BIGQUERY_SOURCE_DATASET__.repair_runs` (
   run_id, seed_batch, scenario, action, status, affected_records, started_at, finished_at
 )
 values (@request_id, 'funky-v1', @scenario, @action, 'executed', affected, approved_at, current_timestamp());
 
-insert into `harrison-gtm-control-tower.gtm_control_tower.raw_crm_events` (
+insert into `__GCP_PROJECT_ID__.__BIGQUERY_SOURCE_DATASET__.raw_crm_events` (
   event_id, lead_id, account_id, event_type, lifecycle_stage, event_timestamp,
   source, region, segment, owner_id, route_seconds, annual_revenue,
   opportunity_amount, email_domain, is_duplicate

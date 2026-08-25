@@ -2,41 +2,40 @@
 
 ## Finished
 
-- Added Salesforce as an independently selectable governed CSV destination alongside HubSpot.
-- Added query-first Lead identity: create on zero email matches, update on one, and hold duplicate matches.
-- Added Salesforce-required company/last-name gates, standard-field limits, 100-record batches, and per-row receipts.
-- Added a safe CLI-to-`.env.local` configurator; its ignored file is owner-readable and never prints the token.
-- Live proof created then updated the same synthetic Salesforce Lead `00Qg5000007ulRdEAI`.
+- Converted the project into a portable MIT-licensed self-hosted release.
+- Added zero-account CSV mode plus credential-free BigQuery/n8n asset rendering.
+- Added a ten-record browser fallback so the public demo works without connectors.
+- Removed personal project IDs and n8n credential bindings from public templates.
+- Added CI, setup/doctor tooling, dependency auditing, and history secret scanning.
 
 ## Try It
 
-- Run `sf org login web --alias gtm-control-tower-salesforce --set-default`, then `npm run configure:salesforce`.
-- Restart the site, import a CSV, and repair held duplicates or lifecycle regressions.
-- Sync either destination; Salesforce creates or updates Leads and shows the native ID on each row.
+- Run `npm ci && npm run setup && npm run dev` for the credential-free demo.
+- Import `public/control-tower-csv-template.csv`, then execute merge, reroute, and replay.
+- Add `--project your-gcp-project` to `npm run setup` for generated warehouse assets.
 
 ## Checks
 
-- `npm test`: 20/20 passed, including Salesforce gate, contracts, receipt aggregation, and query-first branching.
-- `npm run lint`: passed with no warnings.
-- `npm run build`: passed with both CRM API routes.
-- Live Salesforce route receipts: one create, then one update; both used `00Qg5000007ulRdEAI`.
-- SOQL verification: exactly one matching Lead with the updated title.
+- `npm test`: 24/24 passed.
+- `npm run lint`: passed.
+- `npm run build`: passed.
+- `npm run audit`: zero known vulnerabilities.
+- `npm run doctor`, custom history scan, and Gitleaks: passed with no leaks.
 
 ## Decisions
 
-- Salesforce `Email` is not treated as an external ID; ambiguous matches fail closed.
-- Send only governed standard fields; never write owner, status, lifecycle, score, or custom fields.
-- Require `CONTROL_TOWER_SYNC_KEY` for production writes and refreshable OAuth for long-running hosting.
+- Ship as an open-source self-hosted toolkit, not a shared multi-tenant SaaS.
+- Keep the public demo credential-free; CRM writes stay server-side and disabled by default.
+- Render local connector assets under ignored `.runtime` rather than storing account IDs.
 
 ## Remaining
 
-- Optionally archive the clearly labeled HubSpot and Salesforce proof records after review.
-- Add lifecycle/owner preflight only if provider-side writes become valuable.
-- Replace the copied local Salesforce token with connected-app token refresh for hosted use.
-- Add stable authenticated HTTPS hosting before publishing CRM mutation controls.
+- Create and push the public GitHub repository, then confirm CI.
+- Deploy the credential-free build and add its URL to repository metadata.
+- Publish the `v0.1.0` release after the remote checks are green.
 
 ## Review First
 
-- `app/api/control-tower/salesforce-sync/route.ts`
-- `lib/salesforce-sync.ts`
-- `docs/salesforce-csv-setup.md`
+- `README.md`
+- `scripts/setup.mjs`
+- `docs/self-hosting.md`

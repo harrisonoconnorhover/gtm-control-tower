@@ -58,7 +58,9 @@ describe('CSV control tower', () => {
   it('keeps the downloadable template importable with HubSpot standard fields', () => {
     const template = readFileSync(new URL('../public/control-tower-csv-template.csv', import.meta.url), 'utf8');
     const contacts = importContactsCsv(template).contacts;
-    expect(contacts).toHaveLength(4);
+    expect(contacts).toHaveLength(10);
+    expect(countCsvRepairCandidates(contacts, 'duplicate-surge')).toBe(2);
+    expect(countCsvRepairCandidates(contacts, 'stage-regression')).toBe(3);
     expect(contacts[0]).toMatchObject({ phone: '+14125550101', jobTitle: 'VP Sales', website: 'https://northstar.ai' });
   });
 });

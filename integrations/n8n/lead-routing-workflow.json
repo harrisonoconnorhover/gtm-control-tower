@@ -43,12 +43,6 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.5,
       "position": [-190, -120],
-      "credentials": {
-        "hubspotOAuth2Api": {
-          "id": "gtmHubSpotOAuth01",
-          "name": "GTM Control Tower HubSpot"
-        }
-      },
       "notes": "Primary live CRM path. Uses HubSpot's current contacts batch-upsert API because the bundled HubSpot node still calls a legacy contacts endpoint."
     },
     {
@@ -89,8 +83,8 @@
       "parameters": {
         "authentication": "serviceAccount",
         "operation": "insert",
-        "projectId": { "mode": "id", "value": "harrison-gtm-control-tower" },
-        "datasetId": { "mode": "id", "value": "gtm_control_tower" },
+        "projectId": { "mode": "id", "value": "__GCP_PROJECT_ID__" },
+        "datasetId": { "mode": "id", "value": "__BIGQUERY_SOURCE_DATASET__" },
         "tableId": { "mode": "id", "value": "raw_crm_events" },
         "dataMode": "autoMap",
         "options": { "ignoreUnknownValues": true }
@@ -100,13 +94,7 @@
       "type": "n8n-nodes-base.googleBigQuery",
       "typeVersion": 2.1,
       "position": [70, 80],
-      "credentials": {
-        "googleApi": {
-          "id": "gtmBigQuerySA01",
-          "name": "GTM Control Tower BigQuery"
-        }
-      },
-      "notes": "Uses the least-privilege GTM Control Tower service account in the local n8n instance."
+      "notes": "Bind your own least-privilege BigQuery credential after importing this workflow."
     },
     {
       "parameters": {

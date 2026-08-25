@@ -1,82 +1,107 @@
 # GTM Control Tower
 
-A portfolio-grade revenue systems lab that shows how a GTM engineer can turn messy CRM activity into fast routing, tested metrics, and safe operational decisions.
+[![CI](https://github.com/harrisonoconnorhover/gtm-control-tower/actions/workflows/ci.yml/badge.svg)](https://github.com/harrisonoconnorhover/gtm-control-tower/actions/workflows/ci.yml)
+[![MIT License](https://img.shields.io/badge/license-MIT-174b45.svg)](LICENSE)
 
-The browser demo is intentionally self-contained and uses synthetic data. The repository also includes deployable building blocks for Salesforce, n8n, BigQuery, and dbt—without credentials or customer data.
+A self-hosted revenue-systems lab that turns deliberately messy CRM data into
+governed records, explainable routing, trusted funnel metrics, and receipted
+repairs.
 
-## What it demonstrates
+It works immediately with a CSV. Teams can then add HubSpot, Salesforce, n8n,
+BigQuery, and dbt without putting credentials or organization-specific IDs in
+the repository.
 
-- Salesforce Leads and HubSpot Contacts as independently selectable CRM destinations.
-- n8n scoring, segmentation, routing, idempotent upsert, and warehouse delivery.
-- BigQuery as an append-only CRM event warehouse.
-- dbt models for funnel conversion, routing SLA, and data quality.
-- A server-side operations API that reads current warehouse truth through n8n without exposing BigQuery credentials to the browser.
-- Allow-listed merge, reroute, and lifecycle-replay workers that mutate synthetic CRM state and produce native n8n receipts plus immutable BigQuery audit events.
-- A no-warehouse CSV mode that imports, diagnoses, repairs, exports, and explicitly syncs governed contacts to HubSpot and/or Salesforce.
-- A guided six-stage walkthrough that visibly ingests, enriches, routes, tests, models, and diagnoses a deliberately messy lead batch.
-- A responsive decision dashboard with three interactive failure simulations and a human-approved repair flow.
+## What it does
 
-## Try the dashboard
+- Imports a CSV locally, recognizes common CRM headers, and diagnoses duplicate
+  identity, missing fields, bad email, owner gaps, and lifecycle regression.
+- Executes reviewed merge, reroute, and lifecycle-replay workers and exports the
+  repaired state.
+- Syncs eligible contacts to HubSpot Contacts or Salesforce Leads with strict
+  per-record receipts and bounded batches.
+- Routes synthetic leads through n8n, records immutable BigQuery events, and
+  models funnel conversion, routing SLA, and data quality with dbt.
+- Shows how operational defects change revenue metrics instead of presenting a
+  static dashboard.
+
+## Quick start: no accounts required
+
+Requires Node.js 22.13 or newer.
 
 ```bash
-npm install
+git clone https://github.com/harrisonoconnorhover/gtm-control-tower.git
+cd gtm-control-tower
+npm ci
+npm run setup
 npm run dev
 ```
 
-Start n8n with `docker compose up -d`, then open the printed dashboard URL. The live warehouse strip and healthy-state funnel query BigQuery through n8n every 30 seconds. Click **Run messy lead batch** to reset ten synthetic CRM rows and watch them move from raw input to governed action. Execute the merge worker, then use **Test another failure** to run the reroute and lifecycle-replay workers. The contact table refreshes from BigQuery after every valid n8n receipt.
+Open the printed URL, choose **Import your CSV**, and try
+[`public/control-tower-csv-template.csv`](public/control-tower-csv-template.csv).
+CSV contents and repairs stay in browser memory until you explicitly export or
+sync governed records.
 
-CSV analysis needs no n8n or warehouse. HubSpot supports a private-app token or the included n8n OAuth workflow. Salesforce uses a server-side access token and instance URL.
-
-## Use a CSV instead of BigQuery
-
-Click **Import your CSV** in the contact lab. The file is parsed locally and never uploaded. Common headers such as `id`, `name`, `email`, `company`, `region`, `segment`, `stage`, and `owner` are recognized automatically. The local workers can then:
-
-- mark duplicate rows as merged while preserving their canonical contact pointer;
-- reroute active Northeast enterprise rows to the overflow owner;
-- restore rows whose lifecycle stage is behind `expected_lifecycle_stage`;
-- export the complete repaired state as a new CSV;
-- explicitly sync clean active contacts to HubSpot Contacts and/or Salesforce Leads in receipt-verified batches of 100.
-
-Use the included [CSV template](public/control-tower-csv-template.csv) for the full recommended schema. Automatic merging uses exact normalized email identity. A provided `normalized_email` may deliberately connect aliases; plus-addresses are flagged but are not silently merged. See [CSV to HubSpot setup](docs/hubspot-csv-setup.md) and [CSV to Salesforce setup](docs/salesforce-csv-setup.md) for connector details.
-
-## Generate synthetic CRM data
+## Add the warehouse and workflow layer
 
 ```bash
-npm run generate:data
-# Or: python3 scripts/generate_synthetic_crm.py --count 5000 --output data/crm_events.csv
+npm run setup -- --project your-gcp-project --dataset gtm_control_tower
 ```
 
-The output is deterministic for a given seed and ignored by Git.
+The setup command renders personalized SQL and credential-free n8n workflows
+under ignored `.runtime/generated`. Run the generated BigQuery setup, import
+the generated workflows, and bind your own least-privilege credentials in n8n.
+Templates are inactive by default.
 
-## Connect the real tools
+```text
+CSV --------------------> browser repair lab ------> repaired CSV
+  \                                                   /     \
+   \----> governed contact gate ----------------> HubSpot  Salesforce
 
-1. Start the private local n8n instance with `docker compose up -d`, then open `http://localhost:5678` and create its local owner login.
-2. Run [`warehouse/bigquery/setup.sql`](warehouse/bigquery/setup.sql) after replacing `YOUR_PROJECT`.
-3. Import [`integrations/n8n/lead-routing-workflow.json`](integrations/n8n/lead-routing-workflow.json), [`integrations/n8n/control-tower-ops-workflow.json`](integrations/n8n/control-tower-ops-workflow.json), and [`integrations/n8n/csv-hubspot-sync-workflow.json`](integrations/n8n/csv-hubspot-sync-workflow.json) into n8n.
-4. Attach your BigQuery and HubSpot credentials in n8n, then follow [CSV to Salesforce setup](docs/salesforce-csv-setup.md) for the portable query-first Lead path. No credentials are stored in Git.
-5. Copy `analytics/profiles.yml.example` to your local dbt profiles directory, set the Google Cloud variables in `.env.example`, and run `dbt build --project-dir analytics`.
-6. POST [`fixtures/lead-signal.json`](fixtures/lead-signal.json) to the n8n webhook, then inspect the HubSpot contact, raw BigQuery event, dbt marts, and dashboard. Import a CSV to demonstrate the independent Salesforce destination.
+Lead webhook -> n8n normalize/score/route -> CRM + BigQuery -> dbt -> dashboard
+                                             ^                    |
+                                             +--- receipted repair+
+```
 
-n8n node parameters can vary slightly by installed version; review every credentialed node after import before activating a workflow. The disabled Salesforce fan-out node is an organization-specific custom-field example; the verified CSV connector does not depend on it.
+Full instructions: [self-hosting](docs/self-hosting.md),
+[HubSpot](docs/hubspot-csv-setup.md), and
+[Salesforce](docs/salesforce-csv-setup.md).
 
-Run `npm run sync:n8n` after changing either SQL worker; it deterministically embeds the current SQL and response contracts in the Operations API workflow.
+## Safe-by-default boundaries
 
-## Live connector validation
+- The browser never receives CRM, n8n, or Google credentials.
+- Public templates contain no credential bindings or private project IDs.
+- CRM writes are explicit, allow-listed, standard-field-only, and reconciled by
+  native receipt.
+- Multiple matching Salesforce Leads fail closed instead of selecting one.
+- Production CRM writes remain disabled until `CONTROL_TOWER_SYNC_KEY` is set.
+- The synthetic merge keeps source rows queryable and points them to a canonical
+  record rather than deleting them.
 
-The local development stack has been exercised against a dedicated BigQuery project with synthetic events and mutable synthetic CRM state. Its production lead webhook is published locally with HubSpot as the live n8n CRM adapter. In one cumulative warehouse run, n8n merged two duplicate rows, rerouted five active Northeast enterprise rows, and replayed one lifecycle regression. The CSV path completed a live HubSpot upsert and native validation-failure proof. Salesforce access is restored and API v67.0 metadata confirmed the portable field limits. The query-first connector created synthetic Lead `00Qg5000007ulRdEAI`, then updated that same ID on the second call; a native SOQL read returned exactly one record with the changed value.
+This repository is a self-hosted reference implementation, not a managed
+multi-tenant service. Put any hosted instance behind authentication and HTTPS.
 
-## Production boundary
+## Development
 
-The browser calls same-origin route handlers; only those server handlers know CRM or n8n credentials. CSV bytes remain local until an explicit destination action; that request sends only governed standard fields, never the original file. Production CRM sync is disabled unless `CONTROL_TOWER_SYNC_KEY` is configured. Imported workspace state still clears on refresh unless the repaired CSV was exported.
+```bash
+npm run doctor
+npm run check:secrets
+npm test
+npm run lint
+npm run build
+```
 
-## Portfolio demo script
+Run `npm run sync:n8n` after changing the state, seed, or repair SQL so the
+portable Operations workflow stays in sync.
 
-1. Start with **Run messy lead batch**: ten flawed records arrive with duplicates, inconsistent formatting, plus-addressing, missing identity, Unicode, and impossible lifecycle changes.
-2. Follow the six controls as n8n normalizes, enriches, scores, and routes; BigQuery preserves the event history; and dbt tests and rebuilds the funnel.
-3. Compare the raw and governed record, then show how bad writes are contained instead of silently corrupting metrics.
-4. Explain the revenue consequence—not merely the technical symptom—then execute the merge, reroute, or replay worker. Show the native n8n receipt, affected-row count, and refreshed contact state.
-5. Close on the integration boundary: HubSpot, Salesforce, n8n, BigQuery, and dbt are present; the dashboard uses deterministic synthetic data and keeps each provider write separately controlled and receipted.
+## Verified integration behavior
 
-**Résumé-ready bullet:** Built a dual-CRM GTM control tower spanning HubSpot, Salesforce, n8n, BigQuery, dbt, and a decision dashboard; implemented governed query-first CRM sync, warehouse logging, funnel and routing-SLA models, and receipt-verified workers for duplicate merge, capacity rerouting, and lifecycle replay.
+The connector paths have been exercised against dedicated development systems
+using synthetic data: n8n and BigQuery executed the three repair classes;
+HubSpot completed a native contact upsert plus validation-failure proof; and
+Salesforce completed query-first create, update, and SOQL read-back against the
+same synthetic Lead identity. The public release contains no access tokens,
+credential IDs, customer data, or personal CRM record IDs.
 
-See [`docs/architecture.md`](docs/architecture.md) for system design and [`HANDOFF.md`](HANDOFF.md) for current status.
+See [architecture](docs/architecture.md), [decisions](docs/decisions.md),
+[security](SECURITY.md), and [contributing](CONTRIBUTING.md). Licensed under
+the [MIT License](LICENSE).

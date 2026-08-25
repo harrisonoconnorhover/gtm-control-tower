@@ -1,7 +1,17 @@
 {
-  "name": "sites-project",
+  "name": "gtm-control-tower",
   "version": "0.1.0",
   "private": true,
+  "description": "A self-hosted GTM systems lab for repairing messy CRM data, routing leads, and modeling revenue operations.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/harrisonoconnorhover/gtm-control-tower.git"
+  },
+  "homepage": "https://github.com/harrisonoconnorhover/gtm-control-tower#readme",
+  "bugs": {
+    "url": "https://github.com/harrisonoconnorhover/gtm-control-tower/issues"
+  },
   "engines": {
     "node": ">=22.13.0"
   },
@@ -11,34 +21,38 @@
     "start": "vinext start",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "test": "vitest run",
+    "setup": "node scripts/setup.mjs",
+    "doctor": "node scripts/doctor.mjs",
+    "check:secrets": "node scripts/check-secrets.mjs",
+    "audit": "npm audit --audit-level=high",
     "generate:data": "python3 scripts/generate_synthetic_crm.py",
     "configure:salesforce": "node scripts/configure_salesforce_env.mjs",
     "sync:n8n": "node scripts/sync_ops_workflow.mjs"
   },
   "dependencies": {
     "next": "16.3.2",
-    "react": "19.2.6",
-    "react-dom": "19.2.6"
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
   },
   "devDependencies": {
-    "@cloudflare/vite-plugin": "1.37.1",
-    "@cloudflare/workers-types": "4.20260515.1",
+    "@cloudflare/vite-plugin": "1.53.1",
+    "@cloudflare/workers-types": "5.20260825.1",
     "@openai/sites-vite-plugin": "^0.1.0 || ^0.2.0",
     "@tailwindcss/postcss": "4.2.1",
     "@types/node": "22.19.19",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
     "@vitejs/plugin-react": "6.0.2",
-    "@vitejs/plugin-rsc": "0.5.26",
+    "@vitejs/plugin-rsc": "0.5.34",
     "eslint": "9.39.4",
     "eslint-config-next": "16.2.6",
-    "react-server-dom-webpack": "19.2.6",
+    "react-server-dom-webpack": "19.2.8",
     "tailwindcss": "4.2.1",
     "typescript": "5.9.3",
-    "vitest": "4.0.18",
-    "vinext": "1.0.0-beta.3",
-    "vite": "8.0.13",
-    "wrangler": "4.92.0"
+    "vinext": "1.0.0-beta.8",
+    "vite": "8.2.2",
+    "vitest": "4.1.11",
+    "wrangler": "4.125.0"
   },
   "type": "module"
 }

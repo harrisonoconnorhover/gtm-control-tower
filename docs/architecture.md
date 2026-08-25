@@ -41,7 +41,7 @@ Every CRM event has a stable `event_id`, lead/account identity, lifecycle stage,
 
 The n8n workflow accepts a lead signal, normalizes fields, derives score/segment/owner, upserts HubSpot, and appends the event to BigQuery. The local production webhook has HubSpot and BigQuery live. Its disabled Salesforce node remains an organization-specific custom-field example; the verified Salesforce path is the portable query-first CSV connector shown below.
 
-The local n8n and BigQuery leg has been validated end to end with a synthetic lead. HubSpot is the live n8n CRM leg. Salesforce has a separate query-first CSV Lead connector so its required fields and duplicate-email ambiguity can be handled without custom fields.
+The n8n and BigQuery leg has been validated end to end with synthetic leads. HubSpot is the validated n8n CRM leg. Salesforce has a separate query-first CSV Lead connector so its required fields and duplicate-email ambiguity can be handled without custom fields. Public workflow templates contain portable placeholders and no credential bindings.
 
 ## Analytics path
 

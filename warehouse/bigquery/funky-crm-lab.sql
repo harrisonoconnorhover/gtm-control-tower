@@ -1,7 +1,7 @@
 -- Deliberately messy, synthetic CRM state used by the live repair demo.
 -- Safe to rerun: only the named synthetic batch is replaced.
 
-create table if not exists `harrison-gtm-control-tower.gtm_control_tower.crm_contact_state` (
+create table if not exists `__GCP_PROJECT_ID__.__BIGQUERY_SOURCE_DATASET__.crm_contact_state` (
   seed_batch string not null,
   contact_id string not null,
   full_name string,
@@ -23,7 +23,7 @@ create table if not exists `harrison-gtm-control-tower.gtm_control_tower.crm_con
 )
 cluster by seed_batch, record_status, region, segment;
 
-create table if not exists `harrison-gtm-control-tower.gtm_control_tower.repair_runs` (
+create table if not exists `__GCP_PROJECT_ID__.__BIGQUERY_SOURCE_DATASET__.repair_runs` (
   run_id string not null,
   seed_batch string not null,
   scenario string not null,
@@ -36,13 +36,13 @@ create table if not exists `harrison-gtm-control-tower.gtm_control_tower.repair_
 partition by date(started_at)
 cluster by seed_batch, scenario, status;
 
-delete from `harrison-gtm-control-tower.gtm_control_tower.crm_contact_state`
+delete from `__GCP_PROJECT_ID__.__BIGQUERY_SOURCE_DATASET__.crm_contact_state`
 where seed_batch = 'funky-v1';
 
-delete from `harrison-gtm-control-tower.gtm_control_tower.repair_runs`
+delete from `__GCP_PROJECT_ID__.__BIGQUERY_SOURCE_DATASET__.repair_runs`
 where seed_batch = 'funky-v1';
 
-insert into `harrison-gtm-control-tower.gtm_control_tower.crm_contact_state` (
+insert into `__GCP_PROJECT_ID__.__BIGQUERY_SOURCE_DATASET__.crm_contact_state` (
   seed_batch, contact_id, full_name, raw_email, normalized_email, company,
   normalized_company, region, segment, annual_revenue, lifecycle_stage,
   expected_lifecycle_stage, owner_id, canonical_contact_id, record_status,
@@ -64,5 +64,5 @@ select
   'funky-v1' as seed_batch,
   count(*) as contact_count,
   countif(array_length(quality_flags) > 0) as dirty_records
-from `harrison-gtm-control-tower.gtm_control_tower.crm_contact_state`
+from `__GCP_PROJECT_ID__.__BIGQUERY_SOURCE_DATASET__.crm_contact_state`
 where seed_batch = 'funky-v1';

@@ -43,12 +43,6 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.5,
       "position": [-90, 80],
-      "credentials": {
-        "hubspotOAuth2Api": {
-          "id": "gtmHubSpotOAuth01",
-          "name": "GTM Control Tower HubSpot"
-        }
-      },
       "notes": "Bind a HubSpot OAuth2 credential with crm.objects.contacts.write after import. Uses only portable standard contact properties."
     },
     {

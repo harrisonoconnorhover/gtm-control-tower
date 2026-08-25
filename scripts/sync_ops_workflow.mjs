@@ -1,51 +1,15 @@
 import { readFile, writeFile } from 'node:fs/promises';
+import { DATASET_TOKEN, PROJECT_TOKEN, stripWorkflowCredentials } from './lib/portable-assets.mjs';
 
 const workflowPath = new URL('../integrations/n8n/control-tower-ops-workflow.json', import.meta.url);
 const seedSqlPath = new URL('../warehouse/bigquery/funky-crm-lab.sql', import.meta.url);
 const repairSqlPath = new URL('../warehouse/bigquery/repair-worker.sql', import.meta.url);
+const stateSqlPath = new URL('../warehouse/bigquery/state.sql', import.meta.url);
 
 const workflow = JSON.parse(await readFile(workflowPath, 'utf8'));
 const seedSql = await readFile(seedSqlPath, 'utf8');
 const repairSql = await readFile(repairSqlPath, 'utf8');
-
-const stateSql = `with events as (
-  select *
-  from \`harrison-gtm-control-tower.gtm_control_tower.raw_crm_events\`
-  where event_timestamp >= timestamp_sub(current_timestamp(), interval 30 day)
-)
-select
-  current_timestamp() as generated_at,
-  count(*) as total_events,
-  countif(event_type = 'lead_routed') as routed_leads,
-  countif(is_duplicate) as duplicate_events,
-  countif(owner_id is null) as missing_owner_events,
-  coalesce(approx_quantiles(if(event_type in ('lead_routed', 'lifecycle_changed'), route_seconds, null), 100 ignore nulls)[safe_offset(50)], 0) as median_route_seconds,
-  round(100 * safe_divide(countif(not is_duplicate and owner_id is not null and lifecycle_stage in ('lead', 'mql', 'sql', 'opportunity', 'closed_won')), greatest(count(*), 1)), 1) as quality_rate,
-  max(event_timestamp) as latest_event_at,
-  count(distinct lead_id) as leads,
-  count(distinct if(lifecycle_stage in ('mql', 'sql', 'opportunity', 'closed_won'), lead_id, null)) as mqls,
-  count(distinct if(lifecycle_stage in ('sql', 'opportunity', 'closed_won'), lead_id, null)) as sqls,
-  count(distinct if(lifecycle_stage in ('opportunity', 'closed_won'), lead_id, null)) as opportunities,
-  count(distinct if(lifecycle_stage = 'closed_won', lead_id, null)) as closed_won,
-  max(if(starts_with(event_type, 'repair_'), event_timestamp, null)) as latest_repair_at,
-  array_agg(if(starts_with(event_type, 'repair_'), regexp_replace(event_type, r'^repair_(approved|executed)_', ''), null) ignore nulls order by event_timestamp desc limit 1)[safe_offset(0)] as latest_repair_scenario,
-  coalesce((
-    select to_json_string(array_agg(struct(
-      contact_id, full_name, raw_email, normalized_email, company, region, segment,
-      lifecycle_stage, expected_lifecycle_stage, owner_id, canonical_contact_id,
-      record_status, last_action, quality_flags, updated_at
-    ) order by contact_id))
-    from \`harrison-gtm-control-tower.gtm_control_tower.crm_contact_state\`
-    where seed_batch = 'funky-v1'
-  ), '[]') as contacts_json,
-  coalesce((
-    select to_json_string(array_agg(struct(
-      run_id, scenario, action, status, affected_records, finished_at
-    ) order by finished_at desc limit 6))
-    from \`harrison-gtm-control-tower.gtm_control_tower.repair_runs\`
-    where seed_batch = 'funky-v1'
-  ), '[]') as repair_history_json
-from events`;
+const stateSql = await readFile(stateSqlPath, 'utf8');
 
 const shapeStateCode = `const row = $json;
 const number = (value) => Number(value ?? 0);
@@ -134,7 +98,7 @@ repairNode.name = 'Execute Repair Worker';
 repairNode.parameters = {
   authentication: 'serviceAccount',
   operation: 'executeQuery',
-  projectId: { mode: 'id', value: 'harrison-gtm-control-tower' },
+  projectId: { mode: 'id', value: PROJECT_TOKEN },
   sqlQuery: repairSql,
   options: {
     location: 'US',
@@ -178,7 +142,7 @@ workflow.nodes.push(
     parameters: {
       authentication: 'serviceAccount',
       operation: 'executeQuery',
-      projectId: { mode: 'id', value: 'harrison-gtm-control-tower' },
+      projectId: { mode: 'id', value: PROJECT_TOKEN },
       sqlQuery: seedSql,
       options: {
         location: 'US',
@@ -192,9 +156,6 @@ workflow.nodes.push(
     type: 'n8n-nodes-base.googleBigQuery',
     typeVersion: 2.1,
     position: [-400, 520],
-    credentials: {
-      googleApi: { id: 'gtmBigQuerySA01', name: 'GTM Control Tower BigQuery' },
-    },
   },
   {
     parameters: {
@@ -224,4 +185,10 @@ workflow.connections['Reset Funky CRM State'] = {
   main: [[{ node: 'Return Seed Receipt', type: 'main', index: 0 }]],
 };
 
-await writeFile(workflowPath, `${JSON.stringify(workflow, null, 2)}\n`);
+for (const workflowNode of workflow.nodes) {
+  if (workflowNode.type !== 'n8n-nodes-base.googleBigQuery') continue;
+  if (workflowNode.parameters.projectId) workflowNode.parameters.projectId.value = PROJECT_TOKEN;
+  if (workflowNode.parameters.datasetId) workflowNode.parameters.datasetId.value = DATASET_TOKEN;
+}
+
+await writeFile(workflowPath, `${JSON.stringify(stripWorkflowCredentials(workflow), null, 2)}\n`);

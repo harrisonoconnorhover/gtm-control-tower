@@ -3,7 +3,7 @@ version: 2
 sources:
   - name: crm
     database: "{{ env_var('GOOGLE_CLOUD_PROJECT') }}"
-    schema: gtm_control_tower
+    schema: "{{ env_var('BIGQUERY_SOURCE_DATASET', 'gtm_control_tower') }}"
     tables:
       - name: raw_crm_events
         description: Synthetic lifecycle events emitted by the n8n routing workflow.
