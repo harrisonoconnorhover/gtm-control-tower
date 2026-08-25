@@ -21,6 +21,7 @@
 - `npm run build`: passed.
 - `npm run audit`: zero known vulnerabilities.
 - `npm run doctor`, custom history scan, and Gitleaks: passed with no leaks.
+- Public smoke test: loaded anonymously and ran all ten browser-local demo contacts.
 
 ## Decisions
 
@@ -30,9 +31,9 @@
 
 ## Remaining
 
-- Create and push the public GitHub repository, then confirm CI.
-- Deploy the credential-free build and add its URL to repository metadata.
-- Publish the `v0.1.0` release after the remote checks are green.
+- Connectors remain optional and must be configured by each self-hosting operator.
+- Use refreshable OAuth and app-level authentication before enabling hosted CRM writes.
+- Add a custom domain only if the generated demo URL becomes a presentation concern.
 
 ## Review First
 

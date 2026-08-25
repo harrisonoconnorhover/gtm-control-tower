@@ -3,6 +3,8 @@
 [![CI](https://github.com/harrisonoconnorhover/gtm-control-tower/actions/workflows/ci.yml/badge.svg)](https://github.com/harrisonoconnorhover/gtm-control-tower/actions/workflows/ci.yml)
 [![MIT License](https://img.shields.io/badge/license-MIT-174b45.svg)](LICENSE)
 
+**[Try the credential-free live demo](https://gtm-control-tower.deleteddeleted.chatgpt.site/)**
+
 A self-hosted revenue-systems lab that turns deliberately messy CRM data into
 governed records, explainable routing, trusted funnel metrics, and receipted
 repairs.
