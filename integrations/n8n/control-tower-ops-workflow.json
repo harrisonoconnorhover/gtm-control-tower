@@ -13,15 +13,21 @@
       "name": "Get Dashboard State",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [-660, -180],
+      "position": [
+        -660,
+        -180
+      ],
       "webhookId": "gtm-control-tower-state"
     },
     {
       "parameters": {
         "authentication": "serviceAccount",
         "operation": "executeQuery",
-        "projectId": { "mode": "id", "value": "harrison-gtm-control-tower" },
-        "sqlQuery": "with events as (\n  select *\n  from `harrison-gtm-control-tower.gtm_control_tower.raw_crm_events`\n  where event_timestamp >= timestamp_sub(current_timestamp(), interval 30 day)\n)\nselect\n  current_timestamp() as generated_at,\n  count(*) as total_events,\n  countif(event_type = 'lead_routed') as routed_leads,\n  countif(is_duplicate) as duplicate_events,\n  countif(owner_id is null) as missing_owner_events,\n  coalesce(approx_quantiles(if(event_type in ('lead_routed', 'lifecycle_changed'), route_seconds, null), 100 ignore nulls)[safe_offset(50)], 0) as median_route_seconds,\n  round(100 * safe_divide(countif(not is_duplicate and owner_id is not null and lifecycle_stage in ('lead', 'mql', 'sql', 'opportunity', 'closed_won')), greatest(count(*), 1)), 1) as quality_rate,\n  max(event_timestamp) as latest_event_at,\n  count(distinct lead_id) as leads,\n  count(distinct if(lifecycle_stage in ('mql', 'sql', 'opportunity', 'closed_won'), lead_id, null)) as mqls,\n  count(distinct if(lifecycle_stage in ('sql', 'opportunity', 'closed_won'), lead_id, null)) as sqls,\n  count(distinct if(lifecycle_stage in ('opportunity', 'closed_won'), lead_id, null)) as opportunities,\n  count(distinct if(lifecycle_stage = 'closed_won', lead_id, null)) as closed_won,\n  max(if(starts_with(event_type, 'repair_approved_'), event_timestamp, null)) as latest_repair_at,\n  array_agg(if(starts_with(event_type, 'repair_approved_'), replace(event_type, 'repair_approved_', ''), null) ignore nulls order by event_timestamp desc limit 1)[safe_offset(0)] as latest_repair_scenario\nfrom events",
+        "projectId": {
+          "mode": "id",
+          "value": "harrison-gtm-control-tower"
+        },
+        "sqlQuery": "with events as (\n  select *\n  from `harrison-gtm-control-tower.gtm_control_tower.raw_crm_events`\n  where event_timestamp >= timestamp_sub(current_timestamp(), interval 30 day)\n)\nselect\n  current_timestamp() as generated_at,\n  count(*) as total_events,\n  countif(event_type = 'lead_routed') as routed_leads,\n  countif(is_duplicate) as duplicate_events,\n  countif(owner_id is null) as missing_owner_events,\n  coalesce(approx_quantiles(if(event_type in ('lead_routed', 'lifecycle_changed'), route_seconds, null), 100 ignore nulls)[safe_offset(50)], 0) as median_route_seconds,\n  round(100 * safe_divide(countif(not is_duplicate and owner_id is not null and lifecycle_stage in ('lead', 'mql', 'sql', 'opportunity', 'closed_won')), greatest(count(*), 1)), 1) as quality_rate,\n  max(event_timestamp) as latest_event_at,\n  count(distinct lead_id) as leads,\n  count(distinct if(lifecycle_stage in ('mql', 'sql', 'opportunity', 'closed_won'), lead_id, null)) as mqls,\n  count(distinct if(lifecycle_stage in ('sql', 'opportunity', 'closed_won'), lead_id, null)) as sqls,\n  count(distinct if(lifecycle_stage in ('opportunity', 'closed_won'), lead_id, null)) as opportunities,\n  count(distinct if(lifecycle_stage = 'closed_won', lead_id, null)) as closed_won,\n  max(if(starts_with(event_type, 'repair_'), event_timestamp, null)) as latest_repair_at,\n  array_agg(if(starts_with(event_type, 'repair_'), regexp_replace(event_type, r'^repair_(approved|executed)_', ''), null) ignore nulls order by event_timestamp desc limit 1)[safe_offset(0)] as latest_repair_scenario,\n  coalesce((\n    select to_json_string(array_agg(struct(\n      contact_id, full_name, raw_email, normalized_email, company, region, segment,\n      lifecycle_stage, expected_lifecycle_stage, owner_id, canonical_contact_id,\n      record_status, last_action, quality_flags, updated_at\n    ) order by contact_id))\n    from `harrison-gtm-control-tower.gtm_control_tower.crm_contact_state`\n    where seed_batch = 'funky-v1'\n  ), '[]') as contacts_json,\n  coalesce((\n    select to_json_string(array_agg(struct(\n      run_id, scenario, action, status, affected_records, finished_at\n    ) order by finished_at desc limit 6))\n    from `harrison-gtm-control-tower.gtm_control_tower.repair_runs`\n    where seed_batch = 'funky-v1'\n  ), '[]') as repair_history_json\nfrom events",
         "options": {
           "location": "US",
           "maximumBytesBilled": "100000000",
@@ -33,7 +39,10 @@
       "name": "Query Live Warehouse",
       "type": "n8n-nodes-base.googleBigQuery",
       "typeVersion": 2.1,
-      "position": [-400, -180],
+      "position": [
+        -400,
+        -180
+      ],
       "credentials": {
         "googleApi": {
           "id": "gtmBigQuerySA01",
@@ -43,25 +52,33 @@
     },
     {
       "parameters": {
-        "jsCode": "const row = $json;\nconst number = (value) => Number(value ?? 0);\nreturn [{ json: {\n  source: 'bigquery',\n  generatedAt: row.generated_at,\n  latestEventAt: row.latest_event_at,\n  metrics: {\n    totalEvents: number(row.total_events),\n    routedLeads: number(row.routed_leads),\n    duplicateEvents: number(row.duplicate_events),\n    missingOwnerEvents: number(row.missing_owner_events),\n    medianRouteSeconds: number(row.median_route_seconds),\n    qualityRate: number(row.quality_rate),\n  },\n  funnel: [\n    { label: 'Leads', count: number(row.leads) },\n    { label: 'MQL', count: number(row.mqls) },\n    { label: 'SQL', count: number(row.sqls) },\n    { label: 'Open opp', count: number(row.opportunities) },\n    { label: 'Won', count: number(row.closed_won) },\n  ],\n  latestRepair: row.latest_repair_scenario ? { scenario: row.latest_repair_scenario, approvedAt: row.latest_repair_at } : null,\n} }];"
+        "jsCode": "const row = $json;\nconst number = (value) => Number(value ?? 0);\nconst parse = (value) => {\n  try {\n    const parsed = JSON.parse(value ?? '[]');\n    return Array.isArray(parsed) ? parsed : [];\n  } catch { return []; }\n};\nconst contacts = parse(row.contacts_json).map((contact) => ({\n  contactId: contact.contact_id,\n  fullName: contact.full_name,\n  rawEmail: contact.raw_email,\n  normalizedEmail: contact.normalized_email,\n  company: contact.company,\n  region: contact.region,\n  segment: contact.segment,\n  lifecycleStage: contact.lifecycle_stage,\n  expectedLifecycleStage: contact.expected_lifecycle_stage,\n  ownerId: contact.owner_id,\n  canonicalContactId: contact.canonical_contact_id,\n  recordStatus: contact.record_status,\n  lastAction: contact.last_action,\n  qualityFlags: contact.quality_flags ?? [],\n  updatedAt: contact.updated_at,\n}));\nconst repairHistory = parse(row.repair_history_json).map((repair) => ({\n  runId: repair.run_id,\n  scenario: repair.scenario,\n  action: repair.action,\n  status: repair.status,\n  affectedRecords: number(repair.affected_records),\n  finishedAt: repair.finished_at,\n}));\nreturn [{ json: {\n  source: 'bigquery',\n  generatedAt: row.generated_at,\n  latestEventAt: row.latest_event_at,\n  metrics: {\n    totalEvents: number(row.total_events),\n    routedLeads: number(row.routed_leads),\n    duplicateEvents: number(row.duplicate_events),\n    missingOwnerEvents: number(row.missing_owner_events),\n    medianRouteSeconds: number(row.median_route_seconds),\n    qualityRate: number(row.quality_rate),\n  },\n  funnel: [\n    { label: 'Leads', count: number(row.leads) },\n    { label: 'MQL', count: number(row.mqls) },\n    { label: 'SQL', count: number(row.sqls) },\n    { label: 'Open opp', count: number(row.opportunities) },\n    { label: 'Won', count: number(row.closed_won) },\n  ],\n  contacts,\n  repairHistory,\n  latestRepair: row.latest_repair_scenario ? { scenario: row.latest_repair_scenario, approvedAt: row.latest_repair_at } : null,\n} }];"
       },
       "id": "568576c9-1205-40f9-a9cf-ad27c8d13f67",
       "name": "Shape Dashboard State",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [-140, -180]
+      "position": [
+        -140,
+        -180
+      ]
     },
     {
       "parameters": {
         "respondWith": "json",
         "responseBody": "={{ $json }}",
-        "options": { "responseCode": 200 }
+        "options": {
+          "responseCode": 200
+        }
       },
       "id": "a0cff113-b44f-47cb-bc28-042d75d01c9b",
       "name": "Return Dashboard State",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.4,
-      "position": [120, -180]
+      "position": [
+        120,
+        -180
+      ]
     },
     {
       "parameters": {
@@ -74,53 +91,65 @@
       "name": "Approve Repair",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [-660, 180],
+      "position": [
+        -660,
+        180
+      ],
       "webhookId": "gtm-control-tower-repair"
     },
     {
       "parameters": {
-        "jsCode": "const body = $json.body ?? $json;\nconst actions = {\n  'duplicate-surge': 'quarantine_and_merge_duplicate_cluster',\n  'routing-overload': 'shift_enterprise_overflow_to_central',\n  'stage-regression': 'reject_regression_and_replay_event_log',\n};\nconst scenario = String(body.scenario ?? '');\nif (!actions[scenario]) throw new Error('Unsupported repair scenario');\nconst approvedAt = new Date().toISOString();\nconst requestId = String(body.requestId ?? `request-${Date.now()}`).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 80);\nreturn [{ json: {\n  event_id: `REPAIR-${scenario}-${requestId}`,\n  lead_id: 'CONTROL-TOWER',\n  account_id: 'SYSTEM',\n  event_type: `repair_approved_${scenario}`,\n  lifecycle_stage: 'lead',\n  event_timestamp: approvedAt,\n  source: 'control_tower',\n  region: scenario,\n  segment: 'System',\n  owner_id: 'CONTROL-TOWER',\n  route_seconds: 0,\n  annual_revenue: 0,\n  opportunity_amount: 0,\n  email_domain: null,\n  is_duplicate: false,\n  scenario,\n  action: actions[scenario],\n  request_id: requestId,\n  approved_at: approvedAt\n} }];"
+        "jsCode": "const body = $json.body ?? $json;\nconst actions = {\n  'duplicate-surge': 'merge_duplicate_identity_clusters',\n  'routing-overload': 'reroute_northeast_enterprise_overflow',\n  'stage-regression': 'replay_expected_lifecycle_state',\n};\nconst scenario = String(body.scenario ?? '');\nif (!actions[scenario]) throw new Error('Unsupported repair scenario');\nconst requestId = String(body.requestId ?? `request-${Date.now()}`).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 80);\nreturn [{ json: { scenario, action: actions[scenario], request_id: requestId } }];"
       },
       "id": "76545ef5-ddcb-4e40-9a48-7b39fab78350",
       "name": "Validate Repair",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [-400, 180]
+      "position": [
+        -400,
+        180
+      ]
     },
     {
       "parameters": {
         "authentication": "serviceAccount",
-        "operation": "insert",
-        "projectId": { "mode": "id", "value": "harrison-gtm-control-tower" },
-        "datasetId": { "mode": "id", "value": "gtm_control_tower" },
-        "tableId": { "mode": "id", "value": "raw_crm_events" },
-        "dataMode": "define",
-        "fieldsUi": {
-          "values": [
-            { "fieldId": "event_id", "fieldValue": "={{ $json.event_id }}" },
-            { "fieldId": "lead_id", "fieldValue": "={{ $json.lead_id }}" },
-            { "fieldId": "account_id", "fieldValue": "={{ $json.account_id }}" },
-            { "fieldId": "event_type", "fieldValue": "={{ $json.event_type }}" },
-            { "fieldId": "lifecycle_stage", "fieldValue": "={{ $json.lifecycle_stage }}" },
-            { "fieldId": "event_timestamp", "fieldValue": "={{ $json.event_timestamp }}" },
-            { "fieldId": "source", "fieldValue": "={{ $json.source }}" },
-            { "fieldId": "region", "fieldValue": "={{ $json.region }}" },
-            { "fieldId": "segment", "fieldValue": "={{ $json.segment }}" },
-            { "fieldId": "owner_id", "fieldValue": "={{ $json.owner_id }}" },
-            { "fieldId": "route_seconds", "fieldValue": "={{ $json.route_seconds }}" },
-            { "fieldId": "annual_revenue", "fieldValue": "={{ $json.annual_revenue }}" },
-            { "fieldId": "opportunity_amount", "fieldValue": "={{ $json.opportunity_amount }}" },
-            { "fieldId": "email_domain", "fieldValue": "={{ $json.email_domain }}" },
-            { "fieldId": "is_duplicate", "fieldValue": "={{ $json.is_duplicate }}" }
-          ]
+        "operation": "executeQuery",
+        "projectId": {
+          "mode": "id",
+          "value": "harrison-gtm-control-tower"
         },
-        "options": {}
+        "sqlQuery": "-- Parameterized n8n worker. Required STRING parameters:\n-- @scenario, @action, @request_id\n\ndeclare affected int64 default 0;\ndeclare approved_at timestamp default current_timestamp();\ndeclare event_id string default concat('REPAIR-', @scenario, '-', @request_id);\n\nif @scenario = 'duplicate-surge' then\n  update `harrison-gtm-control-tower.gtm_control_tower.crm_contact_state` as target\n  set\n    canonical_contact_id = duplicates.canonical_contact_id,\n    record_status = 'merged',\n    last_action = 'merged_into_canonical',\n    updated_at = approved_at\n  from (\n    select\n      contact_id,\n      first_value(contact_id) over (\n        partition by normalized_email\n        order by if(raw_email = lower(trim(raw_email)), 0, 1), contact_id\n      ) as canonical_contact_id\n    from `harrison-gtm-control-tower.gtm_control_tower.crm_contact_state`\n    where seed_batch = 'funky-v1'\n      and normalized_email is not null\n      and 'duplicate_identity' in unnest(quality_flags)\n  ) as duplicates\n  where target.seed_batch = 'funky-v1'\n    and target.contact_id = duplicates.contact_id\n    and target.contact_id != duplicates.canonical_contact_id\n    and target.record_status = 'active';\n  set affected = @@row_count;\n\n  update `harrison-gtm-control-tower.gtm_control_tower.crm_contact_state`\n  set\n    quality_flags = array(\n      select flag from unnest(quality_flags) as flag where flag != 'duplicate_identity'\n    ),\n    last_action = 'canonical_record_retained',\n    updated_at = approved_at\n  where seed_batch = 'funky-v1'\n    and record_status = 'active'\n    and 'duplicate_identity' in unnest(quality_flags);\n\nelseif @scenario = 'routing-overload' then\n  update `harrison-gtm-control-tower.gtm_control_tower.crm_contact_state`\n  set\n    owner_id = 'CE-ENT-OVERFLOW',\n    last_action = 'rerouted_from_ne_enterprise',\n    updated_at = approved_at\n  where seed_batch = 'funky-v1'\n    and record_status = 'active'\n    and region = 'Northeast'\n    and segment = 'Enterprise'\n    and owner_id = 'NE-ENT';\n  set affected = @@row_count;\n\nelseif @scenario = 'stage-regression' then\n  update `harrison-gtm-control-tower.gtm_control_tower.crm_contact_state`\n  set\n    lifecycle_stage = expected_lifecycle_stage,\n    quality_flags = array(\n      select flag from unnest(quality_flags) as flag where flag != 'stage_regression'\n    ),\n    last_action = 'lifecycle_replayed',\n    updated_at = approved_at\n  where seed_batch = 'funky-v1'\n    and record_status = 'active'\n    and 'stage_regression' in unnest(quality_flags);\n  set affected = @@row_count;\n\nelse\n  raise using message = 'Unsupported repair scenario';\nend if;\n\ninsert into `harrison-gtm-control-tower.gtm_control_tower.repair_runs` (\n  run_id, seed_batch, scenario, action, status, affected_records, started_at, finished_at\n)\nvalues (@request_id, 'funky-v1', @scenario, @action, 'executed', affected, approved_at, current_timestamp());\n\ninsert into `harrison-gtm-control-tower.gtm_control_tower.raw_crm_events` (\n  event_id, lead_id, account_id, event_type, lifecycle_stage, event_timestamp,\n  source, region, segment, owner_id, route_seconds, annual_revenue,\n  opportunity_amount, email_domain, is_duplicate\n)\nvalues (\n  event_id, 'CONTROL-TOWER', 'SYSTEM', concat('repair_executed_', @scenario),\n  'lead', approved_at, 'control_tower', @scenario, 'System', 'CONTROL-TOWER',\n  0, 0, 0, null, false\n);\n\nselect\n  true as accepted,\n  'executed' as status,\n  @scenario as scenario,\n  @action as action,\n  @request_id as request_id,\n  event_id,\n  affected as affected_records,\n  approved_at;\n",
+        "options": {
+          "location": "US",
+          "maximumBytesBilled": "100000000",
+          "returnAsNumbers": true,
+          "timeoutMs": 30000,
+          "queryParameters": {
+            "namedParameters": [
+              {
+                "name": "scenario",
+                "value": "={{ $json.scenario }}"
+              },
+              {
+                "name": "action",
+                "value": "={{ $json.action }}"
+              },
+              {
+                "name": "request_id",
+                "value": "={{ $json.request_id }}"
+              }
+            ]
+          }
+        }
       },
       "id": "8937f1d1-e408-4d9e-afcd-4bb3d2ae8101",
-      "name": "Record Repair in BigQuery",
+      "name": "Execute Repair Worker",
       "type": "n8n-nodes-base.googleBigQuery",
       "typeVersion": 2.1,
-      "position": [-140, 180],
+      "position": [
+        -140,
+        180
+      ],
       "credentials": {
         "googleApi": {
           "id": "gtmBigQuerySA01",
@@ -131,27 +160,184 @@
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ { accepted: true, status: 'recorded', scenario: $('Validate Repair').item.json.scenario, action: $('Validate Repair').item.json.action, requestId: $('Validate Repair').item.json.request_id, eventId: $('Validate Repair').item.json.event_id, approvedAt: $('Validate Repair').item.json.approved_at } }}",
-        "options": { "responseCode": 202 }
+        "responseBody": "={{ { accepted: String($json.accepted) === 'true', status: $json.status, scenario: $json.scenario, action: $json.action, requestId: $json.request_id, eventId: $json.event_id, affectedRecords: Number($json.affected_records), approvedAt: $json.approved_at } }}",
+        "options": {
+          "responseCode": 202
+        }
       },
       "id": "2eb68f66-95fb-4c42-ad98-cc9bb5255492",
       "name": "Return Repair Receipt",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.4,
-      "position": [120, 180]
+      "position": [
+        120,
+        180
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "gtm-control-tower-seed-funky",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "e7c74dcf-f38a-49c1-87ef-d9ac94d7ac82",
+      "name": "Seed Funky CRM",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -660,
+        520
+      ],
+      "webhookId": "gtm-control-tower-seed-funky"
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "executeQuery",
+        "projectId": {
+          "mode": "id",
+          "value": "harrison-gtm-control-tower"
+        },
+        "sqlQuery": "-- Deliberately messy, synthetic CRM state used by the live repair demo.\n-- Safe to rerun: only the named synthetic batch is replaced.\n\ncreate table if not exists `harrison-gtm-control-tower.gtm_control_tower.crm_contact_state` (\n  seed_batch string not null,\n  contact_id string not null,\n  full_name string,\n  raw_email string,\n  normalized_email string,\n  company string,\n  normalized_company string,\n  region string,\n  segment string,\n  annual_revenue int64,\n  lifecycle_stage string,\n  expected_lifecycle_stage string,\n  owner_id string,\n  canonical_contact_id string,\n  record_status string,\n  last_action string,\n  quality_flags array<string>,\n  updated_at timestamp\n)\ncluster by seed_batch, record_status, region, segment;\n\ncreate table if not exists `harrison-gtm-control-tower.gtm_control_tower.repair_runs` (\n  run_id string not null,\n  seed_batch string not null,\n  scenario string not null,\n  action string not null,\n  status string not null,\n  affected_records int64,\n  started_at timestamp,\n  finished_at timestamp\n)\npartition by date(started_at)\ncluster by seed_batch, scenario, status;\n\ndelete from `harrison-gtm-control-tower.gtm_control_tower.crm_contact_state`\nwhere seed_batch = 'funky-v1';\n\ndelete from `harrison-gtm-control-tower.gtm_control_tower.repair_runs`\nwhere seed_batch = 'funky-v1';\n\ninsert into `harrison-gtm-control-tower.gtm_control_tower.crm_contact_state` (\n  seed_batch, contact_id, full_name, raw_email, normalized_email, company,\n  normalized_company, region, segment, annual_revenue, lifecycle_stage,\n  expected_lifecycle_stage, owner_id, canonical_contact_id, record_status,\n  last_action, quality_flags, updated_at\n)\nvalues\n  ('funky-v1', 'F-001', 'Alex Morgan', 'alex@northstar.ai', 'alex@northstar.ai', 'North Star Robotics', 'northstar robotics', 'Northeast', 'Enterprise', 42000000, 'customer', 'customer', 'NE-ENT', null, 'active', 'seeded', ['duplicate_identity'], current_timestamp()),\n  ('funky-v1', 'F-002', ' Alex  Morgan ', ' ALEX@NORTHSTAR.AI ', 'alex@northstar.ai', 'NORTHSTAR ROBOTICS, INC.', 'northstar robotics', 'Northeast', 'Enterprise', 42000000, 'mql', 'customer', 'NE-ENT', null, 'active', 'seeded', ['duplicate_identity', 'stage_regression'], current_timestamp()),\n  ('funky-v1', 'F-003', 'Jamie Ortega', 'jamie.ortega@northstar.ai', 'jamie.ortega@northstar.ai', 'Northstar Robotics LLC', 'northstar robotics', 'Northeast', 'Enterprise', 42000000, 'sql', 'sql', 'NE-ENT', null, 'active', 'seeded', [], current_timestamp()),\n  ('funky-v1', 'F-004', 'Priya Shah', 'priya@arc-labs.com', 'priya@arc-labs.com', 'Arc Labs', 'arc labs', 'Northeast', 'Enterprise', 28000000, 'mql', 'mql', 'NE-ENT', null, 'active', 'seeded', ['duplicate_identity'], current_timestamp()),\n  ('funky-v1', 'F-005', 'Priya S.', 'Priya+EVENT@ARC-LABS.COM', 'priya@arc-labs.com', 'ARC LABS, LTD', 'arc labs', 'Northeast', 'Enterprise', 28000000, 'lead', 'mql', 'NE-ENT', null, 'active', 'seeded', ['duplicate_identity'], current_timestamp()),\n  ('funky-v1', 'F-006', 'Mia Santos', 'mia.santos @ gmail.com', null, null, null, 'West', 'SMB', 0, 'lead', 'lead', null, null, 'active', 'seeded', ['invalid_email', 'missing_company', 'missing_owner'], current_timestamp()),\n  ('funky-v1', 'F-007', 'Lukas Müller', 'lukas@überdata.example', 'lukas@uberdata.example', 'ÜberData GmbH', 'uberdata', 'Central', 'Mid-Market', 9000000, 'sql', 'sql', 'CE-MM', null, 'active', 'seeded', ['unicode_domain_normalized'], current_timestamp()),\n  ('funky-v1', 'F-008', 'Sam Lee', 'sales@acme.test', 'sales@acme.test', 'Acme Corp.', 'acme', 'Northeast', 'Enterprise', 65000000, 'opportunity', 'opportunity', 'NE-ENT', null, 'active', 'seeded', [], current_timestamp()),\n  ('funky-v1', 'F-009', 'Sam Lee', 'sam.lee@acme.test', 'sam.lee@acme.test', 'ACME', 'acme', 'Northeast', 'Enterprise', 65000000, 'sql', 'sql', 'NE-ENT', null, 'active', 'seeded', [], current_timestamp()),\n  ('funky-v1', 'F-010', 'Robin Cho', 'robin@oakandpine.co', 'robin@oakandpine.co', 'Oak & Pine', 'oak and pine', 'Northeast', 'Mid-Market', 12000000, 'mql', 'sql', 'NE-MM', null, 'active', 'seeded', ['stage_regression'], current_timestamp());\n\nselect\n  'funky-v1' as seed_batch,\n  count(*) as contact_count,\n  countif(array_length(quality_flags) > 0) as dirty_records\nfrom `harrison-gtm-control-tower.gtm_control_tower.crm_contact_state`\nwhere seed_batch = 'funky-v1';\n",
+        "options": {
+          "location": "US",
+          "maximumBytesBilled": "100000000",
+          "returnAsNumbers": true,
+          "timeoutMs": 30000
+        }
+      },
+      "id": "38b780d8-f280-42da-86bf-d750b3d34f58",
+      "name": "Reset Funky CRM State",
+      "type": "n8n-nodes-base.googleBigQuery",
+      "typeVersion": 2.1,
+      "position": [
+        -400,
+        520
+      ],
+      "credentials": {
+        "googleApi": {
+          "id": "gtmBigQuerySA01",
+          "name": "GTM Control Tower BigQuery"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { accepted: true, status: 'seeded', batch: $json.seed_batch, contacts: Number($json.contact_count), dirtyRecords: Number($json.dirty_records) } }}",
+        "options": {
+          "responseCode": 201
+        }
+      },
+      "id": "a654635f-1d92-4e97-a893-3810483e1046",
+      "name": "Return Seed Receipt",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        -140,
+        520
+      ]
     }
   ],
   "connections": {
-    "Get Dashboard State": { "main": [[{ "node": "Query Live Warehouse", "type": "main", "index": 0 }]] },
-    "Query Live Warehouse": { "main": [[{ "node": "Shape Dashboard State", "type": "main", "index": 0 }]] },
-    "Shape Dashboard State": { "main": [[{ "node": "Return Dashboard State", "type": "main", "index": 0 }]] },
-    "Approve Repair": { "main": [[{ "node": "Validate Repair", "type": "main", "index": 0 }]] },
-    "Validate Repair": { "main": [[{ "node": "Record Repair in BigQuery", "type": "main", "index": 0 }]] },
-    "Record Repair in BigQuery": { "main": [[{ "node": "Return Repair Receipt", "type": "main", "index": 0 }]] }
+    "Get Dashboard State": {
+      "main": [
+        [
+          {
+            "node": "Query Live Warehouse",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query Live Warehouse": {
+      "main": [
+        [
+          {
+            "node": "Shape Dashboard State",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shape Dashboard State": {
+      "main": [
+        [
+          {
+            "node": "Return Dashboard State",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Approve Repair": {
+      "main": [
+        [
+          {
+            "node": "Validate Repair",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Repair": {
+      "main": [
+        [
+          {
+            "node": "Execute Repair Worker",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute Repair Worker": {
+      "main": [
+        [
+          {
+            "node": "Return Repair Receipt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Seed Funky CRM": {
+      "main": [
+        [
+          {
+            "node": "Reset Funky CRM State",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reset Funky CRM State": {
+      "main": [
+        [
+          {
+            "node": "Return Seed Receipt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
   },
   "pinData": {},
   "active": false,
-  "settings": { "executionOrder": "v1", "saveManualExecutions": true },
-  "meta": { "templateCredsSetupCompleted": false },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true
+  },
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
   "tags": []
 }

@@ -30,12 +30,12 @@ describe('control tower scenarios', () => {
 
   it('reveals each control outcome only after its stage completes', () => {
     expect(demoRunSummary(-1)).toMatchObject({ received: 0, diagnosisReady: false });
-    expect(demoRunSummary(2)).toMatchObject({ received: 8, enriched: 7, routed: 6, quarantined: 0 });
+    expect(demoRunSummary(2)).toMatchObject({ received: 10, enriched: 9, routed: 9, quarantined: 0 });
     expect(demoRunSummary(demoStages.length - 1)).toEqual({
-      received: 8,
-      enriched: 7,
-      routed: 6,
-      quarantined: 2,
+      received: 10,
+      enriched: 9,
+      routed: 9,
+      quarantined: 3,
       testsPassed: 15,
       diagnosisReady: true,
     });

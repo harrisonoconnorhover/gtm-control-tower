@@ -30,4 +30,8 @@ The dashboard uses same-origin server routes as a narrow proxy while n8n owns Bi
 
 ## Receipt before success
 
-The interface never reports a repair from an optimistic click. It requires an allow-listed scenario, a successful n8n execution, a valid native receipt, and a subsequent warehouse refresh. The first repair slice records an auditable approval event; destructive merge, rule mutation, and replay workers remain intentionally separate.
+The interface never reports a repair from an optimistic click. It requires an allow-listed scenario, a successful n8n execution, a valid native receipt, and a subsequent warehouse refresh.
+
+## Real mutations, synthetic boundary
+
+The portfolio lab should prove operating behavior without risking a real CRM. Its merge, reroute, and replay workers therefore execute against named synthetic BigQuery contact state. Logical merges retain source rows and canonical pointers for an obvious before/after audit trail. Provider-specific HubSpot and Salesforce mutations remain a later, separately authenticated boundary.

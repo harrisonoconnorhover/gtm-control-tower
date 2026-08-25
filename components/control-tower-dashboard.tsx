@@ -14,8 +14,10 @@ import {
 import {
   isLiveControlTowerState,
   isRepairReceipt,
+  isSeedReceipt,
   type LiveControlTowerState,
   type RepairReceipt,
+  type SeedReceipt,
 } from '@/lib/live-control-tower';
 
 const integrations = [
@@ -40,7 +42,7 @@ const activity = [
   ['00:04.7', 'dbt', 'Trusted funnel rebuilt from accepted events'],
   ['00:03.5', 'BigQuery', 'Immutable raw and quality events appended'],
   ['00:02.2', 'n8n', 'Six qualified records scored and routed'],
-  ['00:00.7', 'HubSpot', 'Eight deliberately messy leads received'],
+  ['00:00.7', 'BigQuery', 'Ten-contact synthetic CRM state reset'],
 ];
 
 const baselineIncidents = [
@@ -104,9 +106,12 @@ export function ControlTowerDashboard() {
   const [demoRunning, setDemoRunning] = useState(false);
   const [liveState, setLiveState] = useState<LiveControlTowerState | null>(null);
   const [liveStatus, setLiveStatus] = useState<'loading' | 'live' | 'offline'>('loading');
-  const [repairStatus, setRepairStatus] = useState<'idle' | 'sending' | 'recorded' | 'error'>('idle');
+  const [repairStatus, setRepairStatus] = useState<'idle' | 'sending' | 'executed' | 'error'>('idle');
   const [repairReceipt, setRepairReceipt] = useState<RepairReceipt | null>(null);
   const [repairError, setRepairError] = useState<string | null>(null);
+  const [seedStatus, setSeedStatus] = useState<'idle' | 'sending' | 'seeded' | 'error'>('idle');
+  const [seedReceipt, setSeedReceipt] = useState<SeedReceipt | null>(null);
+  const [seedError, setSeedError] = useState<string | null>(null);
   const visibleScenario = repaired ? null : activeScenario;
   const metrics = useMemo(
     () => !visibleScenario && liveState ? metricsFromLiveState(liveState) : scenarioMetrics(visibleScenario),
@@ -150,14 +155,38 @@ export function ControlTowerDashboard() {
     return () => window.clearTimeout(stageTimer);
   }, [demoRunning, demoStage]);
 
-  function runMessyBatch() {
-    setDemoStage(0);
-    setDemoRunning(true);
-    setActiveScenario('duplicate-surge');
-    setRepaired(false);
-    setRepairStatus('idle');
-    setRepairReceipt(null);
-    setRepairError(null);
+  async function resetFunkyBatch(startWalkthrough = false) {
+    if (seedStatus === 'sending') return;
+    setSeedStatus('sending');
+    setSeedError(null);
+    try {
+      const response = await fetch('/api/control-tower/funky', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: '{}',
+      });
+      const receipt: unknown = await response.json();
+      if (!response.ok || !isSeedReceipt(receipt)) throw new Error('The workflow did not return a seed receipt.');
+      setSeedReceipt(receipt);
+      setSeedStatus('seeded');
+      setRepairStatus('idle');
+      setRepairReceipt(null);
+      setRepairError(null);
+      setRepaired(false);
+      if (startWalkthrough) {
+        setDemoStage(0);
+        setDemoRunning(true);
+        setActiveScenario('duplicate-surge');
+      }
+      await refreshLiveState();
+    } catch (error) {
+      setSeedStatus('error');
+      setSeedError(error instanceof Error ? error.message : 'The synthetic CRM batch could not be reset.');
+    }
+  }
+
+  async function runMessyBatch() {
+    await resetFunkyBatch(true);
   }
 
   function triggerChaos() {
@@ -183,7 +212,7 @@ export function ControlTowerDashboard() {
       const receipt: unknown = await response.json();
       if (!response.ok || !isRepairReceipt(receipt)) throw new Error('The workflow did not return a receipt.');
       setRepairReceipt(receipt);
-      setRepairStatus('recorded');
+      setRepairStatus('executed');
       setRepaired(true);
       await refreshLiveState();
     } catch (error) {
@@ -220,16 +249,16 @@ export function ControlTowerDashboard() {
               Watch messy CRM data become a trusted revenue decision.
             </h2>
             <p className="mt-6 max-w-2xl text-base leading-7 text-[#9cb0a7] sm:text-lg">
-              Eight flawed leads enter. The system enriches and routes the usable records, contains bad writes, rebuilds the funnel, and explains what is costing the team revenue.
+              Ten flawed contacts enter. The system enriches and routes the usable records, contains bad writes, rebuilds the funnel, and explains what is costing the team revenue.
             </p>
             <div className="mt-7 flex flex-wrap gap-3">
               <button
                 data-testid="run-demo"
-                onClick={runMessyBatch}
-                disabled={demoRunning}
+                onClick={() => void runMessyBatch()}
+                disabled={demoRunning || seedStatus === 'sending'}
                 className="rounded-full bg-[#cdfc54] px-6 py-3 text-sm font-bold text-[#07130f] shadow-[0_12px_40px_rgba(205,252,84,0.16)] transition hover:-translate-y-0.5 hover:bg-[#dcff83] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#cdfc54] disabled:cursor-wait disabled:opacity-65"
               >
-                {demoRunning ? 'Batch running…' : demoStage >= 0 ? 'Replay messy lead batch' : 'Run messy lead batch'}
+                {seedStatus === 'sending' ? 'Loading funky CRM data…' : demoRunning ? 'Batch running…' : demoStage >= 0 ? 'Reset + replay messy batch' : 'Run messy lead batch'}
               </button>
               <button
                 data-testid="chaos-trigger"
@@ -258,6 +287,14 @@ export function ControlTowerDashboard() {
         </section>
 
         <LiveWarehouseCard state={liveState} status={liveStatus} onRefresh={refreshLiveState} />
+
+        <FunkyCrmLab
+          state={liveState}
+          seedStatus={seedStatus}
+          seedReceipt={seedReceipt}
+          seedError={seedError}
+          onReset={() => resetFunkyBatch(false)}
+        />
 
         <section className="rounded-[34px] border border-white/10 bg-[#091a14]/92 p-4 shadow-[0_30px_100px_rgba(0,0,0,0.22)] sm:p-6" aria-label="Messy lead processing walkthrough">
           <div className="flex flex-wrap items-end justify-between gap-4 px-1 pb-5">
@@ -450,6 +487,105 @@ function LiveStat({ label, value, warning = false, compact = false }: { label: s
   );
 }
 
+function FunkyCrmLab({
+  state,
+  seedStatus,
+  seedReceipt,
+  seedError,
+  onReset,
+}: {
+  state: LiveControlTowerState | null;
+  seedStatus: 'idle' | 'sending' | 'seeded' | 'error';
+  seedReceipt: SeedReceipt | null;
+  seedError: string | null;
+  onReset: () => Promise<void>;
+}) {
+  const active = state?.contacts.filter((contact) => contact.recordStatus === 'active').length ?? 0;
+  const merged = state?.contacts.filter((contact) => contact.recordStatus === 'merged').length ?? 0;
+  return (
+    <section className="mb-6 overflow-hidden rounded-[30px] border border-white/10 bg-[#0c1d17]" aria-label="Funky CRM contact lab">
+      <div className="flex flex-wrap items-start justify-between gap-4 border-b border-white/10 px-5 py-5 sm:px-6">
+        <div>
+          <p className="text-sm text-[#8fa99d]">Executed-repair lab</p>
+          <h3 className="mt-1 text-xl font-semibold">Ten genuinely funky contacts in mutable BigQuery state</h3>
+          <p className="mt-2 max-w-3xl text-xs leading-5 text-[#71877c]">Duplicates, plus-addressing, malformed email, Unicode, conflicting companies, routing overload, and impossible lifecycle changes. The workers below change these rows and return native execution receipts.</p>
+        </div>
+        <button
+          onClick={() => void onReset()}
+          disabled={seedStatus === 'sending'}
+          className="rounded-full border border-[#cdfc54]/25 bg-[#cdfc54]/[0.07] px-4 py-2 text-xs font-semibold text-[#cdfc54] transition hover:bg-[#cdfc54]/[0.12] disabled:cursor-wait disabled:opacity-60"
+        >
+          {seedStatus === 'sending' ? 'Resetting in BigQuery…' : 'Reset funky batch'}
+        </button>
+      </div>
+      <div className="flex flex-wrap gap-2 border-b border-white/10 px-5 py-3 font-mono text-[9px] uppercase tracking-wider text-[#8fa99d] sm:px-6">
+        <span className="rounded-full bg-white/[0.05] px-3 py-1">{active} active</span>
+        <span className="rounded-full bg-white/[0.05] px-3 py-1">{merged} merged</span>
+        <span className="rounded-full bg-white/[0.05] px-3 py-1">{state?.repairHistory.length ?? 0} executed repairs</span>
+        {seedReceipt && <span className="rounded-full bg-[#cdfc54]/10 px-3 py-1 text-[#cdfc54]">Receipt: {seedReceipt.contacts} seeded / {seedReceipt.dirtyRecords} dirty</span>}
+        {seedError && <span className="rounded-full bg-[#ff7b55]/10 px-3 py-1 text-[#ff9d7f]">{seedError}</span>}
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[1120px] border-collapse text-left text-xs">
+          <thead className="bg-white/[0.025] font-mono text-[9px] uppercase tracking-wider text-[#71877c]">
+            <tr>
+              <th className="px-5 py-3 font-medium">Contact</th>
+              <th className="px-4 py-3 font-medium">Raw → normalized email</th>
+              <th className="px-4 py-3 font-medium">Company</th>
+              <th className="px-4 py-3 font-medium">Lifecycle</th>
+              <th className="px-4 py-3 font-medium">Owner</th>
+              <th className="px-4 py-3 font-medium">Current result</th>
+              <th className="px-5 py-3 font-medium">Quality flags</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-white/[0.06]">
+            {state?.contacts.map((contact) => (
+              <tr key={contact.contactId} className={contact.recordStatus === 'merged' ? 'bg-[#83bcff]/[0.04] text-[#92a69c]' : 'text-[#dce9e2]'}>
+                <td className="px-5 py-3.5 align-top">
+                  <p className="font-semibold">{contact.fullName}</p>
+                  <p className="mt-1 font-mono text-[9px] text-[#71877c]">{contact.contactId}</p>
+                </td>
+                <td className="px-4 py-3.5 align-top">
+                  <p className="max-w-[240px] break-all">{contact.rawEmail}</p>
+                  <p className="mt-1 break-all font-mono text-[9px] text-[#7fddb6]">→ {contact.normalizedEmail ?? 'invalid / held'}</p>
+                </td>
+                <td className="max-w-[170px] px-4 py-3.5 align-top">{contact.company ?? '— missing —'}</td>
+                <td className="px-4 py-3.5 align-top">
+                  <p className={contact.lifecycleStage !== contact.expectedLifecycleStage ? 'text-[#ff9d7f]' : ''}>{contact.lifecycleStage}</p>
+                  {contact.lifecycleStage !== contact.expectedLifecycleStage && <p className="mt-1 font-mono text-[9px] text-[#cdfc54]">expected {contact.expectedLifecycleStage}</p>}
+                </td>
+                <td className="px-4 py-3.5 align-top font-mono text-[10px]">{contact.ownerId ?? 'UNASSIGNED'}</td>
+                <td className="px-4 py-3.5 align-top">
+                  <p className={contact.recordStatus === 'merged' ? 'text-[#83bcff]' : 'text-[#cdfc54]'}>{contact.recordStatus}</p>
+                  <p className="mt-1 font-mono text-[9px] text-[#71877c]">{contact.lastAction.replaceAll('_', ' ')}</p>
+                  {contact.canonicalContactId && <p className="mt-1 font-mono text-[9px] text-[#83bcff]">→ {contact.canonicalContactId}</p>}
+                </td>
+                <td className="px-5 py-3.5 align-top">
+                  <div className="flex max-w-[230px] flex-wrap gap-1">
+                    {contact.qualityFlags.length ? contact.qualityFlags.map((flag) => (
+                      <span key={flag} className="rounded bg-[#ff7b55]/10 px-2 py-1 font-mono text-[8px] text-[#ff9d7f]">{flag.replaceAll('_', ' ')}</span>
+                    )) : <span className="font-mono text-[9px] text-[#7fddb6]">clean</span>}
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {!state?.contacts.length && <p className="px-5 py-5 text-sm text-[#8fa99d] sm:px-6">Reset the batch to load the synthetic contact state.</p>}
+      {state?.repairHistory.length ? (
+        <div className="flex flex-wrap gap-2 border-t border-white/10 px-5 py-4 sm:px-6">
+          {state.repairHistory.slice(0, 3).map((run) => (
+            <span key={run.runId} className="rounded-full border border-white/10 bg-white/[0.035] px-3 py-2 font-mono text-[9px] text-[#a9bbb2]">
+              {run.scenario} · {run.affectedRecords} rows · executed
+            </span>
+          ))}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 function ProofPoint({ label, value, muted = false }: { label: string; value: string; muted?: boolean }) {
   return (
     <div className="rounded-2xl border border-white/[0.07] bg-white/[0.03] p-4">
@@ -469,7 +605,7 @@ function TransformationCard({ demoStage }: { demoStage: number }) {
           <p className="text-sm text-[#637169]">Record transformation</p>
           <h3 className="mt-1 text-xl font-semibold">Messy in. Account-ready out.</h3>
         </div>
-        <span className="rounded-full bg-[#10221a]/[0.06] px-3 py-1 font-mono text-[10px] text-[#637169]">LEAD 04 / 08</span>
+        <span className="rounded-full bg-[#10221a]/[0.06] px-3 py-1 font-mono text-[10px] text-[#637169]">CONTACT 04 / 10</span>
       </div>
       <div className="mt-5 grid gap-3 sm:grid-cols-[1fr_32px_1fr] sm:items-stretch">
         <RecordPanel title="Raw CRM record" tone="bad" rows={[
@@ -587,7 +723,7 @@ function IncidentCard({
 }: {
   activeScenario: ScenarioKey | null;
   repaired: boolean;
-  repairStatus: 'idle' | 'sending' | 'recorded' | 'error';
+  repairStatus: 'idle' | 'sending' | 'executed' | 'error';
   repairReceipt: RepairReceipt | null;
   repairError: string | null;
   onApproveRepair: () => Promise<void>;
@@ -611,8 +747,8 @@ function IncidentCard({
       )}
       {repaired && repairReceipt && (
         <div data-testid="repair-success" className="mt-5 rounded-2xl border border-[#2f956c]/25 bg-[#dff2e8] p-4 text-sm text-[#236b50]">
-          <p className="font-semibold">n8n recorded the repair approval in BigQuery.</p>
-          <p className="mt-1 text-xs leading-5">Action: {repairReceipt.action.replaceAll('_', ' ')} · Receipt {repairReceipt.eventId}</p>
+          <p className="font-semibold">n8n executed the repair against BigQuery.</p>
+          <p className="mt-1 text-xs leading-5">{repairReceipt.affectedRecords} records changed · {repairReceipt.action.replaceAll('_', ' ')} · Receipt {repairReceipt.eventId}</p>
         </div>
       )}
       {repairStatus === 'error' && repairError && (
@@ -637,7 +773,7 @@ function IncidentCard({
                       disabled={repairStatus === 'sending'}
                       className="mt-3 rounded-full bg-[#10221a] px-4 py-2 text-xs font-semibold text-white transition hover:bg-[#234234] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#10221a] disabled:cursor-wait disabled:opacity-65"
                     >
-                      {repairStatus === 'sending' ? 'Sending to n8n…' : 'Approve repair workflow'}
+                      {repairStatus === 'sending' ? 'Executing in n8n…' : repairButtonLabel(activeScenario)}
                     </button>
                   </div>
                 )}
@@ -648,4 +784,11 @@ function IncidentCard({
       </div>
     </article>
   );
+}
+
+function repairButtonLabel(scenario: ScenarioKey | null): string {
+  if (scenario === 'duplicate-surge') return 'Execute merge worker';
+  if (scenario === 'routing-overload') return 'Execute reroute worker';
+  if (scenario === 'stage-regression') return 'Execute lifecycle replay';
+  return 'Execute repair worker';
 }

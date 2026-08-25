@@ -34,7 +34,7 @@ export async function POST(request: Request) {
       cache: 'no-store',
       headers: { 'content-type': 'application/json', accept: 'application/json' },
       body: JSON.stringify({ scenario, requestId: crypto.randomUUID() }),
-      signal: AbortSignal.timeout(10_000),
+      signal: AbortSignal.timeout(30_000),
     });
     if (!response.ok) throw new Error(`n8n returned ${response.status}`);
 
@@ -48,7 +48,7 @@ export async function POST(request: Request) {
   } catch (error) {
     console.error('Control Tower repair failed', error);
     return NextResponse.json(
-      { error: 'The repair could not be recorded. No dashboard state was changed.' },
+      { error: 'The repair could not be executed. No dashboard state was reported as changed.' },
       { status: 502, headers: { 'Cache-Control': 'no-store' } },
     );
   }

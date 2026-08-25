@@ -11,7 +11,8 @@
     "start": "vinext start",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "test": "vitest run",
-    "generate:data": "python3 scripts/generate_synthetic_crm.py"
+    "generate:data": "python3 scripts/generate_synthetic_crm.py",
+    "sync:n8n": "node scripts/sync_ops_workflow.mjs"
   },
   "dependencies": {
     "next": "16.3.2",
