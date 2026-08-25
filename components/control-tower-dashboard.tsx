@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   demoRunSummary,
   demoStages,
@@ -11,6 +11,12 @@ import {
   scenarios,
   type ScenarioKey,
 } from '@/lib/control-tower';
+import {
+  isLiveControlTowerState,
+  isRepairReceipt,
+  type LiveControlTowerState,
+  type RepairReceipt,
+} from '@/lib/live-control-tower';
 
 const integrations = [
   { name: 'HubSpot', role: 'live CRM', status: 'validated', tone: 'live' },
@@ -42,15 +48,97 @@ const baselineIncidents = [
   { id: 'lifecycle', title: 'Lifecycle regression blocked', detail: 'A Customer → MQL write was quarantined before it changed source-of-truth state.', severity: 'resolved' },
 ];
 
+function metricsFromLiveState(state: LiveControlTowerState): ReturnType<typeof scenarioMetrics> {
+  const leads = state.funnel.find((stage) => stage.label === 'Leads')?.count ?? 0;
+  const won = state.funnel.find((stage) => stage.label === 'Won')?.count ?? 0;
+  const wonRate = leads > 0 ? (won / leads) * 100 : 0;
+  const routeWarning = state.metrics.medianRouteSeconds > 120;
+  const qualityWarning = state.metrics.qualityRate < 95;
+  return [
+    {
+      label: 'Warehouse events',
+      value: state.metrics.totalEvents.toLocaleString(),
+      detail: 'accepted in the last 30 days',
+      direction: 'good',
+    },
+    {
+      label: 'Median route time',
+      value: formatRouteTime(state.metrics.medianRouteSeconds),
+      detail: routeWarning ? '2m SLA breached' : 'under 2m SLA',
+      direction: routeWarning ? 'warning' : 'good',
+    },
+    {
+      label: 'Data quality',
+      value: `${state.metrics.qualityRate.toFixed(1)}%`,
+      detail: `${state.metrics.duplicateEvents} duplicates detected`,
+      direction: qualityWarning ? 'warning' : 'good',
+    },
+    {
+      label: 'Lead → won',
+      value: `${wonRate.toFixed(1)}%`,
+      detail: `${won.toLocaleString()} won of ${leads.toLocaleString()} leads`,
+      direction: 'good',
+    },
+  ];
+}
+
+function funnelFromLiveState(state: LiveControlTowerState): ReturnType<typeof funnelForScenario> {
+  const leads = state.funnel.find((stage) => stage.label === 'Leads')?.count ?? 0;
+  return state.funnel.map((stage) => ({
+    label: stage.label,
+    count: stage.count,
+    conversion: leads > 0 ? (stage.count / leads) * 100 : 0,
+  }));
+}
+
+function formatRouteTime(seconds: number): string {
+  const minutes = Math.floor(seconds / 60);
+  const remainder = String(Math.round(seconds % 60)).padStart(2, '0');
+  return `${String(minutes).padStart(2, '0')}:${remainder}`;
+}
+
 export function ControlTowerDashboard() {
   const [activeScenario, setActiveScenario] = useState<ScenarioKey | null>(null);
   const [repaired, setRepaired] = useState(false);
   const [demoStage, setDemoStage] = useState(-1);
   const [demoRunning, setDemoRunning] = useState(false);
+  const [liveState, setLiveState] = useState<LiveControlTowerState | null>(null);
+  const [liveStatus, setLiveStatus] = useState<'loading' | 'live' | 'offline'>('loading');
+  const [repairStatus, setRepairStatus] = useState<'idle' | 'sending' | 'recorded' | 'error'>('idle');
+  const [repairReceipt, setRepairReceipt] = useState<RepairReceipt | null>(null);
+  const [repairError, setRepairError] = useState<string | null>(null);
   const visibleScenario = repaired ? null : activeScenario;
-  const metrics = useMemo(() => scenarioMetrics(visibleScenario), [visibleScenario]);
-  const funnel = useMemo(() => funnelForScenario(visibleScenario), [visibleScenario]);
+  const metrics = useMemo(
+    () => !visibleScenario && liveState ? metricsFromLiveState(liveState) : scenarioMetrics(visibleScenario),
+    [liveState, visibleScenario],
+  );
+  const funnel = useMemo(
+    () => !visibleScenario && liveState ? funnelFromLiveState(liveState) : funnelForScenario(visibleScenario),
+    [liveState, visibleScenario],
+  );
   const runSummary = useMemo(() => demoRunSummary(demoStage), [demoStage]);
+
+  const refreshLiveState = useCallback(async () => {
+    setLiveStatus((status) => status === 'live' ? 'live' : 'loading');
+    try {
+      const response = await fetch('/api/control-tower/state', { cache: 'no-store' });
+      const state: unknown = await response.json();
+      if (!response.ok || !isLiveControlTowerState(state)) throw new Error('Live state unavailable');
+      setLiveState(state);
+      setLiveStatus('live');
+    } catch {
+      setLiveStatus('offline');
+    }
+  }, []);
+
+  useEffect(() => {
+    const initialRefreshTimer = window.setTimeout(() => void refreshLiveState(), 0);
+    const refreshTimer = window.setInterval(() => void refreshLiveState(), 30_000);
+    return () => {
+      window.clearTimeout(initialRefreshTimer);
+      window.clearInterval(refreshTimer);
+    };
+  }, [refreshLiveState]);
 
   useEffect(() => {
     if (!demoRunning) return;
@@ -67,6 +155,9 @@ export function ControlTowerDashboard() {
     setDemoRunning(true);
     setActiveScenario('duplicate-surge');
     setRepaired(false);
+    setRepairStatus('idle');
+    setRepairReceipt(null);
+    setRepairError(null);
   }
 
   function triggerChaos() {
@@ -74,10 +165,31 @@ export function ControlTowerDashboard() {
     setRepaired(false);
     setDemoRunning(false);
     setDemoStage(demoStages.length - 1);
+    setRepairStatus('idle');
+    setRepairReceipt(null);
+    setRepairError(null);
   }
 
-  function approveRepair() {
-    setRepaired(true);
+  async function approveRepair() {
+    if (!activeScenario || repairStatus === 'sending') return;
+    setRepairStatus('sending');
+    setRepairError(null);
+    try {
+      const response = await fetch('/api/control-tower/repair', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ scenario: activeScenario }),
+      });
+      const receipt: unknown = await response.json();
+      if (!response.ok || !isRepairReceipt(receipt)) throw new Error('The workflow did not return a receipt.');
+      setRepairReceipt(receipt);
+      setRepairStatus('recorded');
+      setRepaired(true);
+      await refreshLiveState();
+    } catch (error) {
+      setRepairStatus('error');
+      setRepairError(error instanceof Error ? error.message : 'The repair workflow is unavailable.');
+    }
   }
 
   return (
@@ -145,6 +257,8 @@ export function ControlTowerDashboard() {
           </article>
         </section>
 
+        <LiveWarehouseCard state={liveState} status={liveStatus} onRefresh={refreshLiveState} />
+
         <section className="rounded-[34px] border border-white/10 bg-[#091a14]/92 p-4 shadow-[0_30px_100px_rgba(0,0,0,0.22)] sm:p-6" aria-label="Messy lead processing walkthrough">
           <div className="flex flex-wrap items-end justify-between gap-4 px-1 pb-5">
             <div>
@@ -184,7 +298,16 @@ export function ControlTowerDashboard() {
           <RunOutcomeCard summary={runSummary} demoStage={demoStage} />
         </section>
 
-        <section className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Pipeline health metrics">
+        <div className="mt-7 flex items-center justify-between gap-4">
+          <div>
+            <p className="text-sm text-[#8fa99d]">{visibleScenario ? 'Scenario impact model' : liveState ? 'Live warehouse metrics' : 'Demo baseline'}</p>
+            <h3 className="mt-1 text-xl font-semibold">{visibleScenario ? 'How this failure changes the business' : 'What BigQuery says now'}</h3>
+          </div>
+          <span className={`rounded-full px-3 py-1 font-mono text-[9px] uppercase tracking-wider ${visibleScenario ? 'bg-[#ff7b55]/10 text-[#ff9d7f]' : liveState ? 'bg-[#cdfc54]/10 text-[#cdfc54]' : 'bg-white/[0.05] text-[#8fa99d]'}`}>
+            {visibleScenario ? 'Simulated overlay' : liveState ? 'Live' : 'Fallback'}
+          </span>
+        </div>
+        <section className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Pipeline health metrics">
           {metrics.map((metric) => (
             <article key={metric.label} className={`rounded-3xl border p-5 transition-colors ${metric.direction === 'warning' ? 'border-[#ff7b55]/45 bg-[#2b1712]' : 'border-white/10 bg-[#0c1d17]'}`}>
               <p className="text-sm text-[#8fa99d]">{metric.label}</p>
@@ -195,8 +318,15 @@ export function ControlTowerDashboard() {
         </section>
 
         <section className="mt-6 grid gap-5 xl:grid-cols-[1.18fr_0.82fr]">
-          <FunnelCard funnel={funnel} />
-          <IncidentCard activeScenario={visibleScenario} repaired={repaired} onApproveRepair={approveRepair} />
+          <FunnelCard funnel={funnel} live={!visibleScenario && Boolean(liveState)} />
+          <IncidentCard
+            activeScenario={visibleScenario}
+            repaired={repaired}
+            repairStatus={repairStatus}
+            repairReceipt={repairReceipt}
+            repairError={repairError}
+            onApproveRepair={approveRepair}
+          />
         </section>
 
         <section className="mt-6 overflow-hidden rounded-[28px] border border-white/10 bg-[#0c1d17]">
@@ -260,6 +390,63 @@ export function ControlTowerDashboard() {
         </footer>
       </div>
     </main>
+  );
+}
+
+function LiveWarehouseCard({
+  state,
+  status,
+  onRefresh,
+}: {
+  state: LiveControlTowerState | null;
+  status: 'loading' | 'live' | 'offline';
+  onRefresh: () => Promise<void>;
+}) {
+  const latestEvent = state?.latestEventAt
+    ? new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).format(new Date(state.latestEventAt))
+    : 'No event yet';
+  return (
+    <section className="mb-6 overflow-hidden rounded-[28px] border border-white/10 bg-[#0c1d17]" aria-label="Live warehouse status">
+      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-white/10 px-5 py-4 sm:px-6">
+        <div className="flex items-center gap-3">
+          <span className={`h-2.5 w-2.5 rounded-full ${status === 'live' ? 'bg-[#cdfc54] shadow-[0_0_18px_rgba(205,252,84,0.55)]' : status === 'loading' ? 'animate-pulse bg-[#e6bd68]' : 'bg-[#ff7b55]'}`} />
+          <div>
+            <p className="text-sm font-semibold">Live warehouse truth</p>
+            <p className="mt-0.5 text-xs text-[#71877c]">n8n queries BigQuery through a server-side connector</p>
+          </div>
+        </div>
+        <button
+          onClick={() => void onRefresh()}
+          disabled={status === 'loading'}
+          className="rounded-full border border-white/10 px-4 py-2 font-mono text-[10px] uppercase tracking-wider text-[#a9bbb2] transition hover:bg-white/[0.05] disabled:cursor-wait disabled:opacity-60"
+        >
+          {status === 'loading' ? 'Refreshing…' : 'Refresh warehouse'}
+        </button>
+      </div>
+      {state ? (
+        <div className="grid divide-y divide-white/10 sm:grid-cols-3 sm:divide-x sm:divide-y-0 xl:grid-cols-6">
+          <LiveStat label="30-day events" value={state.metrics.totalEvents.toLocaleString()} />
+          <LiveStat label="Routed leads" value={state.metrics.routedLeads.toLocaleString()} />
+          <LiveStat label="Median routing" value={formatRouteTime(state.metrics.medianRouteSeconds)} />
+          <LiveStat label="Quality rate" value={`${state.metrics.qualityRate.toFixed(1)}%`} />
+          <LiveStat label="Duplicates seen" value={state.metrics.duplicateEvents.toLocaleString()} warning={state.metrics.duplicateEvents > 0} />
+          <LiveStat label="Latest event" value={latestEvent} compact />
+        </div>
+      ) : (
+        <div className="px-5 py-5 text-sm text-[#8fa99d] sm:px-6">
+          {status === 'offline' ? 'The live connector is offline; the deterministic walkthrough remains available.' : 'Loading the current BigQuery snapshot…'}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function LiveStat({ label, value, warning = false, compact = false }: { label: string; value: string; warning?: boolean; compact?: boolean }) {
+  return (
+    <div className="p-4 sm:p-5">
+      <p className="font-mono text-[9px] uppercase tracking-wider text-[#71877c]">{label}</p>
+      <p className={`mt-2 font-semibold ${compact ? 'text-sm' : 'text-xl'} ${warning ? 'text-[#ff9d7f]' : 'text-[#e5f1eb]'}`}>{value}</p>
+    </div>
   );
 }
 
@@ -364,15 +551,15 @@ function OutcomeStat({ value, label, warning = false }: { value: number; label: 
   );
 }
 
-function FunnelCard({ funnel }: { funnel: ReturnType<typeof funnelForScenario> }) {
+function FunnelCard({ funnel, live }: { funnel: ReturnType<typeof funnelForScenario>; live: boolean }) {
   return (
     <article className="rounded-[30px] border border-white/10 bg-[#0c1d17] p-5 sm:p-6">
       <div className="flex items-center justify-between gap-4">
         <div>
-          <p className="text-sm text-[#8fa99d]">Trusted funnel model</p>
+          <p className="text-sm text-[#8fa99d]">{live ? 'Live trusted funnel' : 'Scenario funnel model'}</p>
           <h3 className="mt-1 text-xl font-semibold">Accepted events only</h3>
         </div>
-        <span className="font-mono text-[10px] text-[#8fa99d]">LAST 30 DAYS</span>
+        <span className={`font-mono text-[10px] ${live ? 'text-[#cdfc54]' : 'text-[#8fa99d]'}`}>{live ? 'BIGQUERY · 30 DAYS' : 'SIMULATED OVERLAY'}</span>
       </div>
       <div className="mt-8 grid grid-cols-5 items-end gap-2 sm:gap-4">
         {funnel.map((stage) => (
@@ -390,7 +577,21 @@ function FunnelCard({ funnel }: { funnel: ReturnType<typeof funnelForScenario> }
   );
 }
 
-function IncidentCard({ activeScenario, repaired, onApproveRepair }: { activeScenario: ScenarioKey | null; repaired: boolean; onApproveRepair: () => void }) {
+function IncidentCard({
+  activeScenario,
+  repaired,
+  repairStatus,
+  repairReceipt,
+  repairError,
+  onApproveRepair,
+}: {
+  activeScenario: ScenarioKey | null;
+  repaired: boolean;
+  repairStatus: 'idle' | 'sending' | 'recorded' | 'error';
+  repairReceipt: RepairReceipt | null;
+  repairError: string | null;
+  onApproveRepair: () => Promise<void>;
+}) {
   const active = activeScenario ? scenarios[activeScenario] : null;
   const incidentRows = active ? [active, ...baselineIncidents] : baselineIncidents;
   return (
@@ -408,7 +609,17 @@ function IncidentCard({ activeScenario, repaired, onApproveRepair }: { activeSce
           <p data-testid="health-headline" className="mt-2 text-sm font-semibold leading-5">{healthHeadline(active)}</p>
         </div>
       )}
-      {repaired && <div data-testid="repair-success" className="mt-5 rounded-2xl border border-[#2f956c]/25 bg-[#dff2e8] p-4 text-sm text-[#236b50]">Repair approved. Quarantined writes stayed isolated; accepted events were replayed and dependent models are healthy.</div>}
+      {repaired && repairReceipt && (
+        <div data-testid="repair-success" className="mt-5 rounded-2xl border border-[#2f956c]/25 bg-[#dff2e8] p-4 text-sm text-[#236b50]">
+          <p className="font-semibold">n8n recorded the repair approval in BigQuery.</p>
+          <p className="mt-1 text-xs leading-5">Action: {repairReceipt.action.replaceAll('_', ' ')} · Receipt {repairReceipt.eventId}</p>
+        </div>
+      )}
+      {repairStatus === 'error' && repairError && (
+        <div className="mt-5 rounded-2xl border border-[#d97757]/25 bg-[#fff1e9] p-4 text-sm text-[#9a452f]">
+          {repairError} No repair was reported as complete.
+        </div>
+      )}
       <div className="mt-4 space-y-3">
         {incidentRows.map((incident) => (
           <div key={incident.id} className="rounded-2xl border border-[#10221a]/10 bg-white/70 p-4">
@@ -420,7 +631,14 @@ function IncidentCard({ activeScenario, repaired, onApproveRepair }: { activeSce
                 {'recommendation' in incident && active && incident.id === active.id && (
                   <div className="mt-3 border-t border-[#10221a]/10 pt-3">
                     <p className="text-xs leading-5 text-[#43534a]">{incident.recommendation}</p>
-                    <button data-testid="approve-repair" onClick={onApproveRepair} className="mt-3 rounded-full bg-[#10221a] px-4 py-2 text-xs font-semibold text-white transition hover:bg-[#234234] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#10221a]">Approve repair & replay</button>
+                    <button
+                      data-testid="approve-repair"
+                      onClick={() => void onApproveRepair()}
+                      disabled={repairStatus === 'sending'}
+                      className="mt-3 rounded-full bg-[#10221a] px-4 py-2 text-xs font-semibold text-white transition hover:bg-[#234234] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#10221a] disabled:cursor-wait disabled:opacity-65"
+                    >
+                      {repairStatus === 'sending' ? 'Sending to n8n…' : 'Approve repair workflow'}
+                    </button>
                   </div>
                 )}
               </div>

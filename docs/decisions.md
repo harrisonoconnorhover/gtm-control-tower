@@ -23,3 +23,11 @@ Scoring, segmentation, routing, and warehouse logging stay upstream of provider-
 ## Demonstrate transformation, not only monitoring
 
 The portfolio entry point is a guided messy-lead run rather than a static healthy dashboard. It exposes the raw record, each control, the governed output, contained defects, funnel impact, and recommended action so a reviewer can understand both the technical system and the business judgment in under two minutes.
+
+## n8n as the credentialed operations boundary
+
+The dashboard uses same-origin server routes as a narrow proxy while n8n owns BigQuery credentials and workflow execution. This keeps cloud secrets out of the browser and lets the UI validate stable state and receipt contracts. Production connector URLs intentionally have no default; public repair access requires authentication before it is enabled.
+
+## Receipt before success
+
+The interface never reports a repair from an optimistic click. It requires an allow-listed scenario, a successful n8n execution, a valid native receipt, and a subsequent warehouse refresh. The first repair slice records an auditable approval event; destructive merge, rule mutation, and replay workers remain intentionally separate.

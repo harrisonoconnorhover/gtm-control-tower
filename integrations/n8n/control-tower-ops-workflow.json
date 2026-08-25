@@ -1,0 +1,157 @@
+{
+  "id": "gtmControlTowerOps01",
+  "name": "GTM Control Tower - Operations API",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "gtm-control-tower-state",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "220fca76-2cc6-43dd-b19e-2a4bc6c11858",
+      "name": "Get Dashboard State",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-660, -180],
+      "webhookId": "gtm-control-tower-state"
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "executeQuery",
+        "projectId": { "mode": "id", "value": "harrison-gtm-control-tower" },
+        "sqlQuery": "with events as (\n  select *\n  from `harrison-gtm-control-tower.gtm_control_tower.raw_crm_events`\n  where event_timestamp >= timestamp_sub(current_timestamp(), interval 30 day)\n)\nselect\n  current_timestamp() as generated_at,\n  count(*) as total_events,\n  countif(event_type = 'lead_routed') as routed_leads,\n  countif(is_duplicate) as duplicate_events,\n  countif(owner_id is null) as missing_owner_events,\n  coalesce(approx_quantiles(if(event_type in ('lead_routed', 'lifecycle_changed'), route_seconds, null), 100 ignore nulls)[safe_offset(50)], 0) as median_route_seconds,\n  round(100 * safe_divide(countif(not is_duplicate and owner_id is not null and lifecycle_stage in ('lead', 'mql', 'sql', 'opportunity', 'closed_won')), greatest(count(*), 1)), 1) as quality_rate,\n  max(event_timestamp) as latest_event_at,\n  count(distinct lead_id) as leads,\n  count(distinct if(lifecycle_stage in ('mql', 'sql', 'opportunity', 'closed_won'), lead_id, null)) as mqls,\n  count(distinct if(lifecycle_stage in ('sql', 'opportunity', 'closed_won'), lead_id, null)) as sqls,\n  count(distinct if(lifecycle_stage in ('opportunity', 'closed_won'), lead_id, null)) as opportunities,\n  count(distinct if(lifecycle_stage = 'closed_won', lead_id, null)) as closed_won,\n  max(if(starts_with(event_type, 'repair_approved_'), event_timestamp, null)) as latest_repair_at,\n  array_agg(if(starts_with(event_type, 'repair_approved_'), replace(event_type, 'repair_approved_', ''), null) ignore nulls order by event_timestamp desc limit 1)[safe_offset(0)] as latest_repair_scenario\nfrom events",
+        "options": {
+          "location": "US",
+          "maximumBytesBilled": "100000000",
+          "returnAsNumbers": true,
+          "timeoutMs": 10000
+        }
+      },
+      "id": "472b994b-b044-4f04-a93f-1743539e4358",
+      "name": "Query Live Warehouse",
+      "type": "n8n-nodes-base.googleBigQuery",
+      "typeVersion": 2.1,
+      "position": [-400, -180],
+      "credentials": {
+        "googleApi": {
+          "id": "gtmBigQuerySA01",
+          "name": "GTM Control Tower BigQuery"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const row = $json;\nconst number = (value) => Number(value ?? 0);\nreturn [{ json: {\n  source: 'bigquery',\n  generatedAt: row.generated_at,\n  latestEventAt: row.latest_event_at,\n  metrics: {\n    totalEvents: number(row.total_events),\n    routedLeads: number(row.routed_leads),\n    duplicateEvents: number(row.duplicate_events),\n    missingOwnerEvents: number(row.missing_owner_events),\n    medianRouteSeconds: number(row.median_route_seconds),\n    qualityRate: number(row.quality_rate),\n  },\n  funnel: [\n    { label: 'Leads', count: number(row.leads) },\n    { label: 'MQL', count: number(row.mqls) },\n    { label: 'SQL', count: number(row.sqls) },\n    { label: 'Open opp', count: number(row.opportunities) },\n    { label: 'Won', count: number(row.closed_won) },\n  ],\n  latestRepair: row.latest_repair_scenario ? { scenario: row.latest_repair_scenario, approvedAt: row.latest_repair_at } : null,\n} }];"
+      },
+      "id": "568576c9-1205-40f9-a9cf-ad27c8d13f67",
+      "name": "Shape Dashboard State",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-140, -180]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": { "responseCode": 200 }
+      },
+      "id": "a0cff113-b44f-47cb-bc28-042d75d01c9b",
+      "name": "Return Dashboard State",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [120, -180]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "gtm-control-tower-repair",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "256f38b2-e380-4c00-b580-23f95bb293cb",
+      "name": "Approve Repair",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-660, 180],
+      "webhookId": "gtm-control-tower-repair"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $json.body ?? $json;\nconst actions = {\n  'duplicate-surge': 'quarantine_and_merge_duplicate_cluster',\n  'routing-overload': 'shift_enterprise_overflow_to_central',\n  'stage-regression': 'reject_regression_and_replay_event_log',\n};\nconst scenario = String(body.scenario ?? '');\nif (!actions[scenario]) throw new Error('Unsupported repair scenario');\nconst approvedAt = new Date().toISOString();\nconst requestId = String(body.requestId ?? `request-${Date.now()}`).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 80);\nreturn [{ json: {\n  event_id: `REPAIR-${scenario}-${requestId}`,\n  lead_id: 'CONTROL-TOWER',\n  account_id: 'SYSTEM',\n  event_type: `repair_approved_${scenario}`,\n  lifecycle_stage: 'lead',\n  event_timestamp: approvedAt,\n  source: 'control_tower',\n  region: scenario,\n  segment: 'System',\n  owner_id: 'CONTROL-TOWER',\n  route_seconds: 0,\n  annual_revenue: 0,\n  opportunity_amount: 0,\n  email_domain: null,\n  is_duplicate: false,\n  scenario,\n  action: actions[scenario],\n  request_id: requestId,\n  approved_at: approvedAt\n} }];"
+      },
+      "id": "76545ef5-ddcb-4e40-9a48-7b39fab78350",
+      "name": "Validate Repair",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-400, 180]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "insert",
+        "projectId": { "mode": "id", "value": "harrison-gtm-control-tower" },
+        "datasetId": { "mode": "id", "value": "gtm_control_tower" },
+        "tableId": { "mode": "id", "value": "raw_crm_events" },
+        "dataMode": "define",
+        "fieldsUi": {
+          "values": [
+            { "fieldId": "event_id", "fieldValue": "={{ $json.event_id }}" },
+            { "fieldId": "lead_id", "fieldValue": "={{ $json.lead_id }}" },
+            { "fieldId": "account_id", "fieldValue": "={{ $json.account_id }}" },
+            { "fieldId": "event_type", "fieldValue": "={{ $json.event_type }}" },
+            { "fieldId": "lifecycle_stage", "fieldValue": "={{ $json.lifecycle_stage }}" },
+            { "fieldId": "event_timestamp", "fieldValue": "={{ $json.event_timestamp }}" },
+            { "fieldId": "source", "fieldValue": "={{ $json.source }}" },
+            { "fieldId": "region", "fieldValue": "={{ $json.region }}" },
+            { "fieldId": "segment", "fieldValue": "={{ $json.segment }}" },
+            { "fieldId": "owner_id", "fieldValue": "={{ $json.owner_id }}" },
+            { "fieldId": "route_seconds", "fieldValue": "={{ $json.route_seconds }}" },
+            { "fieldId": "annual_revenue", "fieldValue": "={{ $json.annual_revenue }}" },
+            { "fieldId": "opportunity_amount", "fieldValue": "={{ $json.opportunity_amount }}" },
+            { "fieldId": "email_domain", "fieldValue": "={{ $json.email_domain }}" },
+            { "fieldId": "is_duplicate", "fieldValue": "={{ $json.is_duplicate }}" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "8937f1d1-e408-4d9e-afcd-4bb3d2ae8101",
+      "name": "Record Repair in BigQuery",
+      "type": "n8n-nodes-base.googleBigQuery",
+      "typeVersion": 2.1,
+      "position": [-140, 180],
+      "credentials": {
+        "googleApi": {
+          "id": "gtmBigQuerySA01",
+          "name": "GTM Control Tower BigQuery"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { accepted: true, status: 'recorded', scenario: $('Validate Repair').item.json.scenario, action: $('Validate Repair').item.json.action, requestId: $('Validate Repair').item.json.request_id, eventId: $('Validate Repair').item.json.event_id, approvedAt: $('Validate Repair').item.json.approved_at } }}",
+        "options": { "responseCode": 202 }
+      },
+      "id": "2eb68f66-95fb-4c42-ad98-cc9bb5255492",
+      "name": "Return Repair Receipt",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [120, 180]
+    }
+  ],
+  "connections": {
+    "Get Dashboard State": { "main": [[{ "node": "Query Live Warehouse", "type": "main", "index": 0 }]] },
+    "Query Live Warehouse": { "main": [[{ "node": "Shape Dashboard State", "type": "main", "index": 0 }]] },
+    "Shape Dashboard State": { "main": [[{ "node": "Return Dashboard State", "type": "main", "index": 0 }]] },
+    "Approve Repair": { "main": [[{ "node": "Validate Repair", "type": "main", "index": 0 }]] },
+    "Validate Repair": { "main": [[{ "node": "Record Repair in BigQuery", "type": "main", "index": 0 }]] },
+    "Record Repair in BigQuery": { "main": [[{ "node": "Return Repair Receipt", "type": "main", "index": 0 }]] }
+  },
+  "pinData": {},
+  "active": false,
+  "settings": { "executionOrder": "v1", "saveManualExecutions": true },
+  "meta": { "templateCredsSetupCompleted": false },
+  "tags": []
+}
