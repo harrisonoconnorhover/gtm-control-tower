@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   demoRunSummary,
   demoStages,
@@ -12,11 +12,19 @@ import {
   type ScenarioKey,
 } from '@/lib/control-tower';
 import {
+  countCsvRepairCandidates,
+  executeCsvRepair,
+  exportContactsCsv,
+  importContactsCsv,
+} from '@/lib/csv-control-tower';
+import {
   isLiveControlTowerState,
   isRepairReceipt,
   isSeedReceipt,
   type LiveControlTowerState,
+  type LiveContactState,
   type RepairReceipt,
+  type RepairRun,
   type SeedReceipt,
 } from '@/lib/live-control-tower';
 
@@ -93,6 +101,37 @@ function funnelFromLiveState(state: LiveControlTowerState): ReturnType<typeof fu
   }));
 }
 
+function metricsFromCsvContacts(contacts: LiveContactState[]): ReturnType<typeof scenarioMetrics> {
+  const active = contacts.filter((contact) => contact.recordStatus === 'active');
+  const clean = active.filter((contact) => contact.qualityFlags.length === 0).length;
+  const assigned = active.filter((contact) => Boolean(contact.ownerId)).length;
+  const qualityRate = active.length ? (clean / active.length) * 100 : 0;
+  return [
+    { label: 'CSV rows', value: contacts.length.toLocaleString(), detail: 'kept in this browser tab', direction: 'good' },
+    { label: 'Active identities', value: active.length.toLocaleString(), detail: `${contacts.length - active.length} logically merged`, direction: 'good' },
+    { label: 'Data quality', value: `${qualityRate.toFixed(1)}%`, detail: `${active.length - clean} active rows need attention`, direction: qualityRate < 95 ? 'warning' : 'good' },
+    { label: 'Assigned owners', value: assigned.toLocaleString(), detail: `${active.length - assigned} unassigned`, direction: assigned < active.length ? 'warning' : 'good' },
+  ];
+}
+
+function funnelFromCsvContacts(contacts: LiveContactState[]): ReturnType<typeof funnelForScenario> {
+  const active = contacts.filter((contact) => contact.recordStatus === 'active');
+  const ranks: Record<string, number> = { lead: 1, mql: 2, sql: 3, opportunity: 4, customer: 5, closed_won: 5 };
+  const counts = [
+    active.length,
+    active.filter((contact) => (ranks[contact.lifecycleStage] ?? 1) >= 2).length,
+    active.filter((contact) => (ranks[contact.lifecycleStage] ?? 1) >= 3).length,
+    active.filter((contact) => (ranks[contact.lifecycleStage] ?? 1) >= 4).length,
+    active.filter((contact) => (ranks[contact.lifecycleStage] ?? 1) >= 5).length,
+  ];
+  const labels = ['Leads', 'MQL', 'SQL', 'Open opp', 'Won'] as const;
+  return labels.map((label, index) => ({
+    label,
+    count: counts[index],
+    conversion: counts[0] ? (counts[index] / counts[0]) * 100 : 0,
+  }));
+}
+
 function formatRouteTime(seconds: number): string {
   const minutes = Math.floor(seconds / 60);
   const remainder = String(Math.round(seconds % 60)).padStart(2, '0');
@@ -112,14 +151,25 @@ export function ControlTowerDashboard() {
   const [seedStatus, setSeedStatus] = useState<'idle' | 'sending' | 'seeded' | 'error'>('idle');
   const [seedReceipt, setSeedReceipt] = useState<SeedReceipt | null>(null);
   const [seedError, setSeedError] = useState<string | null>(null);
+  const [dataMode, setDataMode] = useState<'warehouse' | 'csv'>('warehouse');
+  const [csvContacts, setCsvContacts] = useState<LiveContactState[]>([]);
+  const [originalCsvContacts, setOriginalCsvContacts] = useState<LiveContactState[]>([]);
+  const [csvRepairHistory, setCsvRepairHistory] = useState<RepairRun[]>([]);
+  const [csvFileName, setCsvFileName] = useState<string | null>(null);
+  const [csvStatus, setCsvStatus] = useState<'idle' | 'reading' | 'ready' | 'error'>('idle');
+  const [csvError, setCsvError] = useState<string | null>(null);
   const visibleScenario = repaired ? null : activeScenario;
   const metrics = useMemo(
-    () => !visibleScenario && liveState ? metricsFromLiveState(liveState) : scenarioMetrics(visibleScenario),
-    [liveState, visibleScenario],
+    () => dataMode === 'csv'
+      ? metricsFromCsvContacts(csvContacts)
+      : !visibleScenario && liveState ? metricsFromLiveState(liveState) : scenarioMetrics(visibleScenario),
+    [csvContacts, dataMode, liveState, visibleScenario],
   );
   const funnel = useMemo(
-    () => !visibleScenario && liveState ? funnelFromLiveState(liveState) : funnelForScenario(visibleScenario),
-    [liveState, visibleScenario],
+    () => dataMode === 'csv'
+      ? funnelFromCsvContacts(csvContacts)
+      : !visibleScenario && liveState ? funnelFromLiveState(liveState) : funnelForScenario(visibleScenario),
+    [csvContacts, dataMode, liveState, visibleScenario],
   );
   const runSummary = useMemo(() => demoRunSummary(demoStage), [demoStage]);
 
@@ -169,6 +219,7 @@ export function ControlTowerDashboard() {
       if (!response.ok || !isSeedReceipt(receipt)) throw new Error('The workflow did not return a seed receipt.');
       setSeedReceipt(receipt);
       setSeedStatus('seeded');
+      setDataMode('warehouse');
       setRepairStatus('idle');
       setRepairReceipt(null);
       setRepairError(null);
@@ -189,6 +240,61 @@ export function ControlTowerDashboard() {
     await resetFunkyBatch(true);
   }
 
+  async function importCsvFile(file: File) {
+    setCsvStatus('reading');
+    setCsvError(null);
+    try {
+      if (file.size > 10 * 1024 * 1024) throw new Error('Use a CSV smaller than 10 MB for this browser-local workspace.');
+      const imported = importContactsCsv(await file.text());
+      const snapshot = imported.contacts.map((contact) => ({ ...contact, qualityFlags: [...contact.qualityFlags] }));
+      setCsvContacts(snapshot);
+      setOriginalCsvContacts(snapshot.map((contact) => ({ ...contact, qualityFlags: [...contact.qualityFlags] })));
+      setCsvRepairHistory([]);
+      setCsvFileName(file.name);
+      setCsvStatus('ready');
+      setDataMode('csv');
+      setActiveScenario('duplicate-surge');
+      setRepaired(false);
+      setRepairStatus('idle');
+      setRepairReceipt(null);
+      setRepairError(null);
+      setDemoRunning(false);
+      setDemoStage(demoStages.length - 1);
+    } catch (error) {
+      setCsvStatus('error');
+      setCsvError(error instanceof Error ? error.message : 'The CSV could not be imported.');
+    }
+  }
+
+  function resetCsvWorkspace() {
+    setCsvContacts(originalCsvContacts.map((contact) => ({ ...contact, qualityFlags: [...contact.qualityFlags] })));
+    setCsvRepairHistory([]);
+    setActiveScenario('duplicate-surge');
+    setRepaired(false);
+    setRepairStatus('idle');
+    setRepairReceipt(null);
+    setRepairError(null);
+  }
+
+  function exportCsvWorkspace() {
+    const blob = new Blob([exportContactsCsv(csvContacts)], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${csvFileName?.replace(/\.csv$/i, '') || 'control-tower'}-repaired.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function useWarehouseMode() {
+    setDataMode('warehouse');
+    setRepaired(false);
+    setRepairStatus('idle');
+    setRepairReceipt(null);
+    setRepairError(null);
+    void refreshLiveState();
+  }
+
   function triggerChaos() {
     setActiveScenario(nextScenario(activeScenario));
     setRepaired(false);
@@ -203,6 +309,15 @@ export function ControlTowerDashboard() {
     if (!activeScenario || repairStatus === 'sending') return;
     setRepairStatus('sending');
     setRepairError(null);
+    if (dataMode === 'csv') {
+      const result = executeCsvRepair(csvContacts, activeScenario);
+      setCsvContacts(result.contacts);
+      setCsvRepairHistory((history) => [result.run, ...history].slice(0, 6));
+      setRepairReceipt(result.receipt);
+      setRepairStatus('executed');
+      setRepaired(true);
+      return;
+    }
     try {
       const response = await fetch('/api/control-tower/repair', {
         method: 'POST',
@@ -289,11 +404,19 @@ export function ControlTowerDashboard() {
         <LiveWarehouseCard state={liveState} status={liveStatus} onRefresh={refreshLiveState} />
 
         <FunkyCrmLab
-          state={liveState}
+          mode={dataMode}
+          contacts={dataMode === 'csv' ? csvContacts : liveState?.contacts ?? []}
+          repairHistory={dataMode === 'csv' ? csvRepairHistory : liveState?.repairHistory ?? []}
+          csvFileName={csvFileName}
+          csvStatus={csvStatus}
+          csvError={csvError}
           seedStatus={seedStatus}
           seedReceipt={seedReceipt}
           seedError={seedError}
-          onReset={() => resetFunkyBatch(false)}
+          onImport={importCsvFile}
+          onExport={exportCsvWorkspace}
+          onUseWarehouse={useWarehouseMode}
+          onReset={() => dataMode === 'csv' ? Promise.resolve(resetCsvWorkspace()) : resetFunkyBatch(false)}
         />
 
         <section className="rounded-[34px] border border-white/10 bg-[#091a14]/92 p-4 shadow-[0_30px_100px_rgba(0,0,0,0.22)] sm:p-6" aria-label="Messy lead processing walkthrough">
@@ -337,11 +460,11 @@ export function ControlTowerDashboard() {
 
         <div className="mt-7 flex items-center justify-between gap-4">
           <div>
-            <p className="text-sm text-[#8fa99d]">{visibleScenario ? 'Scenario impact model' : liveState ? 'Live warehouse metrics' : 'Demo baseline'}</p>
-            <h3 className="mt-1 text-xl font-semibold">{visibleScenario ? 'How this failure changes the business' : 'What BigQuery says now'}</h3>
+            <p className="text-sm text-[#8fa99d]">{dataMode === 'csv' ? 'Imported CSV metrics' : visibleScenario ? 'Scenario impact model' : liveState ? 'Live warehouse metrics' : 'Demo baseline'}</p>
+            <h3 className="mt-1 text-xl font-semibold">{dataMode === 'csv' ? 'What this browser-local file says now' : visibleScenario ? 'How this failure changes the business' : 'What BigQuery says now'}</h3>
           </div>
-          <span className={`rounded-full px-3 py-1 font-mono text-[9px] uppercase tracking-wider ${visibleScenario ? 'bg-[#ff7b55]/10 text-[#ff9d7f]' : liveState ? 'bg-[#cdfc54]/10 text-[#cdfc54]' : 'bg-white/[0.05] text-[#8fa99d]'}`}>
-            {visibleScenario ? 'Simulated overlay' : liveState ? 'Live' : 'Fallback'}
+          <span className={`rounded-full px-3 py-1 font-mono text-[9px] uppercase tracking-wider ${dataMode === 'csv' ? 'bg-[#83bcff]/10 text-[#83bcff]' : visibleScenario ? 'bg-[#ff7b55]/10 text-[#ff9d7f]' : liveState ? 'bg-[#cdfc54]/10 text-[#cdfc54]' : 'bg-white/[0.05] text-[#8fa99d]'}`}>
+            {dataMode === 'csv' ? 'Local CSV' : visibleScenario ? 'Simulated overlay' : liveState ? 'Live' : 'Fallback'}
           </span>
         </div>
         <section className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Pipeline health metrics">
@@ -355,13 +478,15 @@ export function ControlTowerDashboard() {
         </section>
 
         <section className="mt-6 grid gap-5 xl:grid-cols-[1.18fr_0.82fr]">
-          <FunnelCard funnel={funnel} live={!visibleScenario && Boolean(liveState)} />
+          <FunnelCard funnel={funnel} source={dataMode === 'csv' ? 'csv' : !visibleScenario && liveState ? 'warehouse' : 'simulation'} />
           <IncidentCard
             activeScenario={visibleScenario}
             repaired={repaired}
             repairStatus={repairStatus}
             repairReceipt={repairReceipt}
             repairError={repairError}
+            executionMode={dataMode}
+            candidateCount={dataMode === 'csv' && visibleScenario ? countCsvRepairCandidates(csvContacts, visibleScenario) : null}
             onApproveRepair={approveRepair}
           />
         </section>
@@ -488,42 +613,84 @@ function LiveStat({ label, value, warning = false, compact = false }: { label: s
 }
 
 function FunkyCrmLab({
-  state,
+  mode,
+  contacts,
+  repairHistory,
+  csvFileName,
+  csvStatus,
+  csvError,
   seedStatus,
   seedReceipt,
   seedError,
+  onImport,
+  onExport,
+  onUseWarehouse,
   onReset,
 }: {
-  state: LiveControlTowerState | null;
+  mode: 'warehouse' | 'csv';
+  contacts: LiveContactState[];
+  repairHistory: RepairRun[];
+  csvFileName: string | null;
+  csvStatus: 'idle' | 'reading' | 'ready' | 'error';
+  csvError: string | null;
   seedStatus: 'idle' | 'sending' | 'seeded' | 'error';
   seedReceipt: SeedReceipt | null;
   seedError: string | null;
+  onImport: (file: File) => Promise<void>;
+  onExport: () => void;
+  onUseWarehouse: () => void;
   onReset: () => Promise<void>;
 }) {
-  const active = state?.contacts.filter((contact) => contact.recordStatus === 'active').length ?? 0;
-  const merged = state?.contacts.filter((contact) => contact.recordStatus === 'merged').length ?? 0;
+  const fileInput = useRef<HTMLInputElement>(null);
+  const active = contacts.filter((contact) => contact.recordStatus === 'active').length;
+  const merged = contacts.filter((contact) => contact.recordStatus === 'merged').length;
   return (
     <section className="mb-6 overflow-hidden rounded-[30px] border border-white/10 bg-[#0c1d17]" aria-label="Funky CRM contact lab">
       <div className="flex flex-wrap items-start justify-between gap-4 border-b border-white/10 px-5 py-5 sm:px-6">
         <div>
-          <p className="text-sm text-[#8fa99d]">Executed-repair lab</p>
-          <h3 className="mt-1 text-xl font-semibold">Ten genuinely funky contacts in mutable BigQuery state</h3>
-          <p className="mt-2 max-w-3xl text-xs leading-5 text-[#71877c]">Duplicates, plus-addressing, malformed email, Unicode, conflicting companies, routing overload, and impossible lifecycle changes. The workers below change these rows and return native execution receipts.</p>
+          <p className="text-sm text-[#8fa99d]">{mode === 'csv' ? 'Browser-local CSV workspace' : 'Executed-repair lab'}</p>
+          <h3 className="mt-1 text-xl font-semibold">{mode === 'csv' ? `${contacts.length} imported contacts · no warehouse required` : 'Ten genuinely funky contacts in mutable BigQuery state'}</h3>
+          <p className="mt-2 max-w-3xl text-xs leading-5 text-[#71877c]">{mode === 'csv' ? 'Your file stays in this browser tab. Common CRM headers are mapped automatically; inferred quality flags and every repair remain local until you export the result.' : 'Duplicates, plus-addressing, malformed email, Unicode, conflicting companies, routing overload, and impossible lifecycle changes. The workers below change these rows and return native execution receipts.'}</p>
         </div>
-        <button
-          onClick={() => void onReset()}
-          disabled={seedStatus === 'sending'}
-          className="rounded-full border border-[#cdfc54]/25 bg-[#cdfc54]/[0.07] px-4 py-2 text-xs font-semibold text-[#cdfc54] transition hover:bg-[#cdfc54]/[0.12] disabled:cursor-wait disabled:opacity-60"
-        >
-          {seedStatus === 'sending' ? 'Resetting in BigQuery…' : 'Reset funky batch'}
-        </button>
+        <div className="flex flex-wrap justify-end gap-2">
+          <input
+            ref={fileInput}
+            type="file"
+            accept=".csv,text/csv"
+            className="sr-only"
+            onChange={(event) => {
+              const file = event.currentTarget.files?.[0];
+              if (file) void onImport(file);
+              event.currentTarget.value = '';
+            }}
+          />
+          <button
+            onClick={() => fileInput.current?.click()}
+            disabled={csvStatus === 'reading'}
+            className="rounded-full border border-[#83bcff]/25 bg-[#83bcff]/[0.07] px-4 py-2 text-xs font-semibold text-[#83bcff] transition hover:bg-[#83bcff]/[0.12] disabled:cursor-wait disabled:opacity-60"
+          >
+            {csvStatus === 'reading' ? 'Reading CSV…' : mode === 'csv' ? 'Import another CSV' : 'Import your CSV'}
+          </button>
+          <a href="/control-tower-csv-template.csv" download className="rounded-full border border-white/10 px-4 py-2 text-xs font-semibold text-[#a9bbb2] transition hover:bg-white/[0.05]">CSV template</a>
+          {mode === 'csv' && <button onClick={onExport} className="rounded-full border border-[#cdfc54]/25 bg-[#cdfc54]/[0.07] px-4 py-2 text-xs font-semibold text-[#cdfc54] transition hover:bg-[#cdfc54]/[0.12]">Export repaired CSV</button>}
+          <button
+            onClick={() => void onReset()}
+            disabled={mode === 'warehouse' && seedStatus === 'sending'}
+            className="rounded-full border border-white/10 px-4 py-2 text-xs font-semibold text-[#a9bbb2] transition hover:bg-white/[0.05] disabled:cursor-wait disabled:opacity-60"
+          >
+            {mode === 'csv' ? 'Reset imported file' : seedStatus === 'sending' ? 'Resetting in BigQuery…' : 'Reset funky batch'}
+          </button>
+          {mode === 'csv' && <button onClick={onUseWarehouse} className="rounded-full border border-white/10 px-4 py-2 text-xs font-semibold text-[#a9bbb2] transition hover:bg-white/[0.05]">Use BigQuery demo</button>}
+        </div>
       </div>
       <div className="flex flex-wrap gap-2 border-b border-white/10 px-5 py-3 font-mono text-[9px] uppercase tracking-wider text-[#8fa99d] sm:px-6">
         <span className="rounded-full bg-white/[0.05] px-3 py-1">{active} active</span>
         <span className="rounded-full bg-white/[0.05] px-3 py-1">{merged} merged</span>
-        <span className="rounded-full bg-white/[0.05] px-3 py-1">{state?.repairHistory.length ?? 0} executed repairs</span>
-        {seedReceipt && <span className="rounded-full bg-[#cdfc54]/10 px-3 py-1 text-[#cdfc54]">Receipt: {seedReceipt.contacts} seeded / {seedReceipt.dirtyRecords} dirty</span>}
-        {seedError && <span className="rounded-full bg-[#ff7b55]/10 px-3 py-1 text-[#ff9d7f]">{seedError}</span>}
+        <span className="rounded-full bg-white/[0.05] px-3 py-1">{repairHistory.length} executed repairs</span>
+        {mode === 'csv' && csvFileName && <span className="rounded-full bg-[#83bcff]/10 px-3 py-1 text-[#83bcff]">{csvFileName}</span>}
+        {mode === 'warehouse' && seedReceipt && <span className="rounded-full bg-[#cdfc54]/10 px-3 py-1 text-[#cdfc54]">Receipt: {seedReceipt.contacts} seeded / {seedReceipt.dirtyRecords} dirty</span>}
+        {mode === 'warehouse' && seedError && <span className="rounded-full bg-[#ff7b55]/10 px-3 py-1 text-[#ff9d7f]">{seedError}</span>}
+        {csvError && <span className="rounded-full bg-[#ff7b55]/10 px-3 py-1 text-[#ff9d7f]">{csvError}</span>}
       </div>
       <div className="overflow-x-auto">
         <table className="w-full min-w-[1120px] border-collapse text-left text-xs">
@@ -539,7 +706,7 @@ function FunkyCrmLab({
             </tr>
           </thead>
           <tbody className="divide-y divide-white/[0.06]">
-            {state?.contacts.map((contact) => (
+            {contacts.map((contact) => (
               <tr key={contact.contactId} className={contact.recordStatus === 'merged' ? 'bg-[#83bcff]/[0.04] text-[#92a69c]' : 'text-[#dce9e2]'}>
                 <td className="px-5 py-3.5 align-top">
                   <p className="font-semibold">{contact.fullName}</p>
@@ -572,10 +739,10 @@ function FunkyCrmLab({
           </tbody>
         </table>
       </div>
-      {!state?.contacts.length && <p className="px-5 py-5 text-sm text-[#8fa99d] sm:px-6">Reset the batch to load the synthetic contact state.</p>}
-      {state?.repairHistory.length ? (
+      {!contacts.length && <p className="px-5 py-5 text-sm text-[#8fa99d] sm:px-6">Import a CSV or reset the synthetic batch to load contact state.</p>}
+      {repairHistory.length ? (
         <div className="flex flex-wrap gap-2 border-t border-white/10 px-5 py-4 sm:px-6">
-          {state.repairHistory.slice(0, 3).map((run) => (
+          {repairHistory.slice(0, 3).map((run) => (
             <span key={run.runId} className="rounded-full border border-white/10 bg-white/[0.035] px-3 py-2 font-mono text-[9px] text-[#a9bbb2]">
               {run.scenario} · {run.affectedRecords} rows · executed
             </span>
@@ -687,15 +854,17 @@ function OutcomeStat({ value, label, warning = false }: { value: number; label: 
   );
 }
 
-function FunnelCard({ funnel, live }: { funnel: ReturnType<typeof funnelForScenario>; live: boolean }) {
+function FunnelCard({ funnel, source }: { funnel: ReturnType<typeof funnelForScenario>; source: 'csv' | 'warehouse' | 'simulation' }) {
+  const title = source === 'csv' ? 'Imported-contact funnel' : source === 'warehouse' ? 'Live trusted funnel' : 'Scenario funnel model';
+  const badge = source === 'csv' ? 'LOCAL CSV' : source === 'warehouse' ? 'BIGQUERY · 30 DAYS' : 'SIMULATED OVERLAY';
   return (
     <article className="rounded-[30px] border border-white/10 bg-[#0c1d17] p-5 sm:p-6">
       <div className="flex items-center justify-between gap-4">
         <div>
-          <p className="text-sm text-[#8fa99d]">{live ? 'Live trusted funnel' : 'Scenario funnel model'}</p>
+          <p className="text-sm text-[#8fa99d]">{title}</p>
           <h3 className="mt-1 text-xl font-semibold">Accepted events only</h3>
         </div>
-        <span className={`font-mono text-[10px] ${live ? 'text-[#cdfc54]' : 'text-[#8fa99d]'}`}>{live ? 'BIGQUERY · 30 DAYS' : 'SIMULATED OVERLAY'}</span>
+        <span className={`font-mono text-[10px] ${source === 'warehouse' ? 'text-[#cdfc54]' : source === 'csv' ? 'text-[#83bcff]' : 'text-[#8fa99d]'}`}>{badge}</span>
       </div>
       <div className="mt-8 grid grid-cols-5 items-end gap-2 sm:gap-4">
         {funnel.map((stage) => (
@@ -719,6 +888,8 @@ function IncidentCard({
   repairStatus,
   repairReceipt,
   repairError,
+  executionMode,
+  candidateCount,
   onApproveRepair,
 }: {
   activeScenario: ScenarioKey | null;
@@ -726,9 +897,14 @@ function IncidentCard({
   repairStatus: 'idle' | 'sending' | 'executed' | 'error';
   repairReceipt: RepairReceipt | null;
   repairError: string | null;
+  executionMode: 'warehouse' | 'csv';
+  candidateCount: number | null;
   onApproveRepair: () => Promise<void>;
 }) {
-  const active = activeScenario ? scenarios[activeScenario] : null;
+  const baseActive = activeScenario ? scenarios[activeScenario] : null;
+  const active = baseActive && executionMode === 'csv' && candidateCount !== null
+    ? { ...baseActive, detail: csvIncidentDetail(activeScenario, candidateCount) }
+    : baseActive;
   const incidentRows = active ? [active, ...baselineIncidents] : baselineIncidents;
   return (
     <article className="rounded-[30px] border border-white/10 bg-[#f0f5e8] p-5 text-[#10221a] sm:p-6">
@@ -747,7 +923,7 @@ function IncidentCard({
       )}
       {repaired && repairReceipt && (
         <div data-testid="repair-success" className="mt-5 rounded-2xl border border-[#2f956c]/25 bg-[#dff2e8] p-4 text-sm text-[#236b50]">
-          <p className="font-semibold">n8n executed the repair against BigQuery.</p>
+          <p className="font-semibold">{executionMode === 'csv' ? 'The local worker executed in this browser tab.' : 'n8n executed the repair against BigQuery.'}</p>
           <p className="mt-1 text-xs leading-5">{repairReceipt.affectedRecords} records changed · {repairReceipt.action.replaceAll('_', ' ')} · Receipt {repairReceipt.eventId}</p>
         </div>
       )}
@@ -791,4 +967,12 @@ function repairButtonLabel(scenario: ScenarioKey | null): string {
   if (scenario === 'routing-overload') return 'Execute reroute worker';
   if (scenario === 'stage-regression') return 'Execute lifecycle replay';
   return 'Execute repair worker';
+}
+
+function csvIncidentDetail(scenario: ScenarioKey | null, count: number): string {
+  const rows = `${count} imported ${count === 1 ? 'row' : 'rows'}`;
+  if (scenario === 'duplicate-surge') return `${rows} will be logically merged into canonical identities.`;
+  if (scenario === 'routing-overload') return `${rows} match the Northeast enterprise overflow rule.`;
+  if (scenario === 'stage-regression') return `${rows} will be restored to their expected lifecycle stage.`;
+  return `${rows} match this repair.`;
 }

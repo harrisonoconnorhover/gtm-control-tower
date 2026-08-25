@@ -12,6 +12,7 @@ The browser demo is intentionally self-contained and uses synthetic data. The re
 - dbt models for funnel conversion, routing SLA, and data quality.
 - A server-side operations API that reads current warehouse truth through n8n without exposing BigQuery credentials to the browser.
 - Allow-listed merge, reroute, and lifecycle-replay workers that mutate synthetic CRM state and produce native n8n receipts plus immutable BigQuery audit events.
+- A no-warehouse CSV mode that imports, diagnoses, repairs, and exports contacts entirely in the browser.
 - A guided six-stage walkthrough that visibly ingests, enriches, routes, tests, models, and diagnoses a deliberately messy lead batch.
 - A responsive decision dashboard with three interactive failure simulations and a human-approved repair flow.
 
@@ -23,6 +24,17 @@ npm run dev
 ```
 
 Start n8n with `docker compose up -d`, then open the printed dashboard URL. The live warehouse strip and healthy-state funnel query BigQuery through n8n every 30 seconds. Click **Run messy lead batch** to reset ten synthetic CRM rows and watch them move from raw input to governed action. Execute the merge worker, then use **Test another failure** to run the reroute and lifecycle-replay workers. The contact table refreshes from BigQuery after every valid n8n receipt.
+
+## Use a CSV instead of BigQuery
+
+Click **Import your CSV** in the contact lab. The file is parsed locally and never uploaded. Common headers such as `id`, `name`, `email`, `company`, `region`, `segment`, `stage`, and `owner` are recognized automatically. The local workers can then:
+
+- mark duplicate rows as merged while preserving their canonical contact pointer;
+- reroute active Northeast enterprise rows to the overflow owner;
+- restore rows whose lifecycle stage is behind `expected_lifecycle_stage`;
+- export the complete repaired state as a new CSV.
+
+Use the included [CSV template](public/control-tower-csv-template.csv) for the full recommended schema. Automatic merging uses exact normalized email identity. A provided `normalized_email` may deliberately connect aliases; plus-addresses are flagged but are not silently merged.
 
 ## Generate synthetic CRM data
 
@@ -52,7 +64,7 @@ The local development stack has been exercised against a dedicated BigQuery proj
 
 ## Production boundary
 
-The browser calls same-origin route handlers; only those server handlers know the n8n webhook URLs. Local development defaults to `localhost:5678`. Production has no default connector and safely shows the demo fallback until hosted HTTPS webhook URLs are configured. Put authentication in front of the repair route before enabling it on a public deployment.
+The browser calls same-origin route handlers; only those server handlers know the n8n webhook URLs. Local development defaults to `localhost:5678`. Production has no default connector and safely shows the demo fallback until hosted HTTPS webhook URLs are configured. Put authentication in front of the repair route before enabling it on a public deployment. CSV mode uses no server route, network request, browser storage, or durable persistence; refreshing the tab clears the imported workspace unless the repaired CSV was exported.
 
 ## Portfolio demo script
 

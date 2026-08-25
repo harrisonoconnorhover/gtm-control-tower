@@ -35,3 +35,7 @@ The interface never reports a repair from an optimistic click. It requires an al
 ## Real mutations, synthetic boundary
 
 The portfolio lab should prove operating behavior without risking a real CRM. Its merge, reroute, and replay workers therefore execute against named synthetic BigQuery contact state. Logical merges retain source rows and canonical pointers for an obvious before/after audit trail. Provider-specific HubSpot and Salesforce mutations remain a later, separately authenticated boundary.
+
+## Browser-local CSV fallback
+
+CSV mode exists for teams without BigQuery and requires no alternate backend. Imported rows, inferred flags, repairs, and receipts stay in React memory; the user explicitly exports the result. Identity matching defaults to exact normalized email. Plus-addresses are flagged rather than silently collapsed because that alias behavior is not universal across corporate mail systems.

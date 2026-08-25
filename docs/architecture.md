@@ -18,6 +18,18 @@
 
 The dashboard browser never receives Google or n8n credentials. It calls same-origin `/api/control-tower/state`, `/api/control-tower/funky`, and `/api/control-tower/repair` handlers. Those server routes validate request and response contracts before proxying to a separate n8n Operations API workflow.
 
+Users without a warehouse can choose a separate local path:
+
+```text
+CSV file → browser parser + field aliases → in-memory contact state
+                                              │
+                                  merge / reroute / replay
+                                              │
+                                      repaired CSV export
+```
+
+No CSV bytes cross a network boundary or persist after a refresh. The browser produces receipt-shaped run records so the same contact table and incident controls work in either mode, but the UI clearly labels local execution versus n8n/BigQuery execution.
+
 ## Data contract
 
 Every CRM event has a stable `event_id`, lead/account identity, lifecycle stage, event time, routing metadata, commercial segment, and quality flags. BigQuery partitions by event date and clusters by stage, segment, and region. dbt deduplicates on `event_id` before producing decision-ready marts.
@@ -47,3 +59,7 @@ The primary walkthrough uses a ten-record synthetic batch with realistic CRM def
 The state webhook executes a bounded BigQuery query with a 100 MB billing ceiling, shapes events, funnel measures, contact state, and repair history into a strict dashboard contract, and returns it server-side. The seed webhook replaces only the named synthetic batch. The repair webhook accepts three known scenario keys and executes one parameterized worker: logical duplicate merge, Northeast enterprise reroute, or expected-lifecycle replay. Every run writes a repair receipt and immutable event. The dashboard reports success only after contract validation, then refreshes the changed rows from BigQuery.
 
 The merge is deliberately non-destructive: source rows remain queryable but are marked `merged` and point at the canonical contact. The lab does not mutate live HubSpot or Salesforce records. Public repair access stays disabled until the same-origin mutation routes are authenticated.
+
+## CSV compatibility path
+
+The CSV parser accepts quoted cells and newlines, maps common CRM header aliases, and infers missing email/company/owner, lifecycle regression, Unicode-domain, plus-address, and exact normalized-email duplicate flags. It does not guess fuzzy name/company identity. A user may provide `normalized_email` when aliases are already governed upstream. Imports are capped at 10 MB to keep synchronous browser work bounded.

@@ -1,0 +1,5 @@
+contact_id,full_name,email,normalized_email,company,region,segment,lifecycle_stage,expected_lifecycle_stage,owner_id
+CSV-001,Alex Morgan,alex@northstar.ai,,North Star Robotics,Northeast,Enterprise,customer,customer,NE-ENT
+CSV-002," Alex Morgan ",ALEX+EVENT@NORTHSTAR.AI,alex@northstar.ai,"Northstar Robotics, Inc.",Northeast,Enterprise,mql,customer,NE-ENT
+CSV-003,Mia Santos,mia.santos @ gmail.com,,,West,SMB,lead,lead,
+CSV-004,Robin Cho,robin@oakandpine.co,,Oak & Pine,Northeast,Mid-Market,mql,sql,NE-MM
