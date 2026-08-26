@@ -16,6 +16,12 @@ docker compose up --build
 Open `http://localhost:3000/app`, choose **CSV file**, and load the bundled
 64-row practice batch or use the included
 [`control-tower-csv-template.csv`](../public/control-tower-csv-template.csv).
+The more adversarial
+[`SEC public-company messy CRM fixture`](../public/sec-public-company-messy-crm.csv)
+contains 72 rows with duplicates, malformed and Unicode emails, missing company
+and owner values, stage regressions, plus-addresses, inconsistent casing, and
+quoted punctuation. Only company metadata comes from the public SEC snapshot;
+all contact-level data is synthetic.
 Preview the first rows, map the source columns, and choose **Validate + load**.
 Imports, mappings, repair history, connector receipts, and the latest twenty
 revisions persist in `.runtime/sqlite/gtm-control-tower.db`. The browser stores
@@ -24,6 +30,9 @@ only an unguessable workspace key; SQLite remains the source of truth.
 Plain `docker compose up` also starts n8n at `http://localhost:5678` so it is
 ready when you add Google Sheets. Use `docker compose up app` for the app alone.
 Set `CONTROL_TOWER_PORT=3100` before the command if port 3000 is occupied.
+Set `N8N_PORT=5680` if port 5678 is occupied. Compose-generated container names
+and optional runtime-directory variables allow independent checkouts to run
+without sharing saved state.
 
 For local development without Docker, use Node.js 22.13 or newer:
 
@@ -98,3 +107,8 @@ files into a build artifact.
 Run `npm run doctor` after setup and `npm run check:secrets` before publishing a
 fork. For an internet-accessible self-host, put the whole application behind
 authentication: workspace keys are capabilities, not user accounts.
+
+Run `npm run smoke:fresh-install` to launch the complete stack with empty
+temporary state and random host ports. It verifies credential-free connector
+status, persists a workspace across a restart, exercises undo, checks n8n
+serialization, and cleans up after itself.

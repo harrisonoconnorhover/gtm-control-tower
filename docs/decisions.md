@@ -97,3 +97,18 @@ bundled n8n service serializes all production webhooks with
 `N8N_CONCURRENCY_PRODUCTION_LIMIT=1`; this sacrifices parallel connector
 throughput so concurrent Sheets calls cannot both decide to append the same new
 identity.
+
+## Public companies, synthetic people
+
+The adversarial CSV fixture uses a dated snapshot of the SEC's public company,
+ticker, exchange, and CIK associations. Names, emails, phone numbers, titles,
+owners, and websites are generated locally with reserved example domains. This
+keeps the input recognizable and traceable without turning public personal data
+into test CRM records.
+
+## Fresh installs own their runtime
+
+Compose does not hard-code container names, and its host ports and bind-mounted
+runtime directories are configurable. The acceptance test therefore launches a
+fully isolated stack with random ports and empty temporary storage, verifies
+restart persistence and undo, then removes only the state it created.

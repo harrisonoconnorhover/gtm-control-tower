@@ -28,6 +28,8 @@
     "db:generate": "drizzle-kit generate",
     "check:secrets": "node scripts/check-secrets.mjs",
     "audit": "npm audit --audit-level=high",
+    "generate:public-fixture": "node scripts/generate_public_company_fixture.mjs",
+    "smoke:fresh-install": "bash scripts/fresh-install-smoke.sh",
     "generate:data": "python3 scripts/generate_synthetic_crm.py",
     "configure:salesforce": "node scripts/configure_salesforce_env.mjs",
     "sync:n8n": "node scripts/sync_ops_workflow.mjs"

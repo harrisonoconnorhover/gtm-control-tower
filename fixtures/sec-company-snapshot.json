@@ -1,0 +1,33 @@
+{
+  "source": "https://www.sec.gov/files/company_tickers_exchange.json",
+  "sourceTitle": "SEC Company Tickers Exchange",
+  "retrievedAt": "2026-08-26",
+  "notes": "Company, ticker, exchange, and CIK fields are a small public-data snapshot. All contact-level fields generated from this file are synthetic.",
+  "fields": ["cik", "name", "ticker", "exchange"],
+  "data": [
+    [1045810, "NVIDIA CORP", "NVDA", "Nasdaq"],
+    [320193, "Apple Inc.", "AAPL", "Nasdaq"],
+    [1652044, "Alphabet Inc.", "GOOGL", "Nasdaq"],
+    [789019, "MICROSOFT CORP", "MSFT", "Nasdaq"],
+    [1018724, "AMAZON COM INC", "AMZN", "Nasdaq"],
+    [1730168, "Broadcom Inc.", "AVGO", "Nasdaq"],
+    [1318605, "Tesla, Inc.", "TSLA", "Nasdaq"],
+    [1326801, "Meta Platforms, Inc.", "META", "Nasdaq"],
+    [59478, "ELI LILLY & Co", "LLY", "NYSE"],
+    [1067983, "BERKSHIRE HATHAWAY INC", "BRK-B", "NYSE"],
+    [19617, "JPMORGAN CHASE & CO", "JPM", "NYSE"],
+    [104169, "Walmart Inc.", "WMT", "Nasdaq"],
+    [2488, "ADVANCED MICRO DEVICES INC", "AMD", "Nasdaq"],
+    [1403161, "VISA INC.", "V", "NYSE"],
+    [2115436, "ExxonMobil Holdings Corp", "XOM", "NYSE"],
+    [937966, "ASML HOLDING NV", "ASML", "Nasdaq"],
+    [200406, "JOHNSON & JOHNSON", "JNJ", "NYSE"],
+    [1141391, "Mastercard Inc", "MA", "NYSE"],
+    [50863, "INTEL CORP", "INTC", "Nasdaq"],
+    [1551152, "AbbVie Inc.", "ABBV", "NYSE"],
+    [858877, "CISCO SYSTEMS, INC.", "CSCO", "Nasdaq"],
+    [70858, "BANK OF AMERICA CORP /DE/", "BAC", "NYSE"],
+    [1321655, "Palantir Technologies Inc.", "PLTR", "Nasdaq"],
+    [1341439, "ORACLE CORP", "ORCL", "NYSE"]
+  ]
+}

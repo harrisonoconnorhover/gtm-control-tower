@@ -55,6 +55,12 @@ docker compose up --build
 Open [http://localhost:3000/app](http://localhost:3000/app), choose **CSV file**,
 and either load the bundled 64-row practice batch or try
 [`public/control-tower-csv-template.csv`](public/control-tower-csv-template.csv).
+For a rougher test, use the 72-row
+[`SEC public-company messy CRM fixture`](public/sec-public-company-messy-crm.csv):
+company, ticker, exchange, and CIK fields come from the SEC's
+[Company Tickers Exchange](https://www.sec.gov/files/company_tickers_exchange.json),
+while every person, email, phone number, and website is synthetic and uses a
+reserved example domain.
 The workspace survives browser and container restarts in
 `.runtime/sqlite/gtm-control-tower.db`. n8n is available at
 [http://localhost:5678](http://localhost:5678). Run `docker compose up app` if
@@ -120,9 +126,14 @@ npm test
 npm run lint
 npm run build
 npm run build:public
+npm run smoke:fresh-install
 ```
 
 Run `npm run preview:public` to inspect only the static public site locally.
+The fresh-install smoke test creates isolated temporary Docker state, verifies
+credential-free startup, persists and reloads a workspace across an app restart,
+tests undo, confirms n8n's serialized-execution setting, and removes its own
+containers and temporary data.
 
 Run `npm run sync:n8n` after changing the state, seed, or repair SQL so the
 portable Operations workflow stays in sync.
@@ -138,7 +149,9 @@ BigQuery also executed the three repair classes. Two simultaneous Sheets
 webhooks carrying the same unseen email were serialized and produced one row;
 HubSpot completed a native contact upsert plus validation-failure proof; and
 Salesforce completed query-first create, update, and SOQL read-back against the
-same synthetic Lead identity. The public release contains no access tokens,
+same synthetic Lead identity. A separate anonymous-clone acceptance run started
+with no environment file or saved state, then persisted, reloaded, and undid a
+workspace across a container restart. The public release contains no access tokens,
 credential IDs, customer data, or personal CRM record IDs.
 
 See [architecture](docs/architecture.md), [decisions](docs/decisions.md),

@@ -2,7 +2,6 @@ services:
   app:
     build:
       context: .
-    container_name: gtm-control-tower-app
     restart: unless-stopped
     ports:
       - "${CONTROL_TOWER_BIND:-127.0.0.1}:${CONTROL_TOWER_PORT:-3000}:3000"
@@ -20,14 +19,13 @@ services:
       SALESFORCE_API_VERSION: ${SALESFORCE_API_VERSION:-67.0}
       SALESFORCE_INSTANCE_URL: ${SALESFORCE_INSTANCE_URL:-}
     volumes:
-      - ./.runtime/sqlite:/app/.runtime/sqlite
+      - ${CONTROL_TOWER_SQLITE_DIR:-./.runtime/sqlite}:/app/.runtime/sqlite
 
   n8n:
     image: n8nio/n8n@sha256:14c4285bc3034dc5b51034aea393711d27053588e460722bce523453a626f23c
-    container_name: gtm-control-tower-n8n
     restart: unless-stopped
     ports:
-      - "127.0.0.1:5678:5678"
+      - "${N8N_BIND:-127.0.0.1}:${N8N_PORT:-5678}:5678"
     environment:
       GENERIC_TIMEZONE: ${GENERIC_TIMEZONE:-UTC}
       GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-}
@@ -44,4 +42,4 @@ services:
       N8N_VERSION_NOTIFICATIONS_ENABLED: "false"
       TZ: ${GENERIC_TIMEZONE:-UTC}
     volumes:
-      - ./.runtime/n8n:/home/node/.n8n
+      - ${N8N_DATA_DIR:-./.runtime/n8n}:/home/node/.n8n
