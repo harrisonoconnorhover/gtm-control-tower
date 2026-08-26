@@ -91,9 +91,11 @@ The generic destination gate excludes unresolved duplicates, invalid email,
 missing company, missing owner, and lifecycle regression. Sheet output also
 escapes formula-trigger characters so phone numbers and untrusted cell values
 stay text. `GTM Clean` uses normalized email as its stable upsert key, so a
-sequential rerun updates the existing row instead of appending another copy.
-The server accepts a Sheets execution receipt only when n8n explicitly confirms
-that email-keyed idempotent contract.
+rerun updates the existing row instead of appending another copy. The bundled
+n8n service queues production webhooks one at a time, preventing two overlapping
+upserts from racing on a previously unseen email. The server accepts a Sheets
+execution receipt only when n8n explicitly confirms that email-keyed idempotent
+contract.
 
 HubSpot sync uses the current contacts batch-upsert API, email identity, a 100-record request ceiling, and `objectWriteTraceId` for per-record reconciliation. The server can call HubSpot directly with a private-app bearer token or proxy through the included n8n OAuth workflow. Both produce the same strict receipt contract.
 

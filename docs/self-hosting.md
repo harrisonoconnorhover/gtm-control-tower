@@ -39,7 +39,9 @@ OAuth credential, and publish both webhooks. The read path diagnoses a chosen
 worksheet through the same visual mapper as CSV. The write path creates a
 separate `GTM Clean` worksheet if needed, appends new destination-ready records,
 and updates existing normalized emails in place. Formula-trigger characters are
-escaped before sync.
+escaped before sync. The included n8n service runs one production webhook at a
+time, preventing simultaneous Sheets upserts from racing; queued calls resume in
+FIFO order.
 
 Follow [Google Sheets setup](google-sheets-setup.md). BigQuery is not required.
 

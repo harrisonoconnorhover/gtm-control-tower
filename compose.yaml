@@ -32,6 +32,9 @@ services:
       GENERIC_TIMEZONE: ${GENERIC_TIMEZONE:-UTC}
       GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-}
       N8N_DIAGNOSTICS_ENABLED: "false"
+      # Serialize production webhooks so two Sheets upserts cannot race while
+      # deciding whether a new normalized email should append or update.
+      N8N_CONCURRENCY_PRODUCTION_LIMIT: "1"
       N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS: "true"
       N8N_HOST: 0.0.0.0
       N8N_PERSONALIZATION_ENABLED: "false"

@@ -90,8 +90,10 @@ accidentally.
 ## Google Sheets identity is normalized email
 
 Destination-ready contacts have a valid, deduplicated normalized email, so the
-portable n8n workflow uses that column for append-or-update. Sequential reruns
-therefore update the existing `GTM Clean` row instead of multiplying it. A
-changed email is treated as a new identity rather than guessed to be the same
-person, and simultaneous writes are outside this single-process workflow's
-guarantee.
+portable n8n workflow uses that column for append-or-update. Reruns therefore
+update the existing `GTM Clean` row instead of multiplying it. A changed email
+is treated as a new identity rather than guessed to be the same person. The
+bundled n8n service serializes all production webhooks with
+`N8N_CONCURRENCY_PRODUCTION_LIMIT=1`; this sacrifices parallel connector
+throughput so concurrent Sheets calls cannot both decide to append the same new
+identity.

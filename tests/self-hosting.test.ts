@@ -74,4 +74,9 @@ describe('self-hosted connector foundation', () => {
     expect(writeWorkflow.nodes.find((node: { name: string }) => node.name === 'Shape Write Receipt').parameters.jsCode)
       .toContain("idempotent: true");
   });
+
+  it('serializes production n8n webhooks so concurrent Sheets upserts cannot race', () => {
+    const compose = readFileSync(new URL('../compose.yaml', import.meta.url), 'utf8');
+    expect(compose).toMatch(/N8N_CONCURRENCY_PRODUCTION_LIMIT:\s*["']1["']/u);
+  });
 });
