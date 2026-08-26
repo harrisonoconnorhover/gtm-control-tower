@@ -40,8 +40,8 @@ The portfolio lab should prove operating behavior without risking destructive CR
 
 CSV mode is the default product, not a temporary fallback. A local SQLite file
 stores validated imports, visual mapping presets, repair history, receipts, and
-twenty undo revisions. Hosted Sites builds use D1, which preserves the same
-SQLite contract. The browser keeps only a random workspace capability key.
+twenty undo revisions. The static public site stores no workspace data. The
+browser keeps only a random workspace capability key in the self-hosted app.
 Identity matching defaults to exact normalized email; plus-addresses are flagged
 rather than silently collapsed because that behavior is not universal.
 
@@ -73,11 +73,11 @@ The first public release is a self-hosted toolkit, not a multi-tenant SaaS. CSV-
 
 ## Separate experiences, one codebase
 
-The root route is a fast, credential-free portfolio demonstration. `/app` is
-the operational workspace and `/setup` explains local installation and current
-connector readiness. Keeping these routes in one repository avoids drift while
-letting a hiring reviewer and a self-hoster see only the controls relevant to
-them.
+The public Cloudflare Pages build contains only the fast, credential-free root
+demonstration. The same repository retains `/app` as the operational workspace
+and `/setup` as its local installation guide for Docker self-hosters. Reusing
+the public demo component avoids a second product codebase without publishing
+uploads, persistence, credentials, or connector routes.
 
 ## Destination-ready means unresolved rows stay out
 

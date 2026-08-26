@@ -2,40 +2,38 @@
 
 ## Finished
 
-- Set the bundled n8n service to one concurrent production execution, making overlapping webhook calls queue in FIFO order.
-- Kept normalized-email append-or-update, so a queued retry updates the first writer's row rather than appending a duplicate.
-- Proved two simultaneous webhooks carrying the same unseen synthetic email produced exactly one destination row.
-- Removed the synthetic collision-test row and restored `GTM Clean` to 44 rows, 44 unique emails, and zero duplicates.
-- Updated the self-host UI, setup guide, architecture, README, and decision record with the concurrency guarantee and throughput tradeoff.
+- Added a dedicated static build for the existing browser-only public demo.
+- Removed public operator and setup routes from the showcase; every workspace CTA now points to GitHub self-host instructions.
+- Kept the full `/app`, `/setup`, Docker, SQLite, n8n, and connector implementation unchanged for self-hosters.
+- Updated public metadata, README guidance, and the architecture decision record for the static-showroom boundary.
+- Published the static site at `https://gtm-control-tower.pages.dev/`.
 
 ## Try It
 
-- Run `docker compose up --build`, configure the two Sheets workflows, and open `http://localhost:3000/app`.
-- Start two syncs against the same `GTM Clean` worksheet; n8n queues one until the other finishes.
-- For an existing external n8n instance, set `N8N_CONCURRENCY_PRODUCTION_LIMIT=1` and restart it before publishing the workflow.
+- Open `https://gtm-control-tower.pages.dev/` and select **Run the 64-row cleanup**.
+- Confirm the receipt ends at 56 canonical rows, 44 ready for CRM, and 12 held for review.
+- Run `npm run preview:public` to inspect the public-only build locally.
 
 ## Checks
 
-- `npm test`: 36/36 passed; ESLint and the production build passed.
-- Doctor, Git-history secret scan, Docker Compose config, `git diff --check`, and the high-severity audit gate passed.
-- Running n8n reported `N8N_CONCURRENCY_PRODUCTION_LIMIT=1` after recreation.
-- Collision proof: both simultaneous webhooks returned valid receipts and one matching Sheet row existed afterward.
-- Cleanup readback confirmed 44 data rows, 44 unique emails, and no proof row remaining.
+- `npm test`: 36/36 passed; secret scan and `git diff --check` passed.
+- ESLint, the full Vinext production build, and the static public build passed.
+- Desktop 1440 px and mobile 390 px browser checks passed with no horizontal overflow or console errors.
+- The browser-only cleanup completed with the expected deterministic receipt.
 
 ## Decisions
 
-- Serialize at n8n's production-execution boundary so direct webhook callers receive the same protection as the app.
-- Prefer correctness over parallel connector throughput for this small self-hosted stack.
-- Keep email as the identity key; changing an address still creates a new identity.
+- Cloudflare Pages hosts only the static showroom; it receives no uploads and stores no workspace data.
+- The working operator product remains self-hosted through Docker in the same repository.
+- The public build reuses the existing demo component instead of creating a second product codebase.
 
 ## Remaining
 
-- Put internet-accessible self-hosts behind authentication before storing confidential CRM data.
-- If high parallel throughput becomes necessary, replace the global queue with a durable per-destination worker queue.
-- Upgrade Drizzle Kit when its dependency chain removes the moderate development-server advisory.
+- Attach a custom domain when the preferred hostname is chosen.
+- Retire or redirect the older `chatgpt.site` URL after the new Pages URL has circulated.
 
 ## Review First
 
-- `compose.yaml`
-- `docs/google-sheets-setup.md`
-- `tests/self-hosting.test.ts`
+- `components/public-demo.tsx`
+- `vite.public.config.ts`
+- `public-site/index.html`

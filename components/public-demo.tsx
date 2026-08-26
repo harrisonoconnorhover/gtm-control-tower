@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
 import {
   previewMessyLeadDemo,
   runMessyLeadDemo,
@@ -48,21 +47,20 @@ export function PublicDemo() {
   }
 
   return (
-    <main className="min-h-screen overflow-hidden bg-[#06100d] text-[#edf8f2] selection:bg-[#d8ff67] selection:text-[#06100d]">
+    <main id="top" className="min-h-screen overflow-hidden bg-[#06100d] text-[#edf8f2] selection:bg-[#d8ff67] selection:text-[#06100d]">
       <div className="pointer-events-none fixed inset-x-0 top-0 h-[760px] bg-[radial-gradient(circle_at_72%_4%,rgba(205,252,84,0.15),transparent_32%),radial-gradient(circle_at_12%_12%,rgba(49,156,118,0.18),transparent_30%)]" />
       <div className="relative mx-auto max-w-[1500px] px-5 sm:px-8 lg:px-12">
         <header className="flex flex-wrap items-center justify-between gap-5 border-b border-white/10 py-5">
-          <Link href="/" className="flex items-center gap-3" aria-label="GTM Control Tower home">
+          <a href="#top" className="flex items-center gap-3" aria-label="GTM Control Tower home">
             <span className="grid h-10 w-10 place-items-center rounded-xl bg-[#d8ff67] font-mono text-xs font-black text-[#06100d] shadow-[0_0_40px_rgba(216,255,103,0.16)]">GT</span>
             <div>
               <p className="font-mono text-[9px] uppercase tracking-[0.22em] text-[#7e968b]">Revenue systems lab</p>
               <p className="text-base font-semibold tracking-tight">GTM Control Tower</p>
             </div>
-          </Link>
+          </a>
           <nav className="flex flex-wrap items-center gap-2 text-xs" aria-label="Primary navigation">
             <a href="#demo" className="rounded-full bg-white/[0.06] px-4 py-2 text-[#dce9e2]">Two-minute demo</a>
-            <Link href="/app" className="rounded-full border border-white/10 px-4 py-2 text-[#9fb2a8] transition hover:border-white/25 hover:text-white">Operator workspace</Link>
-            <Link href="/setup" className="rounded-full border border-white/10 px-4 py-2 text-[#9fb2a8] transition hover:border-white/25 hover:text-white">Self-host setup</Link>
+            <a href="https://github.com/harrisonoconnorhover/gtm-control-tower#quick-start-one-command-no-accounts-required" className="rounded-full border border-white/10 px-4 py-2 text-[#9fb2a8] transition hover:border-white/25 hover:text-white">Self-host setup</a>
             <a href="https://github.com/harrisonoconnorhover/gtm-control-tower" target="_blank" rel="noreferrer" className="rounded-full border border-[#d8ff67]/25 px-4 py-2 font-semibold text-[#d8ff67] transition hover:bg-[#d8ff67]/10">GitHub ↗</a>
           </nav>
         </header>
@@ -88,7 +86,7 @@ export function PublicDemo() {
               >
                 {running ? `Running ${steps[Math.max(stage, 0)].label.toLowerCase()}…` : result ? 'Replay the 64-row cleanup' : 'Run the 64-row cleanup'}
               </button>
-              <Link href="/app" className="rounded-full border border-white/15 bg-white/[0.035] px-6 py-3.5 text-sm font-semibold text-[#c8d7d0] transition hover:border-white/30 hover:bg-white/[0.07]">Open the real workspace</Link>
+              <a href="https://github.com/harrisonoconnorhover/gtm-control-tower#quick-start-one-command-no-accounts-required" className="rounded-full border border-white/15 bg-white/[0.035] px-6 py-3.5 text-sm font-semibold text-[#c8d7d0] transition hover:border-white/30 hover:bg-white/[0.07]">Self-host the workspace</a>
             </div>
             <div className="mt-9 grid max-w-2xl grid-cols-2 gap-px overflow-hidden rounded-2xl border border-white/10 bg-white/10 sm:grid-cols-4">
               <HeroStat value="64" label="deliberately messy rows" />
@@ -202,10 +200,10 @@ export function PublicDemo() {
             <div>
               <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#486257]">Useful before enterprise software</p>
               <h2 className="mt-3 text-3xl font-semibold leading-tight tracking-[-0.045em] sm:text-4xl">Start with a file. Add systems only when they earn their keep.</h2>
-              <p className="mt-4 max-w-xl text-sm leading-6 text-[#5d6f66]">The minimum self-host works with Docker, CSV, and SQLite. Google Sheets through local n8n, HubSpot, Salesforce, and BigQuery are optional connectors—not prerequisites.</p>
+              <p className="mt-4 max-w-xl text-sm leading-6 text-[#5d6f66]">This public demonstration runs entirely in your browser. The real operator workspace self-hosts with Docker, CSV, and SQLite; Google Sheets, HubSpot, Salesforce, and BigQuery remain optional connectors.</p>
               <div className="mt-6 flex flex-wrap gap-3">
-                <Link href="/setup" className="rounded-full bg-[#102019] px-5 py-3 text-sm font-bold text-white">See the self-host setup</Link>
-                <Link href="/app" className="rounded-full border border-[#102019]/15 px-5 py-3 text-sm font-semibold">Open operator workspace</Link>
+                <a href="https://github.com/harrisonoconnorhover/gtm-control-tower#quick-start-one-command-no-accounts-required" className="rounded-full bg-[#102019] px-5 py-3 text-sm font-bold text-white">See the self-host setup</a>
+                <a href="https://github.com/harrisonoconnorhover/gtm-control-tower" className="rounded-full border border-[#102019]/15 px-5 py-3 text-sm font-semibold">View source</a>
               </div>
             </div>
             <div className="grid gap-2 sm:grid-cols-[1fr_auto_1fr_auto_1fr] sm:items-center">
@@ -219,7 +217,7 @@ export function PublicDemo() {
         </section>
 
         <footer className="flex flex-wrap items-center justify-between gap-4 border-t border-white/10 py-8 text-xs text-[#667c71]">
-          <p>Open source under MIT · synthetic demonstration data only</p>
+          <p>Browser-only public demo · open-source workspace · synthetic data only</p>
           <p className="font-mono">BUILT FOR GTM ENGINEERING, REVOPS, AND REVENUE SYSTEMS</p>
         </footer>
       </div>

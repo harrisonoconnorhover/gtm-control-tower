@@ -3,8 +3,8 @@
 [![CI](https://github.com/harrisonoconnorhover/gtm-control-tower/actions/workflows/ci.yml/badge.svg)](https://github.com/harrisonoconnorhover/gtm-control-tower/actions/workflows/ci.yml)
 [![MIT License](https://img.shields.io/badge/license-MIT-174b45.svg)](LICENSE)
 
-**[Run the credential-free two-minute demo](https://gtm-control-tower.deleteddeleted.chatgpt.site/)** ·
-**[Open the operator workspace](https://gtm-control-tower.deleteddeleted.chatgpt.site/app)**
+**[Run the browser-only two-minute demo](https://gtm-control-tower.pages.dev/)** ·
+**[Self-host the operator workspace](#quick-start-one-command-no-accounts-required)**
 
 A self-hosted revenue-systems lab that turns deliberately messy CRM data into
 governed records, explainable routing, trusted funnel metrics, and receipted
@@ -20,7 +20,7 @@ the repository.
   mapping presets, and diagnoses duplicate
   identity, missing fields, bad email, owner gaps, and lifecycle regression.
 - Persists imports, repairs, receipts, and twenty undo snapshots in a local
-  SQLite workspace; hosted Sites builds use D1's SQLite-compatible storage.
+  SQLite workspace.
 - Reads Google Sheets through n8n and writes governed records to a separate
   `GTM Clean` worksheet without requiring BigQuery.
 - Executes reviewed merge, reroute, and lifecycle-replay workers and exports the
@@ -31,8 +31,15 @@ the repository.
   models funnel conversion, routing SLA, and data quality with dbt.
 - Shows how operational defects change revenue metrics instead of presenting a
   static dashboard.
-- Keeps the public proof, full operator workspace, and self-host diagnostics on
-  separate routes without duplicating the codebase.
+- Builds the public proof as a static site while keeping the operator workspace
+  and self-host diagnostics in the same repository.
+
+## Public demonstration
+
+The Cloudflare Pages site is a static showroom: it runs the deterministic
+64-row cleanup entirely in the browser and uses synthetic data only. It does
+not accept uploads, store workspaces, run connectors, or expose the operator
+application. The working product remains the Docker self-host below.
 
 ## Quick start: one command, no accounts required
 
@@ -112,7 +119,10 @@ npm run check:secrets
 npm test
 npm run lint
 npm run build
+npm run build:public
 ```
+
+Run `npm run preview:public` to inspect only the static public site locally.
 
 Run `npm run sync:n8n` after changing the state, seed, or repair SQL so the
 portable Operations workflow stays in sync.

@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  metadataBase: new URL('https://gtm-control-tower.deleteddeleted.chatgpt.site'),
+  metadataBase: new URL('https://gtm-control-tower.pages.dev'),
   title: 'GTM Control Tower · Bad CRM data in, defensible action out',
   description: 'A self-hosted revenue systems lab that maps messy lead files, executes governed CRM repairs, and returns auditable receipts.',
   openGraph: {

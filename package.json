@@ -8,7 +8,7 @@
     "type": "git",
     "url": "git+https://github.com/harrisonoconnorhover/gtm-control-tower.git"
   },
-  "homepage": "https://gtm-control-tower.deleteddeleted.chatgpt.site/",
+  "homepage": "https://gtm-control-tower.pages.dev/",
   "bugs": {
     "url": "https://github.com/harrisonoconnorhover/gtm-control-tower/issues"
   },
@@ -18,8 +18,10 @@
   "scripts": {
     "dev": "vinext dev",
     "build": "vinext build",
+    "build:public": "vite build --config vite.public.config.ts",
     "start": "vinext start",
-    "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
+    "preview:public": "vite --config vite.public.config.ts --host 127.0.0.1",
+    "lint": "eslint . --ignore-pattern dist --ignore-pattern dist-public --ignore-pattern .next",
     "test": "vitest run",
     "setup": "node scripts/setup.mjs",
     "doctor": "node scripts/doctor.mjs",
