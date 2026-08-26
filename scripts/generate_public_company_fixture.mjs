@@ -39,7 +39,7 @@ const rows = snapshot.data.flatMap(([cik, company, ticker, exchange], companyInd
     if (variant === 1 && companyIndex % 3 === 0) email = primaryEmail.toUpperCase();
     if (variant === 2 && companyIndex % 4 === 0) email = `${localPart} at example.com`;
     if (variant === 2 && companyIndex % 4 === 1) email = `${localPart}+event@example.com`;
-    if (variant === 2 && companyIndex % 4 === 2) email = `${localPart}@überdata.example`;
+    if (variant === 2 && companyIndex % 4 === 2) email = `${localPart}@überdata.example.com`;
 
     const region = regions[companyIndex % regions.length];
     const segment = segments[(companyIndex + variant) % segments.length];

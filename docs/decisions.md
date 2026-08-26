@@ -106,6 +106,11 @@ owners, and websites are generated locally with reserved example domains. This
 keeps the input recognizable and traceable without turning public personal data
 into test CRM records.
 
+Internationalized email domains remain visibly flagged in the imported record,
+but the normalized identity uses the domain's ASCII IDNA form. This preserves
+the diagnostic evidence while producing the provider-compatible email form used
+for deduplication and governed CRM writes.
+
 ## Fresh installs own their runtime
 
 Compose does not hard-code container names, and its host ports and bind-mounted

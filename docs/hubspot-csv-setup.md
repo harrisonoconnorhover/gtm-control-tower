@@ -38,7 +38,9 @@ Use this when n8n already owns connector credentials or OAuth is preferred.
 2. Import [`csv-hubspot-sync-workflow.json`](../integrations/n8n/csv-hubspot-sync-workflow.json).
 3. Open **Batch Upsert HubSpot Contacts** and attach a HubSpot OAuth2 credential with `crm.objects.contacts.write`.
 4. Publish the workflow.
-5. Set `N8N_HUBSPOT_SYNC_WEBHOOK_URL` in `.env.local` if n8n is not at the local default URL.
+5. Set `N8N_HUBSPOT_SYNC_WEBHOOK_URL=http://127.0.0.1:5678/webhook/gtm-control-tower-hubspot-sync`
+   in `.env.local` so the dashboard can discover the connector. Change the URL
+   only when n8n is not using the local default.
 6. Leave `HUBSPOT_ACCESS_TOKEN` blank; the server will use n8n.
 
 ## Production safety

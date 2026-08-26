@@ -394,7 +394,16 @@ function normalizeEmail(value: string): string | null {
   const email = value.trim().toLowerCase();
   const match = email.match(/^([^@\s]+)@([^@\s]+\.[^@\s]+)$/u);
   if (!match) return null;
-  return `${match[1]}@${match[2]}`;
+  if (containsNonAscii(match[1])) return null;
+  try {
+    const parsedDomain = new URL(`http://${match[2]}`);
+    if (parsedDomain.port || parsedDomain.pathname !== '/' || parsedDomain.search || parsedDomain.hash) return null;
+    const asciiDomain = parsedDomain.hostname.toLowerCase();
+    if (!asciiDomain.includes('.') || !/^[a-z0-9.-]+$/u.test(asciiDomain)) return null;
+    return `${match[1]}@${asciiDomain}`;
+  } catch {
+    return null;
+  }
 }
 
 function normalizeStage(value: string): string {

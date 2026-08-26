@@ -31,8 +31,12 @@ describe('SEC public-company messy CRM fixture', () => {
     const imported = importContactsCsv(fixture).contacts;
     expect(imported).toHaveLength(72);
     expect(imported.every((contact) => contact.rawEmail.toLowerCase().includes('example.com')
-      || contact.rawEmail.toLowerCase().includes('überdata.example'))).toBe(true);
+      || contact.rawEmail.toLowerCase().includes('überdata.example.com'))).toBe(true);
     expect(imported.every((contact) => !contact.website || contact.website.endsWith('.example'))).toBe(true);
+    const unicodeDomains = imported.filter((contact) => contact.qualityFlags.includes('unicode_domain_present'));
+    expect(unicodeDomains).toHaveLength(6);
+    expect(unicodeDomains.every((contact) => contact.normalizedEmail?.includes('@xn--'))).toBe(true);
+    expect(unicodeDomains.every((contact) => /^[\x00-\x7F]+$/u.test(contact.normalizedEmail ?? ''))).toBe(true);
   });
 
   it('contains realistic defects and repairs every executable class', () => {

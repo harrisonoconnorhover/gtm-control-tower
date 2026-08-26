@@ -141,18 +141,22 @@ portable Operations workflow stays in sync.
 ## Verified integration behavior
 
 The connector paths have been exercised against dedicated development systems
-using synthetic data: n8n read a 64-row Google worksheet, all three local repair
-classes executed, and 44 governed rows were upserted to `GTM Clean` by
-normalized email while 12 unresolved active rows stayed out. Replaying the
-same batch left 44 unique rows, and a changed field updated in place. n8n and
-BigQuery also executed the three repair classes. Two simultaneous Sheets
-webhooks carrying the same unseen email were serialized and produced one row;
-HubSpot completed a native contact upsert plus validation-failure proof; and
-Salesforce completed query-first create, update, and SOQL read-back against the
-same synthetic Lead identity. A separate anonymous-clone acceptance run started
-with no environment file or saved state, then persisted, reloaded, and undid a
-workspace across a container restart. The public release contains no access tokens,
-credential IDs, customer data, or personal CRM record IDs.
+using synthetic data. The 72-row SEC fixture produced eight duplicate merges,
+six reroutes, and four lifecycle replays; 58 governed identities then synced to
+both HubSpot and Salesforce while eight merged rows and six malformed-email
+rows stayed out. HubSpot's first native receipt exposed six provider-rejected
+internationalized domains instead of counting them as successes. After IDNA
+normalization and a provider-valid reserved example subdomain, the final retry
+completed all 58 writes: it updated the 52 prior successes rather than
+duplicating them and created the six corrected contacts. Salesforce SOQL read-back found
+58 unique active Leads with no missing or duplicate identities; a repeat created
+zero and updated the same 58. n8n also read a 64-row Google worksheet, executed
+all three repair classes, and idempotently upserted 44 governed rows to `GTM
+Clean`. Two simultaneous Sheets webhooks carrying the same unseen email were
+serialized and produced one row. A separate anonymous-clone acceptance run
+started with no environment file or saved state, then persisted, reloaded, and
+undid a workspace across a container restart. The public release contains no
+access tokens, credential IDs, customer data, or personal CRM record IDs.
 
 See [architecture](docs/architecture.md), [decisions](docs/decisions.md),
 [security](SECURITY.md), and [contributing](CONTRIBUTING.md). Licensed under
