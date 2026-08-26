@@ -4,6 +4,7 @@ import { isConnectorReceipt } from '../lib/connector-contract';
 import {
   isGoogleSheetsPreviewRequest,
   isGoogleSheetsWriteRequest,
+  parseGoogleSheetsN8nWriteReceipt,
   tabularRowsToCsv,
 } from '../lib/google-sheets';
 import { emptyWorkspaceState, validateWorkspaceState } from '../lib/workspace';
@@ -34,6 +35,20 @@ describe('self-hosted connector foundation', () => {
       .toBe('Name,Company\nAda,"Engines, Inc."');
   });
 
+  it('accepts only an explicit idempotent email-keyed n8n write receipt', () => {
+    const receipt = {
+      recordsWritten: 44,
+      destinationSheet: 'GTM Clean',
+      matchKey: 'email',
+      idempotent: true,
+      runId: 'sheets-upsert-1787750000000',
+    };
+    expect(parseGoogleSheetsN8nWriteReceipt(receipt)).toEqual(receipt);
+    expect(parseGoogleSheetsN8nWriteReceipt({ ...receipt, idempotent: false })).toBeNull();
+    expect(parseGoogleSheetsN8nWriteReceipt({ ...receipt, matchKey: 'contact_id' })).toBeNull();
+    expect(parseGoogleSheetsN8nWriteReceipt({ ...receipt, recordsWritten: 1_001 })).toBeNull();
+  });
+
   it('accepts an empty durable workspace and rejects oversized contact collections', () => {
     expect(validateWorkspaceState(emptyWorkspaceState())).toEqual(emptyWorkspaceState());
     const tooLarge = emptyWorkspaceState();
@@ -54,5 +69,9 @@ describe('self-hosted connector foundation', () => {
     ]));
     expect(writeWorkflow.nodes.find((node: { name: string }) => node.name === 'Prepare GTM Clean Rows').parameters.jsCode)
       .toContain('safeCell');
+    expect(writeWorkflow.nodes.find((node: { name: string }) => node.name === 'Upsert GTM Clean by Email').parameters)
+      .toMatchObject({ operation: 'appendOrUpdate', columns: { matchingColumns: ['email'] } });
+    expect(writeWorkflow.nodes.find((node: { name: string }) => node.name === 'Shape Write Receipt').parameters.jsCode)
+      .toContain("idempotent: true");
   });
 });

@@ -24,6 +24,14 @@ export type GoogleSheetsWriteResult = {
   receipt: ConnectorReceipt;
 };
 
+export type GoogleSheetsN8nWriteReceipt = {
+  recordsWritten: number;
+  destinationSheet: 'GTM Clean';
+  matchKey: 'email';
+  idempotent: true;
+  runId: string;
+};
+
 export function isGoogleSheetsPreviewRequest(value: unknown): value is GoogleSheetsPreviewRequest {
   return isRecord(value)
     && value.action === 'preview'
@@ -39,6 +47,14 @@ export function isGoogleSheetsWriteRequest(value: unknown): value is GoogleSheet
     && Array.isArray(value.contacts)
     && value.contacts.length > 0
     && value.contacts.length <= 1_000;
+}
+
+export function parseGoogleSheetsN8nWriteReceipt(value: unknown): GoogleSheetsN8nWriteReceipt | null {
+  if (!isRecord(value)) return null;
+  if (!Number.isInteger(value.recordsWritten) || (value.recordsWritten as number) < 1 || (value.recordsWritten as number) > 1_000) return null;
+  if (value.destinationSheet !== 'GTM Clean' || value.matchKey !== 'email' || value.idempotent !== true) return null;
+  if (typeof value.runId !== 'string' || !value.runId.startsWith('sheets-upsert-')) return null;
+  return value as GoogleSheetsN8nWriteReceipt;
 }
 
 export function tabularRowsToCsv(headers: string[], rows: Record<string, string>[]): string {

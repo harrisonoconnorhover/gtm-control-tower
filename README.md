@@ -121,8 +121,10 @@ portable Operations workflow stays in sync.
 
 The connector paths have been exercised against dedicated development systems
 using synthetic data: n8n read a 64-row Google worksheet, all three local repair
-classes executed, and 44 governed rows were written to `GTM Clean` while 12
-unresolved active rows stayed out; n8n and BigQuery executed the three repair classes;
+classes executed, and 44 governed rows were upserted to `GTM Clean` by
+normalized email while 12 unresolved active rows stayed out. Replaying the
+same batch left 44 unique rows, and a changed field updated in place. n8n and
+BigQuery also executed the three repair classes;
 HubSpot completed a native contact upsert plus validation-failure proof; and
 Salesforce completed query-first create, update, and SOQL read-back against the
 same synthetic Lead identity. The public release contains no access tokens,

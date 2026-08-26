@@ -1,5 +1,5 @@
 {
-  "name": "GTM Control Tower - Google Sheets Clean Output",
+  "name": "GTM Control Tower - Google Sheets Idempotent Clean Output",
   "active": false,
   "nodes": [
     {
@@ -49,18 +49,18 @@
       "typeVersion": 2,
       "position": [720, 0],
       "parameters": {
-        "jsCode": "const batch = $('Validate and Shape Clean Rows').first().json;\nconst blockingFlags = new Set(['invalid_email', 'missing_company', 'missing_owner', 'stage_regression', 'duplicate_identity']);\nconst safeCell = (value) => { const text = String(value ?? ''); return /^[=+\\-@]/.test(text) ? `'${text}` : text; };\nreturn batch.contacts.filter((contact) => contact.recordStatus === 'active' && !(Array.isArray(contact.qualityFlags) ? contact.qualityFlags : []).some((flag) => blockingFlags.has(flag))).map((contact) => ({ json: {\n  contact_id: safeCell(contact.contactId), full_name: safeCell(contact.fullName),\n  email: safeCell(String(contact.normalizedEmail ?? contact.rawEmail ?? '').toLowerCase()),\n  company: safeCell(contact.company), phone: safeCell(contact.phone),\n  job_title: safeCell(contact.jobTitle), website: safeCell(contact.website),\n  region: safeCell(contact.region), segment: safeCell(contact.segment),\n  lifecycle_stage: safeCell(contact.lifecycleStage), owner_id: safeCell(contact.ownerId),\n  quality_flags: safeCell(Array.isArray(contact.qualityFlags) ? contact.qualityFlags.join('|') : ''),\n  _spreadsheetId: batch.spreadsheetId\n} }));"
+        "jsCode": "const batch = $('Validate and Shape Clean Rows').first().json;\nconst blockingFlags = new Set(['invalid_email', 'missing_company', 'missing_owner', 'stage_regression', 'duplicate_identity']);\nconst safeCell = (value) => { const text = String(value ?? ''); return /^[=+\\-@]/.test(text) ? `'${text}` : text; };\nreturn batch.contacts.filter((contact) => contact.recordStatus === 'active' && !(Array.isArray(contact.qualityFlags) ? contact.qualityFlags : []).some((flag) => blockingFlags.has(flag))).map((contact) => ({ json: {\n  contact_id: safeCell(contact.contactId), full_name: safeCell(contact.fullName),\n  email: safeCell(String(contact.normalizedEmail ?? contact.rawEmail ?? '').toLowerCase()),\n  company: safeCell(contact.company), phone: safeCell(contact.phone),\n  job_title: safeCell(contact.jobTitle), website: safeCell(contact.website),\n  region: safeCell(contact.region), segment: safeCell(contact.segment),\n  lifecycle_stage: safeCell(contact.lifecycleStage), owner_id: safeCell(contact.ownerId),\n  quality_flags: safeCell(Array.isArray(contact.qualityFlags) ? contact.qualityFlags.join('|') : '')\n} }));"
       }
     },
     {
       "id": "sheets-write-append",
-      "name": "Append to GTM Clean",
+      "name": "Upsert GTM Clean by Email",
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.6,
       "position": [960, 0],
       "parameters": {
-        "operation": "append",
-        "documentId": { "__rl": true, "mode": "id", "value": "={{ $json._spreadsheetId }}" },
+        "operation": "appendOrUpdate",
+        "documentId": { "__rl": true, "mode": "id", "value": "={{ $('Validate and Shape Clean Rows').first().json.spreadsheetId }}" },
         "sheetName": { "__rl": true, "mode": "name", "value": "GTM Clean" },
         "columns": {
           "mappingMode": "defineBelow",
@@ -78,7 +78,7 @@
             "owner_id": "={{ $json.owner_id }}",
             "quality_flags": "={{ $json.quality_flags }}"
           },
-          "matchingColumns": [],
+          "matchingColumns": ["email"],
           "schema": []
         },
         "options": {}
@@ -91,7 +91,7 @@
       "typeVersion": 2,
       "position": [1200, 0],
       "parameters": {
-        "jsCode": "const recordsWritten = $input.all().length;\nreturn [{ json: { accepted: true, recordsWritten, destinationSheet: 'GTM Clean', runId: `sheets-write-${Date.now()}` } }];"
+        "jsCode": "const recordsWritten = $input.all().length;\nreturn [{ json: { accepted: true, recordsWritten, destinationSheet: 'GTM Clean', matchKey: 'email', idempotent: true, runId: `sheets-upsert-${Date.now()}` } }];"
       }
     },
     {
@@ -111,8 +111,8 @@
     "Receive Clean Rows": { "main": [[{ "node": "Validate and Shape Clean Rows", "type": "main", "index": 0 }]] },
     "Validate and Shape Clean Rows": { "main": [[{ "node": "Ensure GTM Clean Worksheet", "type": "main", "index": 0 }]] },
     "Ensure GTM Clean Worksheet": { "main": [[{ "node": "Prepare GTM Clean Rows", "type": "main", "index": 0 }]] },
-    "Prepare GTM Clean Rows": { "main": [[{ "node": "Append to GTM Clean", "type": "main", "index": 0 }]] },
-    "Append to GTM Clean": { "main": [[{ "node": "Shape Write Receipt", "type": "main", "index": 0 }]] },
+    "Prepare GTM Clean Rows": { "main": [[{ "node": "Upsert GTM Clean by Email", "type": "main", "index": 0 }]] },
+    "Upsert GTM Clean by Email": { "main": [[{ "node": "Shape Write Receipt", "type": "main", "index": 0 }]] },
     "Shape Write Receipt": { "main": [[{ "node": "Return Write Receipt", "type": "main", "index": 0 }]] }
   },
   "settings": { "executionOrder": "v1" },

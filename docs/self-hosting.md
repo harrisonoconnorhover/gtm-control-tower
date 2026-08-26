@@ -37,9 +37,9 @@ npm run dev
 Import the two generated Google Sheets workflows, bind your own Google Sheets
 OAuth credential, and publish both webhooks. The read path diagnoses a chosen
 worksheet through the same visual mapper as CSV. The write path creates a
-separate `GTM Clean` worksheet if needed, reuses it on later runs, and appends
-only destination-ready records. Formula-trigger characters are escaped before
-append.
+separate `GTM Clean` worksheet if needed, appends new destination-ready records,
+and updates existing normalized emails in place. Formula-trigger characters are
+escaped before sync.
 
 Follow [Google Sheets setup](google-sheets-setup.md). BigQuery is not required.
 

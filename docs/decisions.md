@@ -84,5 +84,14 @@ them.
 Generic destinations accept only active contacts without duplicate identity,
 invalid email, missing company, missing owner, or lifecycle regression. This is
 stricter than merely checking `recordStatus`. Spreadsheet output prefixes
-formula-trigger characters before append so source strings cannot become
-formulas accidentally.
+formula-trigger characters before sync so source strings cannot become formulas
+accidentally.
+
+## Google Sheets identity is normalized email
+
+Destination-ready contacts have a valid, deduplicated normalized email, so the
+portable n8n workflow uses that column for append-or-update. Sequential reruns
+therefore update the existing `GTM Clean` row instead of multiplying it. A
+changed email is treated as a new identity rather than guessed to be the same
+person, and simultaneous writes are outside this single-process workflow's
+guarantee.

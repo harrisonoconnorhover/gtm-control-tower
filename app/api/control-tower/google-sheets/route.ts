@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import {
   isGoogleSheetsPreviewRequest,
   isGoogleSheetsWriteRequest,
+  parseGoogleSheetsN8nWriteReceipt,
   type GoogleSheetsPreview,
   type GoogleSheetsWriteResult,
 } from '@/lib/google-sheets';
@@ -44,13 +45,13 @@ async function writeSheet(payload: { spreadsheetId: string; destinationSheet: 'G
   if (!webhookUrl) return notConfigured();
   try {
     const response = await callN8n(webhookUrl, payload);
-    const written = isRecord(response) && typeof response.recordsWritten === 'number'
-      ? response.recordsWritten
-      : payload.contacts.length;
+    const nativeReceipt = parseGoogleSheetsN8nWriteReceipt(response);
+    if (!nativeReceipt) throw new Error('n8n did not confirm an idempotent email-keyed upsert.');
+    const written = nativeReceipt.recordsWritten;
     const result: GoogleSheetsWriteResult = {
       receipt: {
-        ...connectorReceipt('execute', `Wrote ${written} clean rows to GTM Clean.`, undefined, written),
-        nativeReceiptId: isRecord(response) && typeof response.runId === 'string' ? response.runId : undefined,
+        ...connectorReceipt('execute', `Upserted ${written} clean rows to GTM Clean by normalized email; repeat runs update in place.`, undefined, written),
+        nativeReceiptId: nativeReceipt.runId,
       },
     };
     return NextResponse.json(result, { status: 202, headers: { 'Cache-Control': 'no-store' } });

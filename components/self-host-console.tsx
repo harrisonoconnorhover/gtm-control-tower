@@ -218,9 +218,9 @@ export function SelfHostConsole({
           {destinationType === 'google-sheets' && contacts.length > 0 && (
             <div className="mt-5 border-t border-white/10 pt-5">
               <p className="text-xs font-semibold">Google Sheets destination</p>
-              <p className="mt-1 text-[11px] leading-5 text-[#71877c]">n8n writes up to 1,000 destination-ready records to the separate <strong className="text-[#a9bbb2]">GTM Clean</strong> worksheet. {heldRows} unresolved active row{heldRows === 1 ? '' : 's'} stay out.</p>
+              <p className="mt-1 text-[11px] leading-5 text-[#71877c]">n8n upserts up to 1,000 destination-ready records to the separate <strong className="text-[#a9bbb2]">GTM Clean</strong> worksheet, matching normalized email so reruns update in place. {heldRows} unresolved active row{heldRows === 1 ? '' : 's'} stay out.</p>
               <input value={destinationSpreadsheet} onChange={(event) => setDestinationSpreadsheet(event.target.value)} placeholder="Destination Sheet URL or ID" className="mt-3 w-full rounded-2xl border border-white/10 bg-[#07130f] px-4 py-3 text-sm outline-none focus:border-[#83bcff]/50" />
-              <button onClick={() => void writeGoogleSheet()} disabled={status === 'working' || !readyRows.length} className="mt-3 w-full rounded-2xl bg-[#cdfc54] px-5 py-3 text-sm font-bold text-[#07130f] disabled:opacity-50">Write {Math.min(readyRows.length, 1_000)} ready rows to GTM Clean</button>
+              <button onClick={() => void writeGoogleSheet()} disabled={status === 'working' || !readyRows.length} className="mt-3 w-full rounded-2xl bg-[#cdfc54] px-5 py-3 text-sm font-bold text-[#07130f] disabled:opacity-50">Sync {Math.min(readyRows.length, 1_000)} ready rows to GTM Clean</button>
             </div>
           )}
 

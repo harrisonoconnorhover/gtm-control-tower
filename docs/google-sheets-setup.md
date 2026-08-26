@@ -24,9 +24,11 @@ is enabled in its project and the spreadsheet is shared with its client email.
 Review the nodes, then publish both workflows.
 
 The write workflow creates `GTM Clean` when absent and continues to the same
-worksheet when it already exists. It prefixes spreadsheet-formula trigger
-characters before append, so values such as `+1...` phone numbers stay text.
-Source worksheets are never overwritten.
+worksheet when it already exists. It uses normalized `email` as the match key:
+new contacts append, while a sequential rerun updates matching rows in place.
+It also prefixes spreadsheet-formula trigger characters before sync, so values
+such as `+1...` phone numbers stay text. Source worksheets are never
+overwritten.
 
 ## 3. Point the app at the webhooks
 
@@ -50,7 +52,9 @@ Use `http://localhost:5678` instead when the app runs directly with
 
 The included 64-row fixture is a useful proof: the validated reference run read
 all 64 rows, executed merge/reroute/replay, wrote 44 destination-ready rows, and
-held 12 unresolved active rows out of `GTM Clean`.
+held 12 unresolved active rows out of `GTM Clean`. Repeating that 44-row sync
+left exactly 44 unique emails, and changing one company value updated its
+existing row before the reference value was restored.
 
 The app sends spreadsheet identifiers and bounded contact rows to n8n. Google
 credentials stay inside n8n and never enter the browser or repository.

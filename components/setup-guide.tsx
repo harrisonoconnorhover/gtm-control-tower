@@ -77,7 +77,7 @@ export function SetupGuide() {
         <section className="grid gap-4 pb-8 md:grid-cols-2 xl:grid-cols-4" aria-label="Setup steps">
           <SetupStep number="01" title="Start free" detail="Import a CSV, map any headers, run repairs, export the governed result." status="required" />
           <SetupStep number="02" title="Keep history" detail="SQLite saves workspaces, mapping presets, receipts, and twenty undo revisions." status="automatic" />
-          <SetupStep number="03" title="Add Sheets" detail="Attach Google OAuth inside local n8n; credentials never enter the app or repository." status="optional" />
+          <SetupStep number="03" title="Add Sheets" detail="Attach Google OAuth inside local n8n; clean rows upsert by normalized email instead of duplicating on reruns." status="optional" />
           <SetupStep number="04" title="Add destinations" detail="Turn on HubSpot, Salesforce, or BigQuery only after their server-side variables exist." status="optional" />
         </section>
 
@@ -102,6 +102,7 @@ export function SetupGuide() {
               <li>• Preview and validation happen before destination actions.</li>
               <li>• Unconfigured systems are hidden instead of pretending to work.</li>
               <li>• Google credentials stay in n8n; CRM secrets stay server-side.</li>
+              <li>• Sheets reruns update matching normalized emails in place.</li>
               <li>• Every external run must return a receipt before it appears complete.</li>
             </ul>
             <div className="mt-6 flex flex-wrap gap-3">
