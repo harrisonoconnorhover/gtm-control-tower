@@ -5,6 +5,7 @@ import {
   executeCsvRepair,
   exportContactsCsv,
   importContactsCsv,
+  isDestinationReadyContact,
   previewContactsCsv,
 } from '../lib/csv-control-tower';
 
@@ -43,6 +44,15 @@ describe('CSV control tower', () => {
     const replayed = executeCsvRepair(rerouted.contacts, 'stage-regression');
     expect(replayed.receipt.affectedRecords).toBe(1);
     expect(replayed.contacts[3]).toMatchObject({ lifecycleStage: 'sql', lastAction: 'lifecycle_replayed' });
+  });
+
+  it('holds unresolved active contacts out of generic destinations', () => {
+    const imported = importContactsCsv(funkyCsv).contacts;
+    expect(imported.filter(isDestinationReadyContact)).toHaveLength(0);
+    const merged = executeCsvRepair(imported, 'duplicate-surge').contacts;
+    const rerouted = executeCsvRepair(merged, 'routing-overload').contacts;
+    const replayed = executeCsvRepair(rerouted, 'stage-regression').contacts;
+    expect(replayed.filter(isDestinationReadyContact).map((contact) => contact.contactId)).toEqual(['C-1', 'C-4']);
   });
 
   it('exports repaired state as valid quoted CSV', () => {

@@ -70,3 +70,19 @@ Standard Salesforce Lead email is not a portable external ID, while `Company` an
 ## Self-hosted open-source release
 
 The first public release is a self-hosted toolkit, not a multi-tenant SaaS. CSV-only mode needs no account, while optional setup renders BigQuery and n8n assets from portable project and dataset tokens. A public demo carries no CRM credentials; each operator owns their deployment, secrets, connector permissions, and resulting data.
+
+## Separate experiences, one codebase
+
+The root route is a fast, credential-free portfolio demonstration. `/app` is
+the operational workspace and `/setup` explains local installation and current
+connector readiness. Keeping these routes in one repository avoids drift while
+letting a hiring reviewer and a self-hoster see only the controls relevant to
+them.
+
+## Destination-ready means unresolved rows stay out
+
+Generic destinations accept only active contacts without duplicate identity,
+invalid email, missing company, missing owner, or lifecycle regression. This is
+stricter than merely checking `recordStatus`. Spreadsheet output prefixes
+formula-trigger characters before append so source strings cannot become
+formulas accidentally.

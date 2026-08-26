@@ -4,6 +4,7 @@
   "nodes": [
     {
       "id": "sheets-read-webhook",
+      "webhookId": "2d5a8f13-01a9-4d08-856f-e3cd92887793",
       "name": "Receive Sheet Preview",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,

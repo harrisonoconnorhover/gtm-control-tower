@@ -13,7 +13,8 @@ cd gtm-control-tower
 docker compose up --build
 ```
 
-Open `http://localhost:3000`, choose **CSV file**, and use the included
+Open `http://localhost:3000/app`, choose **CSV file**, and load the bundled
+64-row practice batch or use the included
 [`control-tower-csv-template.csv`](../public/control-tower-csv-template.csv).
 Preview the first rows, map the source columns, and choose **Validate + load**.
 Imports, mappings, repair history, connector receipts, and the latest twenty
@@ -36,7 +37,9 @@ npm run dev
 Import the two generated Google Sheets workflows, bind your own Google Sheets
 OAuth credential, and publish both webhooks. The read path diagnoses a chosen
 worksheet through the same visual mapper as CSV. The write path creates a
-separate `GTM Clean` worksheet if needed and appends governed active records.
+separate `GTM Clean` worksheet if needed, reuses it on later runs, and appends
+only destination-ready records. Formula-trigger characters are escaped before
+append.
 
 Follow [Google Sheets setup](google-sheets-setup.md). BigQuery is not required.
 

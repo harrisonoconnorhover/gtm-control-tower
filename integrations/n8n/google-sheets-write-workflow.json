@@ -4,6 +4,7 @@
   "nodes": [
     {
       "id": "sheets-write-webhook",
+      "webhookId": "d97ad0f5-8d8b-4ba5-ac5c-5a7f68013213",
       "name": "Receive Clean Rows",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
@@ -32,6 +33,7 @@
       "typeVersion": 4.6,
       "position": [480, 0],
       "alwaysOutputData": true,
+      "onError": "continueRegularOutput",
       "parameters": {
         "resource": "sheet",
         "operation": "create",
@@ -47,7 +49,7 @@
       "typeVersion": 2,
       "position": [720, 0],
       "parameters": {
-        "jsCode": "const batch = $('Validate and Shape Clean Rows').first().json;\nreturn batch.contacts.filter((contact) => contact.recordStatus === 'active').map((contact) => ({ json: {\n  contact_id: String(contact.contactId ?? ''), full_name: String(contact.fullName ?? ''),\n  email: String(contact.normalizedEmail ?? contact.rawEmail ?? '').toLowerCase(),\n  company: String(contact.company ?? ''), phone: String(contact.phone ?? ''),\n  job_title: String(contact.jobTitle ?? ''), website: String(contact.website ?? ''),\n  region: String(contact.region ?? ''), segment: String(contact.segment ?? ''),\n  lifecycle_stage: String(contact.lifecycleStage ?? ''), owner_id: String(contact.ownerId ?? ''),\n  quality_flags: Array.isArray(contact.qualityFlags) ? contact.qualityFlags.join('|') : '',\n  _spreadsheetId: batch.spreadsheetId\n} }));"
+        "jsCode": "const batch = $('Validate and Shape Clean Rows').first().json;\nconst blockingFlags = new Set(['invalid_email', 'missing_company', 'missing_owner', 'stage_regression', 'duplicate_identity']);\nconst safeCell = (value) => { const text = String(value ?? ''); return /^[=+\\-@]/.test(text) ? `'${text}` : text; };\nreturn batch.contacts.filter((contact) => contact.recordStatus === 'active' && !(Array.isArray(contact.qualityFlags) ? contact.qualityFlags : []).some((flag) => blockingFlags.has(flag))).map((contact) => ({ json: {\n  contact_id: safeCell(contact.contactId), full_name: safeCell(contact.fullName),\n  email: safeCell(String(contact.normalizedEmail ?? contact.rawEmail ?? '').toLowerCase()),\n  company: safeCell(contact.company), phone: safeCell(contact.phone),\n  job_title: safeCell(contact.jobTitle), website: safeCell(contact.website),\n  region: safeCell(contact.region), segment: safeCell(contact.segment),\n  lifecycle_stage: safeCell(contact.lifecycleStage), owner_id: safeCell(contact.ownerId),\n  quality_flags: safeCell(Array.isArray(contact.qualityFlags) ? contact.qualityFlags.join('|') : ''),\n  _spreadsheetId: batch.spreadsheetId\n} }));"
       }
     },
     {

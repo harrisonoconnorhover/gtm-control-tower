@@ -65,7 +65,12 @@ The web demo models three concrete revenue-system failures: duplicate identity, 
 
 ## Guided demo path
 
-The primary walkthrough uses a ten-record synthetic batch with realistic CRM defects: inconsistent company/domain formatting, exact and plus-address duplicates, a malformed personal email, missing identity and owner, a Unicode domain, ambiguous same-name contacts, and regressive lifecycle writes. Six visible stages explain the path while the adjacent lab exposes the actual records and their mutations.
+The public route uses a deterministic 64-row synthetic batch with exact and
+plus-address duplicates, malformed email, missing company and owner, a Unicode
+domain, routing overload, and regressive lifecycle writes. Six visible stages
+show ingest, normalization, merge, reroute, replay, and the destination receipt.
+The full operator workspace lives at `/app`; setup and connector health live at
+`/setup`. These are separate experiences in one codebase.
 
 ## Live operations path
 
@@ -82,6 +87,10 @@ same preview and mapping contract. The validator infers missing
 email/company/owner, lifecycle regression, Unicode-domain, plus-address, and
 exact normalized-email duplicate flags. It does not guess fuzzy name/company
 identity. Imports are capped at 10 MB; saved workspaces at 5,000 contacts.
+The generic destination gate excludes unresolved duplicates, invalid email,
+missing company, missing owner, and lifecycle regression. Sheet output also
+escapes formula-trigger characters so phone numbers and untrusted cell values
+stay text.
 
 HubSpot sync uses the current contacts batch-upsert API, email identity, a 100-record request ceiling, and `objectWriteTraceId` for per-record reconciliation. The server can call HubSpot directly with a private-app bearer token or proxy through the included n8n OAuth workflow. Both produce the same strict receipt contract.
 

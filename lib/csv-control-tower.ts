@@ -80,6 +80,15 @@ const repairActions: Record<ScenarioKey, string> = {
   'stage-regression': 'replay_expected_lifecycle_state',
 };
 
+const destinationBlockingFlags = new Set([
+  'invalid_email', 'missing_company', 'missing_owner', 'stage_regression', 'duplicate_identity',
+]);
+
+export function isDestinationReadyContact(contact: LiveContactState): boolean {
+  return contact.recordStatus === 'active'
+    && !contact.qualityFlags.some((flag) => destinationBlockingFlags.has(flag));
+}
+
 export function previewContactsCsv(csv: string): CsvPreview {
   const rows = parseCsv(csv);
   if (rows.length < 2) throw new Error('The CSV needs a header row and at least one contact.');

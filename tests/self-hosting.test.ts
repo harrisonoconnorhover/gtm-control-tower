@@ -46,10 +46,13 @@ describe('self-hosted connector foundation', () => {
       const workflow = JSON.parse(readFileSync(new URL(`../integrations/n8n/${filename}`, import.meta.url), 'utf8'));
       expect(workflow.active).toBe(false);
       expect(workflow.nodes.every((node: { credentials?: unknown }) => !node.credentials)).toBe(true);
+      expect(workflow.nodes.find((node: { type: string }) => node.type === 'n8n-nodes-base.webhook').webhookId).toBeTruthy();
     }
     const writeWorkflow = JSON.parse(readFileSync(new URL('../integrations/n8n/google-sheets-write-workflow.json', import.meta.url), 'utf8'));
     expect(writeWorkflow.nodes).toEqual(expect.arrayContaining([
-      expect.objectContaining({ name: 'Ensure GTM Clean Worksheet', alwaysOutputData: true }),
+      expect.objectContaining({ name: 'Ensure GTM Clean Worksheet', alwaysOutputData: true, onError: 'continueRegularOutput' }),
     ]));
+    expect(writeWorkflow.nodes.find((node: { name: string }) => node.name === 'Prepare GTM Clean Rows').parameters.jsCode)
+      .toContain('safeCell');
   });
 });

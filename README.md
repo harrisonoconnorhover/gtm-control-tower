@@ -3,7 +3,8 @@
 [![CI](https://github.com/harrisonoconnorhover/gtm-control-tower/actions/workflows/ci.yml/badge.svg)](https://github.com/harrisonoconnorhover/gtm-control-tower/actions/workflows/ci.yml)
 [![MIT License](https://img.shields.io/badge/license-MIT-174b45.svg)](LICENSE)
 
-**[Try the credential-free live demo](https://gtm-control-tower.deleteddeleted.chatgpt.site/)**
+**[Run the credential-free two-minute demo](https://gtm-control-tower.deleteddeleted.chatgpt.site/)** ·
+**[Open the operator workspace](https://gtm-control-tower.deleteddeleted.chatgpt.site/app)**
 
 A self-hosted revenue-systems lab that turns deliberately messy CRM data into
 governed records, explainable routing, trusted funnel metrics, and receipted
@@ -30,6 +31,8 @@ the repository.
   models funnel conversion, routing SLA, and data quality with dbt.
 - Shows how operational defects change revenue metrics instead of presenting a
   static dashboard.
+- Keeps the public proof, full operator workspace, and self-host diagnostics on
+  separate routes without duplicating the codebase.
 
 ## Quick start: one command, no accounts required
 
@@ -42,7 +45,8 @@ cd gtm-control-tower
 docker compose up --build
 ```
 
-Open [http://localhost:3000](http://localhost:3000), choose **CSV file**, and try
+Open [http://localhost:3000/app](http://localhost:3000/app), choose **CSV file**,
+and either load the bundled 64-row practice batch or try
 [`public/control-tower-csv-template.csv`](public/control-tower-csv-template.csv).
 The workspace survives browser and container restarts in
 `.runtime/sqlite/gtm-control-tower.db`. n8n is available at
@@ -87,6 +91,8 @@ Full instructions: [self-hosting](docs/self-hosting.md),
 - The browser never receives CRM, n8n, or Google credentials.
 - Unconfigured connectors do not appear as operational choices.
 - Every connector follows Preview → Validate → Execute → Receipt → Undo/Export.
+- Destination gates hold unresolved duplicates, invalid email, missing company,
+  missing owner, and lifecycle regression out of generic writes.
 - Public templates contain no credential bindings or private project IDs.
 - CRM writes are explicit, allow-listed, standard-field-only, and reconciled by
   native receipt.
@@ -114,7 +120,9 @@ portable Operations workflow stays in sync.
 ## Verified integration behavior
 
 The connector paths have been exercised against dedicated development systems
-using synthetic data: n8n and BigQuery executed the three repair classes;
+using synthetic data: n8n read a 64-row Google worksheet, all three local repair
+classes executed, and 44 governed rows were written to `GTM Clean` while 12
+unresolved active rows stayed out; n8n and BigQuery executed the three repair classes;
 HubSpot completed a native contact upsert plus validation-failure proof; and
 Salesforce completed query-first create, update, and SOQL read-back against the
 same synthetic Lead identity. The public release contains no access tokens,

@@ -3,6 +3,7 @@
 import { useMemo, useRef, useState } from 'react';
 import {
   csvFieldLabels,
+  isDestinationReadyContact,
   previewContactsCsv,
   type CsvColumnMapping,
   type CsvFieldKey,
@@ -11,6 +12,7 @@ import {
 import type { ConnectorCatalog, ConnectorId, ConnectorReceipt } from '@/lib/connector-contract';
 import { tabularRowsToCsv, type GoogleSheetsPreview } from '@/lib/google-sheets';
 import type { LiveContactState } from '@/lib/live-control-tower';
+import { messyLeadDemoCsv } from '@/lib/messy-lead-demo';
 import type { MappingPreset } from '@/lib/workspace';
 
 const mappingOrder: CsvFieldKey[] = [
@@ -72,6 +74,8 @@ export function SelfHostConsole({
   const destinations = configured.filter((connector) => connector.directions.includes('destination'));
   const hiddenCount = (catalog?.connectors.length ?? 1) - configured.length;
   const activeRows = useMemo(() => contacts.filter((contact) => contact.recordStatus === 'active'), [contacts]);
+  const readyRows = useMemo(() => contacts.filter(isDestinationReadyContact), [contacts]);
+  const heldRows = activeRows.length - readyRows.length;
   const currentPhase = lastReceipt?.phase ?? (contacts.length ? 'validate' : preview ? 'preview' : null);
 
   async function prepareCsv(csv: string, fileName: string) {
@@ -148,7 +152,7 @@ export function SelfHostConsole({
           action: 'execute',
           spreadsheetId: extractSpreadsheetId(destinationSpreadsheet),
           destinationSheet: 'GTM Clean',
-          contacts: activeRows.slice(0, 1_000),
+          contacts: readyRows.slice(0, 1_000),
         }),
       });
       const result = await response.json() as { receipt?: ConnectorReceipt; error?: string };
@@ -199,6 +203,7 @@ export function SelfHostConsole({
             <div className="mt-4">
               <input ref={fileInput} type="file" accept=".csv,text/csv" className="sr-only" onChange={(event) => { const file = event.currentTarget.files?.[0]; if (file) void readCsv(file); event.currentTarget.value = ''; }} />
               <button onClick={() => fileInput.current?.click()} className="w-full rounded-2xl border border-dashed border-[#83bcff]/30 bg-[#83bcff]/[0.05] px-5 py-6 text-sm font-semibold text-[#83bcff] hover:bg-[#83bcff]/10">Choose CSV to preview</button>
+              <button onClick={() => void prepareCsv(messyLeadDemoCsv(), 'gtm-control-tower-messy-leads-64.csv')} className="mt-2 w-full rounded-2xl border border-white/10 bg-white/[0.035] px-5 py-3 text-xs font-semibold text-[#a9bbb2] hover:bg-white/[0.06]">Or load the bundled 64-row practice batch</button>
             </div>
           )}
 
@@ -213,9 +218,9 @@ export function SelfHostConsole({
           {destinationType === 'google-sheets' && contacts.length > 0 && (
             <div className="mt-5 border-t border-white/10 pt-5">
               <p className="text-xs font-semibold">Google Sheets destination</p>
-              <p className="mt-1 text-[11px] leading-5 text-[#71877c]">n8n creates the separate <strong className="text-[#a9bbb2]">GTM Clean</strong> worksheet if needed, then appends up to 1,000 active records.</p>
+              <p className="mt-1 text-[11px] leading-5 text-[#71877c]">n8n writes up to 1,000 destination-ready records to the separate <strong className="text-[#a9bbb2]">GTM Clean</strong> worksheet. {heldRows} unresolved active row{heldRows === 1 ? '' : 's'} stay out.</p>
               <input value={destinationSpreadsheet} onChange={(event) => setDestinationSpreadsheet(event.target.value)} placeholder="Destination Sheet URL or ID" className="mt-3 w-full rounded-2xl border border-white/10 bg-[#07130f] px-4 py-3 text-sm outline-none focus:border-[#83bcff]/50" />
-              <button onClick={() => void writeGoogleSheet()} disabled={status === 'working' || !activeRows.length} className="mt-3 w-full rounded-2xl bg-[#cdfc54] px-5 py-3 text-sm font-bold text-[#07130f] disabled:opacity-50">Write {Math.min(activeRows.length, 1_000)} rows to GTM Clean</button>
+              <button onClick={() => void writeGoogleSheet()} disabled={status === 'working' || !readyRows.length} className="mt-3 w-full rounded-2xl bg-[#cdfc54] px-5 py-3 text-sm font-bold text-[#07130f] disabled:opacity-50">Write {Math.min(readyRows.length, 1_000)} ready rows to GTM Clean</button>
             </div>
           )}
 

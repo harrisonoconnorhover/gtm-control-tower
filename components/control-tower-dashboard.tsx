@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import {
   demoRunSummary,
   demoStages,
@@ -708,6 +709,8 @@ export function ControlTowerDashboard() {
             </div>
           </div>
           <div className="flex flex-wrap items-center justify-end gap-2">
+            <Link href="/" className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 font-mono text-[10px] uppercase tracking-wider text-[#9db1a7] transition hover:border-white/25 hover:text-white">Demo</Link>
+            <Link href="/setup" className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 font-mono text-[10px] uppercase tracking-wider text-[#9db1a7] transition hover:border-white/25 hover:text-white">Setup</Link>
             <a
               href="https://github.com/harrisonoconnorhover/gtm-control-tower"
               target="_blank"

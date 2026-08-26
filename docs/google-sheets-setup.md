@@ -19,12 +19,14 @@ workflows from `.runtime/generated/n8n`:
 ## 2. Connect Google in n8n
 
 Create a Google Sheets OAuth2 credential in n8n and attach it to each Google
-Sheets node. Grant the connected Google account access to the spreadsheet.
+Sheets node. A Google service-account credential also works when the Sheets API
+is enabled in its project and the spreadsheet is shared with its client email.
 Review the nodes, then publish both workflows.
 
-The write workflow uses the Google Sheets node's idempotent create operation:
-it creates `GTM Clean` only when that worksheet is absent. Source worksheets
-are never overwritten.
+The write workflow creates `GTM Clean` when absent and continues to the same
+worksheet when it already exists. It prefixes spreadsheet-formula trigger
+characters before append, so values such as `+1...` phone numbers stay text.
+Source worksheets are never overwritten.
 
 ## 3. Point the app at the webhooks
 
@@ -45,6 +47,10 @@ Use `http://localhost:5678` instead when the app runs directly with
 3. Preview, adjust the visual mapping, and validate the rows.
 4. Choose Google Sheets as the destination, paste its URL, and execute.
 5. Keep the returned receipt or export the same governed state as CSV.
+
+The included 64-row fixture is a useful proof: the validated reference run read
+all 64 rows, executed merge/reroute/replay, wrote 44 destination-ready rows, and
+held 12 unresolved active rows out of `GTM Clean`.
 
 The app sends spreadsheet identifiers and bounded contact rows to n8n. Google
 credentials stay inside n8n and never enter the browser or repository.

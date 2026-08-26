@@ -13,12 +13,27 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'GTM Control Tower',
-  description: 'An interactive revenue systems lab that turns messy CRM leads into governed routing, trusted funnel metrics, and explainable decisions.',
+  metadataBase: new URL('https://gtm-control-tower.deleteddeleted.chatgpt.site'),
+  title: 'GTM Control Tower · Bad CRM data in, defensible action out',
+  description: 'A self-hosted revenue systems lab that maps messy lead files, executes governed CRM repairs, and returns auditable receipts.',
   openGraph: {
     title: 'GTM Control Tower',
-    description: 'Clean, route, and model deliberately messy CRM data with a self-hosted GTM systems lab.',
+    description: 'Watch 64 deliberately messy leads become a governed, destination-ready batch.',
     type: 'website',
+    images: [
+      {
+        url: '/og.png',
+        width: 1731,
+        height: 909,
+        alt: 'GTM Control Tower turns bad CRM data into defensible action.',
+      },
+    ],
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'GTM Control Tower',
+    description: 'Watch 64 deliberately messy leads become a governed, destination-ready batch.',
+    images: ['/og.png'],
   },
   robots: {
     index: true,
