@@ -22,11 +22,18 @@ Merged rows, invalid emails, unresolved duplicates, and unreplayed lifecycle reg
 
 This is the shortest setup for one HubSpot portal.
 
-1. In HubSpot, create a private app with `crm.objects.contacts.write`.
+1. In HubSpot, create a private app with `crm.objects.contacts.read` and
+   `crm.objects.contacts.write`.
 2. Copy `.env.example` to `.env.local`.
 3. Set `HUBSPOT_ACCESS_TOKEN` to the private app token. Do not put the token in Git.
 4. Run `npm install` and `npm run dev`.
-5. Import a CSV, resolve the held rows, review the eligible count, and click **Sync to HubSpot**.
+5. Import a CSV or read a bounded HubSpot contact sample, resolve held rows,
+   review the field-level plan, download the backup if desired, and execute it.
+
+Direct-token mode is the full governed path: native read, exact diff, stale-plan
+check, per-record receipt, and update rollback. The server writes only the
+portable properties listed above. Empty proposed values explicitly clear those
+properties; the rollback snapshot restores their prior nullability.
 
 HubSpot documents both the required write scope and bearer-token authentication in its [contacts guide](https://developers.hubspot.com/docs/api-reference/latest/crm/objects/contacts/guide) and [authentication guide](https://developers.hubspot.com/docs/apps/legacy-apps/authentication/intro-to-auth).
 
@@ -35,13 +42,21 @@ HubSpot documents both the required write scope and bearer-token authentication 
 Use this when n8n already owns connector credentials or OAuth is preferred.
 
 1. Run `docker compose up -d` and create the local n8n owner at `http://localhost:5678`.
-2. Import [`csv-hubspot-sync-workflow.json`](../integrations/n8n/csv-hubspot-sync-workflow.json).
-3. Open **Batch Upsert HubSpot Contacts** and attach a HubSpot OAuth2 credential with `crm.objects.contacts.write`.
-4. Publish the workflow.
+2. Import [`csv-hubspot-sync-workflow.json`](../integrations/n8n/csv-hubspot-sync-workflow.json)
+   and [`hubspot-source-workflow.json`](../integrations/n8n/hubspot-source-workflow.json).
+3. Attach one HubSpot OAuth2 credential with `crm.objects.contacts.read` and
+   `crm.objects.contacts.write` to the applicable HTTP nodes.
+4. Publish both workflows.
 5. Set `N8N_HUBSPOT_SYNC_WEBHOOK_URL=http://127.0.0.1:5678/webhook/gtm-control-tower-hubspot-sync`
    in `.env.local` so the dashboard can discover the connector. Change the URL
    only when n8n is not using the local default.
-6. Leave `HUBSPOT_ACCESS_TOKEN` blank; the server will use n8n.
+6. Set `N8N_HUBSPOT_SOURCE_WEBHOOK_URL=http://127.0.0.1:5678/webhook/gtm-control-tower-hubspot-source`.
+7. Leave `HUBSPOT_ACCESS_TOKEN` blank; the server will use n8n.
+
+n8n mode supports read-only source preview and delegated receipted writes. Use
+a direct private-app token when field-level preflight and rollback are required,
+because those safeguards need the server to read the exact native records just
+before it writes them.
 
 ## Production safety
 

@@ -39,9 +39,13 @@ Google credentials remain in n8n. Explicit destination actions send only
 allow-listed, governed fields through server-validated batch contracts.
 
 Every adapter implements the same lifecycle: Preview → Validate → Execute →
-Receipt → Undo/Export. External systems may not support native undo, so the
-receipt says so explicitly while the local pre-write workspace revision remains
-available.
+Receipt → Undo/Export. CRM preview performs a fresh provider read, produces an
+exact standard-field diff, and fingerprints the plan. Execution re-reads the
+provider and rejects a plan that changed or aged beyond fifteen minutes. The
+portable pre-write snapshot can restore updated fields; created records are
+reported but deliberately never auto-deleted. Rollback also re-reads the native
+record and holds the restore if any field changed by the run now contains newer
+provider state.
 
 ## Data contract
 
@@ -70,7 +74,8 @@ plus-address duplicates, malformed email, missing company and owner, a Unicode
 domain, routing overload, and regressive lifecycle writes. Six visible stages
 show ingest, normalization, merge, reroute, replay, and the destination receipt.
 The full operator workspace lives at `/app`; setup and connector health live at
-`/setup`. These are separate experiences in one codebase.
+`/setup`; durable connector evidence and update rollback live at `/runs`. These
+are separate experiences in one codebase.
 
 ## Live operations path
 
@@ -97,6 +102,20 @@ upserts from racing on a previously unseen email. The server accepts a Sheets
 execution receipt only when n8n explicitly confirms that email-keyed idempotent
 contract.
 
-HubSpot sync uses the current contacts batch-upsert API, email identity, a 100-record request ceiling, and `objectWriteTraceId` for per-record reconciliation. The server can call HubSpot directly with a private-app bearer token or proxy through the included n8n OAuth workflow. Both produce the same strict receipt contract.
+HubSpot source import can use a scoped private-app token or the included
+read-only n8n OAuth workflow. Delegated n8n writes retain the strict receipt
+contract; direct-token mode additionally supports native preflight reads,
+field-level update calls, stale-plan rejection, and rollback.
 
-Salesforce sync uses a bounded SOQL lookup by normalized email followed by sObject Collection creates and updates. Missing company, missing last name, and emails beyond the standard Lead field limit are held before transmission. Multiple active Lead matches return a failure receipt rather than selecting one. Owner, status, source, score, and custom fields are never guessed.
+Salesforce source import uses bounded SOQL and the sync path repeats that lookup
+by normalized email before sObject Collection creates and updates. Missing
+company, missing last name, and emails beyond the standard Lead field limit are
+held before transmission. Multiple active Lead matches return a held receipt
+rather than selecting one. Exact null values are written and restored, so a
+rollback can clear a field that was empty before the reviewed update. Owner,
+status, source, score, and custom fields are never guessed.
+
+Connector runs persist separately from mutable workspace snapshots. A run keeps
+source counts, repair counts, the reviewed diff, native per-record result,
+failures, and any eligible update-only rollback. The `/runs` screen filters and
+exports that evidence without requiring a warehouse.

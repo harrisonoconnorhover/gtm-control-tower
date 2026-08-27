@@ -117,3 +117,23 @@ Compose does not hard-code container names, and its host ports and bind-mounted
 runtime directories are configurable. The acceptance test therefore launches a
 fully isolated stack with random ports and empty temporary storage, verifies
 restart persistence and undo, then removes only the state it created.
+
+## Read before write, and roll back updates only
+
+CRM change approval is meaningful only when it describes current provider
+state. Direct HubSpot and Salesforce writes therefore begin with a provider
+read, persist the exact standard-field diff, expire after fifteen minutes, and
+re-read before execution. Updated portable fields keep their previous values so
+they can be restored exactly, including nulls. Rollback re-reads the fields it
+would restore and holds on a mismatch instead of overwriting newer CRM edits.
+Created records are never
+auto-deleted: deletion may cascade through provider automation and is too broad
+for a generic rollback control.
+
+## Durable runs are evidence, not another mutable dashboard
+
+Connector runs live in their own append-oriented SQLite records rather than
+only inside the latest workspace snapshot. Each run keeps its source and repair
+counts, reviewed plan, native receipt, failures, and eligible rollback. The UI
+can filter and export this evidence, while a completed rollback disables that
+plan's repeated rollback control.

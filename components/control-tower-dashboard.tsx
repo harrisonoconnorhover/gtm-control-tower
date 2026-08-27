@@ -46,6 +46,8 @@ import {
   type SeedReceipt,
 } from '@/lib/live-control-tower';
 import type { MappingPreset, SavedWorkspace, WorkspaceState } from '@/lib/workspace';
+import type { ConnectorRunDetails } from '@/lib/connector-run';
+import type { CrmWritePlan, CrmWritebackReceipt, PortableCrmContact } from '@/lib/crm-workflow';
 
 const dbtTests = [
   ['unique_account_domain', '2 duplicates contained'],
@@ -172,10 +174,12 @@ export function ControlTowerDashboard() {
   const [hubSpotSyncReceipt, setHubSpotSyncReceipt] = useState<HubSpotSyncReceipt | null>(null);
   const [hubSpotSyncError, setHubSpotSyncError] = useState<string | null>(null);
   const [hubSpotSyncKey, setHubSpotSyncKey] = useState('');
+  const [hubSpotPlan, setHubSpotPlan] = useState<CrmWritePlan | null>(null);
   const [salesforceSyncStatus, setSalesforceSyncStatus] = useState<'idle' | 'sending' | 'complete' | 'partial' | 'error'>('idle');
   const [salesforceSyncReceipt, setSalesforceSyncReceipt] = useState<SalesforceSyncReceipt | null>(null);
   const [salesforceSyncError, setSalesforceSyncError] = useState<string | null>(null);
   const [salesforceSyncKey, setSalesforceSyncKey] = useState('');
+  const [salesforcePlan, setSalesforcePlan] = useState<CrmWritePlan | null>(null);
   const [connectorCatalog, setConnectorCatalog] = useState<ConnectorCatalog | null>(null);
   const [sourceType, setSourceType] = useState<ConnectorId>('csv');
   const [destinationType, setDestinationType] = useState<ConnectorId>('csv');
@@ -206,6 +210,8 @@ export function ControlTowerDashboard() {
   const bigQueryConfigured = connectorCatalog?.connectors.some((connector) => connector.id === 'bigquery' && connector.configured) ?? false;
   const hubSpotConfigured = connectorCatalog?.connectors.some((connector) => connector.id === 'hubspot' && connector.configured) ?? false;
   const salesforceConfigured = connectorCatalog?.connectors.some((connector) => connector.id === 'salesforce' && connector.configured) ?? false;
+  const hubSpotSafeWriteback = connectorCatalog?.connectors.find((connector) => connector.id === 'hubspot')?.features?.includes('safe-writeback') ?? false;
+  const salesforceSafeWriteback = connectorCatalog?.connectors.find((connector) => connector.id === 'salesforce')?.features?.includes('safe-writeback') ?? false;
   const googleSheetsConfigured = connectorCatalog?.connectors.some((connector) => connector.id === 'google-sheets' && connector.configured) ?? false;
   const visibleIntegrations = useMemo(() => [
     { name: 'CSV', role: 'free source + export', status: 'always ready', tone: 'live' },
@@ -215,8 +221,8 @@ export function ControlTowerDashboard() {
       { name: 'BigQuery', role: 'event warehouse', status: 'configured', tone: 'live' },
       { name: 'dbt', role: 'semantic layer', status: 'available', tone: 'live' },
     ] : []),
-    ...(hubSpotConfigured ? [{ name: 'HubSpot', role: 'CRM destination', status: 'configured', tone: 'live' }] : []),
-    ...(salesforceConfigured ? [{ name: 'Salesforce', role: 'CRM destination', status: 'configured', tone: 'live' }] : []),
+    ...(hubSpotConfigured ? [{ name: 'HubSpot', role: 'CRM source + destination', status: 'configured', tone: 'live' }] : []),
+    ...(salesforceConfigured ? [{ name: 'Salesforce', role: 'CRM source + destination', status: 'configured', tone: 'live' }] : []),
     { name: 'Control Tower', role: 'decision layer', status: 'active', tone: 'demo' },
   ], [bigQueryConfigured, googleSheetsConfigured, hubSpotConfigured, salesforceConfigured]);
   const visibleScenario = repaired ? null : activeScenario;
@@ -507,6 +513,15 @@ export function ControlTowerDashboard() {
     await persistWorkspace('connector_receipt', { receipts });
   }
 
+  async function recordDetailedRun(receipt: ConnectorReceipt, details: ConnectorRunDetails, undo: CrmWritebackReceipt['rollback']) {
+    await recordConnectorReceipt(receipt);
+    if (!workspaceId) return;
+    await fetch('/api/control-tower/runs', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ workspaceId, run: { receipt, details, undo } }),
+    });
+  }
+
   async function undoSavedWorkspace() {
     if (!workspaceId || !workspaceRevision) return;
     setPersistenceStatus('saving');
@@ -597,6 +612,79 @@ export function ControlTowerDashboard() {
     } catch (error) {
       setHubSpotSyncStatus('error');
       setHubSpotSyncError(error instanceof Error ? error.message : 'The HubSpot sync failed before a valid receipt returned.');
+    }
+  }
+
+  async function previewCrmWriteback(connectorId: 'hubspot' | 'salesforce') {
+    const source = connectorId === 'hubspot' ? pendingHubSpotContacts : pendingSalesforceContacts;
+    const contacts = source.slice(0, 100).map((contact) => connectorId === 'hubspot' ? toHubSpotSyncContact(contact) : toSalesforceSyncLead(contact));
+    if (!contacts.length) return;
+    if (connectorId === 'hubspot') { setHubSpotSyncStatus('sending'); setHubSpotSyncError(null); }
+    else { setSalesforceSyncStatus('sending'); setSalesforceSyncError(null); }
+    try {
+      const response = await fetch('/api/control-tower/crm-writeback', {
+        method: 'POST', headers: { 'content-type': 'application/json', ...((connectorId === 'hubspot' ? hubSpotSyncKey : salesforceSyncKey) ? { 'x-control-tower-key': connectorId === 'hubspot' ? hubSpotSyncKey : salesforceSyncKey } : {}) },
+        body: JSON.stringify({ action: 'preview', connectorId, sourceFile: csvFileName ?? 'imported-contacts.csv', contacts }),
+      });
+      const result = await response.json() as CrmWritePlan | { error?: string };
+      if (!response.ok || !('planId' in result)) throw new Error('error' in result ? result.error : 'CRM preview failed.');
+      if (connectorId === 'hubspot') { setHubSpotPlan(result); setHubSpotSyncStatus('idle'); }
+      else { setSalesforcePlan(result); setSalesforceSyncStatus('idle'); }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'CRM preview failed.';
+      if (connectorId === 'hubspot') { setHubSpotSyncStatus('error'); setHubSpotSyncError(message); }
+      else { setSalesforceSyncStatus('error'); setSalesforceSyncError(message); }
+    }
+  }
+
+  async function executeCrmWriteback(connectorId: 'hubspot' | 'salesforce') {
+    const plan = connectorId === 'hubspot' ? hubSpotPlan : salesforcePlan;
+    if (!plan) return;
+    const source = connectorId === 'hubspot' ? pendingHubSpotContacts : pendingSalesforceContacts;
+    const contactById = new Map(source.map((contact) => [contact.contactId, contact]));
+    const contacts = plan.records.flatMap((record): PortableCrmContact[] => {
+      const contact = contactById.get(record.contactId);
+      return contact ? [connectorId === 'hubspot' ? toHubSpotSyncContact(contact) : toSalesforceSyncLead(contact)] : [];
+    });
+    if (connectorId === 'hubspot') setHubSpotSyncStatus('sending');
+    else setSalesforceSyncStatus('sending');
+    try {
+      const response = await fetch('/api/control-tower/crm-writeback', {
+        method: 'POST', headers: { 'content-type': 'application/json', ...((connectorId === 'hubspot' ? hubSpotSyncKey : salesforceSyncKey) ? { 'x-control-tower-key': connectorId === 'hubspot' ? hubSpotSyncKey : salesforceSyncKey } : {}) },
+        body: JSON.stringify({ action: 'execute', connectorId, sourceFile: csvFileName ?? 'imported-contacts.csv', contacts, plan }),
+      });
+      const result = await response.json() as CrmWritebackReceipt | { error?: string };
+      if (!response.ok || !('accepted' in result)) throw new Error('error' in result ? result.error : 'CRM write-back failed.');
+      const receipt: ConnectorReceipt = {
+        id: result.runId, connectorId, phase: 'receipt', status: result.status,
+        summary: `${result.created} created, ${result.updated} updated, ${result.unchanged} unchanged, ${result.held} held, ${result.failed} failed.`,
+        recordsWritten: result.created + result.updated, recordsFailed: result.failed, createdAt: result.completedAt,
+        undoAvailable: Boolean(result.rollback?.records.length), nativeReceiptId: result.runId,
+      };
+      await recordDetailedRun(receipt, {
+        sourceLabel: csvFileName ?? 'imported-contacts.csv', inputCount: csvContacts.length,
+        activeCount: csvContacts.filter((contact) => contact.recordStatus === 'active').length,
+        heldCount: csvContacts.filter((contact) => contact.recordStatus === 'active').length - result.requested,
+        repairCounts: {
+          merged: csvRepairHistory.find((run) => run.scenario === 'duplicate-surge')?.affectedRecords ?? 0,
+          rerouted: csvRepairHistory.find((run) => run.scenario === 'routing-overload')?.affectedRecords ?? 0,
+          replayed: csvRepairHistory.find((run) => run.scenario === 'stage-regression')?.affectedRecords ?? 0,
+        },
+        plan, writeback: result,
+      }, result.rollback);
+      if (connectorId === 'hubspot') {
+        const records = result.records.map((record) => ({ contactId: record.contactId, email: record.email, status: record.status === 'failed' || record.status === 'held' ? 'failed' as const : 'synced' as const, hubSpotId: record.nativeId, created: record.status === 'created', error: record.error }));
+        const combined: HubSpotSyncReceipt = { accepted: true, status: result.failed || result.held ? 'partial' : 'complete', syncId: result.runId, requested: records.length, synced: records.filter((record) => record.status === 'synced').length, failed: records.filter((record) => record.status === 'failed').length, records, completedAt: result.completedAt };
+        setHubSpotSyncReceipt(combined); setHubSpotSyncStatus(combined.status); setHubSpotPlan(null);
+      } else {
+        const records = result.records.map((record) => ({ contactId: record.contactId, email: record.email, status: record.status === 'created' ? 'created' as const : record.status === 'failed' || record.status === 'held' ? 'failed' as const : 'updated' as const, salesforceId: record.nativeId, error: record.error }));
+        const combined: SalesforceSyncReceipt = { accepted: true, status: result.failed || result.held ? 'partial' : 'complete', syncId: result.runId, requested: records.length, created: records.filter((record) => record.status === 'created').length, updated: records.filter((record) => record.status === 'updated').length, failed: records.filter((record) => record.status === 'failed').length, records, completedAt: result.completedAt };
+        setSalesforceSyncReceipt(combined); setSalesforceSyncStatus(combined.status); setSalesforcePlan(null);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'CRM write-back failed.';
+      if (connectorId === 'hubspot') { setHubSpotSyncStatus('error'); setHubSpotSyncError(message); }
+      else { setSalesforceSyncStatus('error'); setSalesforceSyncError(message); }
     }
   }
 
@@ -711,6 +799,7 @@ export function ControlTowerDashboard() {
           <div className="flex flex-wrap items-center justify-end gap-2">
             <Link href="/" className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 font-mono text-[10px] uppercase tracking-wider text-[#9db1a7] transition hover:border-white/25 hover:text-white">Demo</Link>
             <Link href="/setup" className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 font-mono text-[10px] uppercase tracking-wider text-[#9db1a7] transition hover:border-white/25 hover:text-white">Setup</Link>
+            <Link href="/runs" className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 font-mono text-[10px] uppercase tracking-wider text-[#9db1a7] transition hover:border-white/25 hover:text-white">Sync runs</Link>
             <a
               href="https://github.com/harrisonoconnorhover/gtm-control-tower"
               target="_blank"
@@ -806,6 +895,8 @@ export function ControlTowerDashboard() {
           hubSpotSyncError={hubSpotSyncError}
           hubSpotSyncKey={hubSpotSyncKey}
           hubSpotConfigured={hubSpotConfigured && destinationType === 'hubspot'}
+          hubSpotSafeWriteback={hubSpotSafeWriteback}
+          hubSpotPlan={hubSpotPlan}
           salesforceEligibleCount={salesforceEligibleContacts.length}
           salesforcePendingCount={pendingSalesforceContacts.length}
           salesforceSyncStatus={salesforceSyncStatus}
@@ -813,14 +904,20 @@ export function ControlTowerDashboard() {
           salesforceSyncError={salesforceSyncError}
           salesforceSyncKey={salesforceSyncKey}
           salesforceConfigured={salesforceConfigured && destinationType === 'salesforce'}
+          salesforceSafeWriteback={salesforceSafeWriteback}
+          salesforcePlan={salesforcePlan}
           seedStatus={seedStatus}
           seedReceipt={seedReceipt}
           seedError={seedError}
           onExport={exportCsvWorkspace}
           onUseWarehouse={activateWarehouseMode}
           onHubSpotSync={syncNextCsvBatchToHubSpot}
+          onHubSpotPreview={() => previewCrmWriteback('hubspot')}
+          onHubSpotExecute={() => executeCrmWriteback('hubspot')}
           onHubSpotSyncKeyChange={setHubSpotSyncKey}
           onSalesforceSync={syncNextCsvBatchToSalesforce}
+          onSalesforcePreview={() => previewCrmWriteback('salesforce')}
+          onSalesforceExecute={() => executeCrmWriteback('salesforce')}
           onSalesforceSyncKeyChange={setSalesforceSyncKey}
           onReset={() => dataMode === 'csv' ? Promise.resolve(resetCsvWorkspace()) : resetFunkyBatch(false)}
         />
@@ -1032,6 +1129,8 @@ function FunkyCrmLab({
   hubSpotSyncError,
   hubSpotSyncKey,
   hubSpotConfigured,
+  hubSpotSafeWriteback,
+  hubSpotPlan,
   salesforceEligibleCount,
   salesforcePendingCount,
   salesforceSyncStatus,
@@ -1039,14 +1138,20 @@ function FunkyCrmLab({
   salesforceSyncError,
   salesforceSyncKey,
   salesforceConfigured,
+  salesforceSafeWriteback,
+  salesforcePlan,
   seedStatus,
   seedReceipt,
   seedError,
   onExport,
   onUseWarehouse,
   onHubSpotSync,
+  onHubSpotPreview,
+  onHubSpotExecute,
   onHubSpotSyncKeyChange,
   onSalesforceSync,
+  onSalesforcePreview,
+  onSalesforceExecute,
   onSalesforceSyncKeyChange,
   onReset,
 }: {
@@ -1063,6 +1168,8 @@ function FunkyCrmLab({
   hubSpotSyncError: string | null;
   hubSpotSyncKey: string;
   hubSpotConfigured: boolean;
+  hubSpotSafeWriteback: boolean;
+  hubSpotPlan: CrmWritePlan | null;
   salesforceEligibleCount: number;
   salesforcePendingCount: number;
   salesforceSyncStatus: 'idle' | 'sending' | 'complete' | 'partial' | 'error';
@@ -1070,14 +1177,20 @@ function FunkyCrmLab({
   salesforceSyncError: string | null;
   salesforceSyncKey: string;
   salesforceConfigured: boolean;
+  salesforceSafeWriteback: boolean;
+  salesforcePlan: CrmWritePlan | null;
   seedStatus: 'idle' | 'sending' | 'seeded' | 'error';
   seedReceipt: SeedReceipt | null;
   seedError: string | null;
   onExport: () => void;
   onUseWarehouse: () => void;
   onHubSpotSync: () => Promise<void>;
+  onHubSpotPreview: () => Promise<void>;
+  onHubSpotExecute: () => Promise<void>;
   onHubSpotSyncKeyChange: (value: string) => void;
   onSalesforceSync: () => Promise<void>;
+  onSalesforcePreview: () => Promise<void>;
+  onSalesforceExecute: () => Promise<void>;
   onSalesforceSyncKeyChange: (value: string) => void;
   onReset: () => Promise<void>;
 }) {
@@ -1125,8 +1238,12 @@ function FunkyCrmLab({
             receipt={hubSpotSyncReceipt}
             error={hubSpotSyncError}
             accessKey={hubSpotSyncKey}
+            safeMode={hubSpotSafeWriteback}
+            plan={hubSpotPlan}
             onAccessKeyChange={onHubSpotSyncKeyChange}
             onSync={onHubSpotSync}
+            onPreview={onHubSpotPreview}
+            onExecute={onHubSpotExecute}
           />}
           {salesforceConfigured && <SalesforceSyncPanel
             eligibleCount={salesforceEligibleCount}
@@ -1136,8 +1253,12 @@ function FunkyCrmLab({
             receipt={salesforceSyncReceipt}
             error={salesforceSyncError}
             accessKey={salesforceSyncKey}
+            safeMode={salesforceSafeWriteback}
+            plan={salesforcePlan}
             onAccessKeyChange={onSalesforceSyncKeyChange}
             onSync={onSalesforceSync}
+            onPreview={onSalesforcePreview}
+            onExecute={onSalesforceExecute}
           />}
         </div>
       )}
@@ -1224,8 +1345,12 @@ function HubSpotSyncPanel({
   receipt,
   error,
   accessKey,
+  safeMode,
+  plan,
   onAccessKeyChange,
   onSync,
+  onPreview,
+  onExecute,
 }: {
   eligibleCount: number;
   heldCount: number;
@@ -1234,8 +1359,12 @@ function HubSpotSyncPanel({
   receipt: HubSpotSyncReceipt | null;
   error: string | null;
   accessKey: string;
+  safeMode: boolean;
+  plan: CrmWritePlan | null;
   onAccessKeyChange: (value: string) => void;
   onSync: () => Promise<void>;
+  onPreview: () => Promise<void>;
+  onExecute: () => Promise<void>;
 }) {
   const failedRecords = receipt?.records.filter((record) => record.status === 'failed') ?? [];
   const batchCount = Math.min(100, pendingCount);
@@ -1262,14 +1391,15 @@ function HubSpotSyncPanel({
             />
           </label>
           <button
-            onClick={() => void onSync()}
+            onClick={() => void (safeMode ? plan ? onExecute() : onPreview() : onSync())}
             disabled={status === 'sending' || pendingCount === 0}
             className="rounded-full bg-[#cdfc54] px-5 py-3 text-xs font-bold text-[#07130f] transition hover:bg-[#dcff83] disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {status === 'sending' ? 'Writing to HubSpot…' : pendingCount ? `Sync ${batchCount}${pendingCount > 100 ? ` of ${pendingCount}` : ''} to HubSpot` : eligibleCount ? 'All clean contacts synced' : 'Fix held records first'}
+            {status === 'sending' ? (plan ? 'Writing approved plan…' : 'Inspecting HubSpot…') : pendingCount ? safeMode ? plan ? `Execute ${plan.creates + plan.updates} approved changes` : `Preview ${batchCount} changes` : `Sync ${batchCount}${pendingCount > 100 ? ` of ${pendingCount}` : ''} to HubSpot` : eligibleCount ? 'All clean contacts synced' : 'Fix held records first'}
           </button>
         </div>
       </div>
+      {safeMode && plan && <ChangePlanCard plan={plan} onRefresh={onPreview} />}
       <div aria-live="polite" className="mt-4">
         {receipt && (
           <div className={`rounded-2xl border px-4 py-3 text-xs ${receipt.failed ? 'border-[#e6bd68]/25 bg-[#e6bd68]/[0.06] text-[#e6cf95]' : 'border-[#cdfc54]/20 bg-[#cdfc54]/[0.06] text-[#bfe57d]'}`}>
@@ -1296,8 +1426,12 @@ function SalesforceSyncPanel({
   receipt,
   error,
   accessKey,
+  safeMode,
+  plan,
   onAccessKeyChange,
   onSync,
+  onPreview,
+  onExecute,
 }: {
   eligibleCount: number;
   heldCount: number;
@@ -1306,8 +1440,12 @@ function SalesforceSyncPanel({
   receipt: SalesforceSyncReceipt | null;
   error: string | null;
   accessKey: string;
+  safeMode: boolean;
+  plan: CrmWritePlan | null;
   onAccessKeyChange: (value: string) => void;
   onSync: () => Promise<void>;
+  onPreview: () => Promise<void>;
+  onExecute: () => Promise<void>;
 }) {
   const failedRecords = receipt?.records.filter((record) => record.status === 'failed') ?? [];
   const batchCount = Math.min(100, pendingCount);
@@ -1334,14 +1472,15 @@ function SalesforceSyncPanel({
             />
           </label>
           <button
-            onClick={() => void onSync()}
+            onClick={() => void (safeMode ? plan ? onExecute() : onPreview() : onSync())}
             disabled={status === 'sending' || pendingCount === 0}
             className="rounded-full bg-[#83bcff] px-5 py-3 text-xs font-bold text-[#07130f] transition hover:bg-[#a7d0ff] disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {status === 'sending' ? 'Writing to Salesforce…' : pendingCount ? `Sync ${batchCount}${pendingCount > 100 ? ` of ${pendingCount}` : ''} to Salesforce` : eligibleCount ? 'All clean Leads synced' : 'Fix held records first'}
+            {status === 'sending' ? (plan ? 'Writing approved plan…' : 'Inspecting Salesforce…') : pendingCount ? safeMode ? plan ? `Execute ${plan.creates + plan.updates} approved changes` : `Preview ${batchCount} changes` : `Sync ${batchCount}${pendingCount > 100 ? ` of ${pendingCount}` : ''} to Salesforce` : eligibleCount ? 'All clean Leads synced' : 'Fix held records first'}
           </button>
         </div>
       </div>
+      {safeMode && plan && <ChangePlanCard plan={plan} onRefresh={onPreview} />}
       <div aria-live="polite" className="mt-4">
         {receipt && (
           <div className={`rounded-2xl border px-4 py-3 text-xs ${receipt.failed ? 'border-[#e6bd68]/25 bg-[#e6bd68]/[0.06] text-[#e6cf95]' : 'border-[#83bcff]/20 bg-[#83bcff]/[0.06] text-[#a7d0ff]'}`}>
@@ -1356,6 +1495,25 @@ function SalesforceSyncPanel({
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+function ChangePlanCard({ plan, onRefresh }: { plan: CrmWritePlan; onRefresh: () => Promise<void> }) {
+  function downloadBackup() {
+    const backup = {
+      exportedAt: new Date().toISOString(), connectorId: plan.connectorId, planId: plan.planId,
+      notice: 'This backup contains only portable fields for records scheduled to update. Newly created records are never auto-deleted by rollback.',
+      updates: plan.records.filter((record) => record.operation === 'update').map(({ contactId, email, nativeId, before }) => ({ contactId, email, nativeId, before })),
+    };
+    const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob); const link = document.createElement('a');
+    link.href = url; link.download = `${plan.connectorId}-backup-${plan.createdAt.slice(0, 10)}.json`; link.click(); URL.revokeObjectURL(url);
+  }
+  return (
+    <div className="mt-4 rounded-2xl border border-[#83bcff]/20 bg-[#83bcff]/[0.05] p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs font-semibold text-[#b8d8ff]">Write preview ready · expires {new Date(plan.expiresAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</p><p className="mt-1 text-[10px] text-[#71877c]">{plan.creates} create · {plan.updates} update · {plan.unchanged} unchanged · {plan.held} held</p></div><div className="flex gap-2"><button onClick={downloadBackup} className="rounded-full border border-white/10 px-3 py-2 text-[10px] text-[#b8d8ff]">Download pre-write backup</button><button onClick={() => void onRefresh()} className="rounded-full border border-white/10 px-3 py-2 text-[10px] text-[#8ca096]">Refresh diff</button></div></div>
+      <div className="mt-3 max-h-36 space-y-1 overflow-y-auto font-mono text-[8px] leading-5 text-[#71877c]">{plan.records.filter((record) => record.changes.length || record.reason).slice(0, 20).map((record) => <p key={record.contactId}><span className="text-[#a8bbb1]">{record.email}</span> · {record.reason ?? record.changes.map((change) => `${change.field}: ${change.before ?? '∅'} → ${change.after ?? '∅'}`).join(' · ')}</p>)}</div>
     </div>
   );
 }

@@ -118,6 +118,9 @@ export async function ensureWorkspaceSchema(): Promise<void> {
       undo_json TEXT,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     )`),
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_connector_runs_workspace_created
+      ON connector_runs(workspace_id, created_at)`),
+    db.prepare('PRAGMA optimize'),
   ])).then(() => undefined).catch((error) => {
     schemaPromise = null;
     throw error;

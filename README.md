@@ -19,14 +19,17 @@ the repository.
 - Previews any CSV, lets the operator map arbitrary headers, saves reusable
   mapping presets, and diagnoses duplicate
   identity, missing fields, bad email, owner gaps, and lifecycle regression.
-- Persists imports, repairs, receipts, and twenty undo snapshots in a local
-  SQLite workspace.
+- Persists imports, repairs, field-level write plans, native receipts, rollback
+  backups, and twenty workspace revisions in local SQLite.
 - Reads Google Sheets through n8n and writes governed records to a separate
   `GTM Clean` worksheet without requiring BigQuery.
 - Executes reviewed merge, reroute, and lifecycle-replay workers and exports the
   repaired state.
-- Syncs eligible contacts to HubSpot Contacts or Salesforce Leads with strict
-  per-record receipts and bounded batches.
+- Reads HubSpot Contacts or Salesforce Leads back through the same visual
+  mapping path used by CSV, then proposes rather than silently applies changes.
+- Syncs eligible contacts to HubSpot Contacts or Salesforce Leads with
+  read-before-write field diffs, 100-record ceilings, per-record receipts, and
+  update rollback. Newly created records are never auto-deleted.
 - Routes synthetic leads through n8n, records immutable BigQuery events, and
   models funnel conversion, routing SLA, and data quality with dbt.
 - Shows how operational defects change revenue metrics instead of presenting a
@@ -39,7 +42,9 @@ the repository.
 The Cloudflare Pages site is a static showroom: it runs the deterministic
 64-row cleanup entirely in the browser and uses synthetic data only. It does
 not accept uploads, store workspaces, run connectors, or expose the operator
-application. The working product remains the Docker self-host below.
+application. It also embeds the checked-in, captioned two-minute walkthrough
+and the verified 72-row development-system receipt. The working product remains
+the Docker self-host below.
 
 ## Quick start: one command, no accounts required
 
@@ -64,7 +69,9 @@ reserved example domain.
 The workspace survives browser and container restarts in
 `.runtime/sqlite/gtm-control-tower.db`. n8n is available at
 [http://localhost:5678](http://localhost:5678). Run `docker compose up app` if
-you do not want n8n.
+you do not want n8n. Connector checks live at `/setup`; durable field diffs,
+provider receipts, failures, evidence export, and eligible rollbacks live at
+`/runs`.
 
 The Node.js development path remains available:
 
@@ -104,11 +111,15 @@ Full instructions: [self-hosting](docs/self-hosting.md),
 - The browser never receives CRM, n8n, or Google credentials.
 - Unconfigured connectors do not appear as operational choices.
 - Every connector follows Preview → Validate → Execute → Receipt → Undo/Export.
+- CRM execution refuses a plan after 15 minutes or whenever a fresh provider
+  read no longer matches the reviewed fingerprint.
 - Destination gates hold unresolved duplicates, invalid email, missing company,
   missing owner, and lifecycle regression out of generic writes.
 - Public templates contain no credential bindings or private project IDs.
 - CRM writes are explicit, allow-listed, standard-field-only, and reconciled by
   native receipt.
+- Rollback restores only previously updated portable fields; it never guesses
+  at provider merges or deletes records created by a successful run.
 - Multiple matching Salesforce Leads fail closed instead of selecting one.
 - Production CRM writes remain disabled until `CONTROL_TOWER_SYNC_KEY` is set.
 - The synthetic merge keeps source rows queryable and points them to a canonical
@@ -126,6 +137,7 @@ npm test
 npm run lint
 npm run build
 npm run build:public
+npm run generate:walkthrough -- http://localhost:3001
 npm run smoke:fresh-install
 ```
 

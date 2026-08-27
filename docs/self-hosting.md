@@ -26,6 +26,8 @@ Preview the first rows, map the source columns, and choose **Validate + load**.
 Imports, mappings, repair history, connector receipts, and the latest twenty
 revisions persist in `.runtime/sqlite/gtm-control-tower.db`. The browser stores
 only an unguessable workspace key; SQLite remains the source of truth.
+Open `/runs` to inspect or export durable connector evidence and to restore
+eligible updated CRM fields from their pre-write backup.
 
 Plain `docker compose up` also starts n8n at `http://localhost:5678` so it is
 ready when you add Google Sheets. Use `docker compose up app` for the app alone.
@@ -64,6 +66,19 @@ server routes and `.env.local` is ignored by Git.
 For any internet-accessible deployment, set `CONTROL_TOWER_SYNC_KEY`, use
 HTTPS, and put the entire application behind authentication. The repository
 does not provide multi-tenant identity or secret storage.
+
+Both CRMs can also be sources. The operator reads a bounded contact/Lead sample
+into the same mapper used by CSV; that read never writes. A direct HubSpot token
+needs `crm.objects.contacts.read` and `crm.objects.contacts.write`. n8n users
+import both the write workflow and the separate read-only
+`hubspot-source-workflow.json`, bind the same appropriately scoped OAuth
+credential, and set both webhook URLs. Salesforce source access is included in
+the CLI-authorized connector.
+
+Direct CRM mode adds a second approval gate: preview a field-level plan,
+download its portable backup, then execute within fifteen minutes. The server
+re-reads provider state before execution. Updated fields can be rolled back from
+`/runs`; created records are left in place for deliberate provider-side review.
 
 ## 4. Add BigQuery and dbt
 

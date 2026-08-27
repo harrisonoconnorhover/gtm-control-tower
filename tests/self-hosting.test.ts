@@ -75,6 +75,18 @@ describe('self-hosted connector foundation', () => {
       .toContain("idempotent: true");
   });
 
+  it('ships a read-only, credential-free HubSpot source workflow', () => {
+    const workflow = JSON.parse(readFileSync(new URL('../integrations/n8n/hubspot-source-workflow.json', import.meta.url), 'utf8'));
+    expect(workflow.active).toBe(false);
+    expect(workflow.nodes.every((node: { credentials?: unknown }) => !node.credentials)).toBe(true);
+    const readNode = workflow.nodes.find((node: { name: string }) => node.name === 'Read HubSpot Contacts');
+    expect(readNode.parameters).toMatchObject({ authentication: 'predefinedCredentialType', nodeCredentialType: 'hubspotOAuth2Api' });
+    expect(readNode.parameters).not.toHaveProperty('method');
+    expect(workflow.nodes.find((node: { name: string }) => node.name === 'Shape Source Preview').parameters.jsCode)
+      .toContain('contacts');
+    expect(JSON.stringify(workflow)).not.toMatch(/batch\/upsert|batch\/update|method":"POST"/u);
+  });
+
   it('serializes production n8n webhooks so concurrent Sheets upserts cannot race', () => {
     const compose = readFileSync(new URL('../compose.yaml', import.meta.url), 'utf8');
     expect(compose).toMatch(/N8N_CONCURRENCY_PRODUCTION_LIMIT:\s*["']1["']/u);

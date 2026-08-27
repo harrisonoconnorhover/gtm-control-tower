@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import type { ConnectorCatalog } from '@/lib/connector-contract';
+import type { ConnectorCapability, ConnectorCatalog, ConnectorHealth } from '@/lib/connector-contract';
 
 const command = 'docker compose up --build';
 
@@ -51,6 +51,7 @@ export function SetupGuide() {
           <nav className="flex flex-wrap gap-2 text-xs" aria-label="Primary navigation">
             <Link href="/" className="rounded-full border border-white/10 px-4 py-2 text-[#9fb2a8]">Demo</Link>
             <Link href="/app" className="rounded-full border border-white/10 px-4 py-2 text-[#9fb2a8]">Operator workspace</Link>
+            <Link href="/runs" className="rounded-full border border-white/10 px-4 py-2 text-[#9fb2a8]">Sync runs</Link>
             <a href="https://github.com/harrisonoconnorhover/gtm-control-tower" target="_blank" rel="noreferrer" className="rounded-full border border-[#d8ff67]/25 px-4 py-2 font-semibold text-[#d8ff67]">GitHub ↗</a>
           </nav>
         </header>
@@ -112,6 +113,17 @@ export function SetupGuide() {
           </article>
         </section>
 
+        <section className="py-8" aria-label="Guided CRM connection checks">
+          <div className="mb-5">
+            <p className="font-mono text-[9px] uppercase tracking-[0.18em] text-[#83bcff]">Guided connection lab</p>
+            <h2 className="mt-2 text-3xl font-semibold tracking-[-0.04em]">Prove read and write access before a real batch.</h2>
+            <p className="mt-3 max-w-3xl text-sm leading-6 text-[#81978c]">Secrets remain server-side. The read test changes nothing; the write test upserts one clearly labeled synthetic contact at an example.com address, so repeating it is safe.</p>
+          </div>
+          <div className="grid gap-5 lg:grid-cols-2">
+            {crmConnectors.map((connector) => <ConnectionTestCard key={connector.id} connector={connector} />)}
+          </div>
+        </section>
+
         <footer className="flex flex-wrap items-center justify-between gap-4 border-t border-white/10 py-8 text-xs text-[#667c71]"><p>Need only the demonstration? The public route stores no uploaded lead data.</p><Link href="/" className="text-[#d8ff67]">Back to the two-minute demo →</Link></footer>
       </div>
     </main>
@@ -124,4 +136,47 @@ function SetupStep({ number, title, detail, status }: { number: string; title: s
 
 function HealthRow({ name, detail, ready }: { name: string; detail: string; ready: boolean }) {
   return <div className="flex items-center justify-between gap-5 px-5 py-4 sm:px-6"><div><p className="text-sm font-semibold">{name}</p><p className="mt-1 text-xs text-[#71877c]">{detail}</p></div><span className={`shrink-0 rounded-full px-3 py-1 font-mono text-[8px] uppercase ${ready ? 'bg-[#d8ff67]/10 text-[#d8ff67]' : 'bg-white/[0.05] text-[#71877c]'}`}>{ready ? 'ready' : 'optional'}</span></div>;
+}
+
+function ConnectionTestCard({ connector }: { connector: ConnectorCapability }) {
+  const [checking, setChecking] = useState<'read' | 'write' | null>(null);
+  const [results, setResults] = useState<Partial<Record<'read' | 'write', ConnectorHealth>>>({});
+
+  async function run(action: 'read' | 'write') {
+    setChecking(action);
+    try {
+      const response = await fetch('/api/control-tower/connector-health', {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ connectorId: connector.id, action }),
+      });
+      const result = await response.json() as ConnectorHealth;
+      setResults((current) => ({ ...current, [action]: result }));
+    } catch {
+      setResults((current) => ({ ...current, [action]: { connectorId: connector.id as 'hubspot' | 'salesforce', action, status: 'failed', message: 'The local server did not complete this test.', checkedAt: new Date().toISOString() } }));
+    } finally {
+      setChecking(null);
+    }
+  }
+
+  const direct = connector.features?.includes('safe-writeback');
+  return (
+    <article className="rounded-[28px] border border-white/10 bg-[#0b1b16] p-5 sm:p-6">
+      <div className="flex items-start justify-between gap-4">
+        <div><p className="font-mono text-[9px] uppercase tracking-wider text-[#71877c]">{connector.mode ?? 'optional'} connector</p><h3 className="mt-1 text-xl font-semibold">{connector.label}</h3></div>
+        <span className={`rounded-full px-3 py-1 font-mono text-[8px] uppercase ${connector.configured ? 'bg-[#d8ff67]/10 text-[#d8ff67]' : 'bg-white/[0.05] text-[#71877c]'}`}>{connector.configured ? 'configured' : 'needs setup'}</span>
+      </div>
+      <ol className="mt-5 space-y-2 text-xs leading-5 text-[#8ca096]">
+        <li>1. {connector.id === 'hubspot' ? 'Add a private-app token with contacts read/write, or attach the two n8n OAuth workflows.' : 'Authorize Salesforce CLI and run npm run configure:salesforce.'}</li>
+        <li>2. Restart the local dashboard so server-side values reload.</li>
+        <li>3. Verify read access, then deliberately send the synthetic test record.</li>
+        <li>4. {direct ? 'Safe preview, field diff, backup, and update rollback are available.' : 'This mode supports delegated writes; use a private-app token for field diffs and rollback.'}</li>
+      </ol>
+      <div className="mt-5 flex flex-wrap gap-2">
+        <button onClick={() => void run('read')} disabled={checking !== null} className="rounded-full border border-[#83bcff]/30 px-4 py-2.5 text-xs font-semibold text-[#83bcff] disabled:opacity-50">{checking === 'read' ? 'Testing read…' : 'Test read access'}</button>
+        <button onClick={() => void run('write')} disabled={checking !== null} className="rounded-full bg-[#d8ff67] px-4 py-2.5 text-xs font-bold text-[#06100d] disabled:opacity-50">{checking === 'write' ? 'Sending test…' : 'Send one test record'}</button>
+      </div>
+      <div className="mt-4 space-y-2" aria-live="polite">
+        {(['read', 'write'] as const).map((action) => results[action] && <p key={action} className={`rounded-xl border px-3 py-2 text-[11px] ${results[action]?.status === 'ready' ? 'border-[#d8ff67]/20 bg-[#d8ff67]/[0.05] text-[#bddd78]' : 'border-[#ff9c82]/20 bg-[#ff9c82]/[0.05] text-[#ffb09a]'}`}><strong className="capitalize">{action}:</strong> {results[action]?.message}</p>)}
+      </div>
+    </article>
+  );
 }

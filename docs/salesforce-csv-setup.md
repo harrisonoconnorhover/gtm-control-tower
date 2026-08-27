@@ -26,7 +26,13 @@ The connector does a bounded SOQL lookup before every write:
 
 1. Authorize Salesforce CLI with `sf org login web --alias gtm-control-tower-salesforce --set-default`.
 2. Run `npm run configure:salesforce`. It reads the current CLI session into ignored, owner-readable `.env.local` without printing the access token.
-3. Restart the dashboard, import a CSV, resolve held rows, and click **Sync to Salesforce**.
+3. Restart the dashboard. Import a CSV or read a bounded active-Lead sample,
+   resolve held rows, preview the exact field diff, then execute the plan.
+
+The reviewed plan expires after fifteen minutes and is rejected if a fresh SOQL
+read produces a different fingerprint. `/runs` retains the native per-record
+receipt and a portable backup for updated fields. Rollback restores exact empty
+values as `null`; newly created Leads are never automatically deleted.
 
 The generated environment includes the organization instance URL, its current API version, and a local access token. Treat `.env.local` as a secret even though Git ignores it. Rerun the command if Salesforce rotates the CLI token.
 

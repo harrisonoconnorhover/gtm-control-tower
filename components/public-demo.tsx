@@ -26,6 +26,19 @@ export function PublicDemo() {
   const complete = stage === steps.length - 1 && !running;
 
   useEffect(() => {
+    const requestedStage = Number(new URLSearchParams(window.location.search).get('capture'));
+    if (Number.isInteger(requestedStage) && requestedStage >= 0 && requestedStage < steps.length) {
+      const timer = window.setTimeout(() => {
+        setResult(runMessyLeadDemo());
+        setStage(requestedStage);
+        setRunning(false);
+        document.querySelector(requestedStage === steps.length - 1 ? '#walkthrough' : '#demo')?.scrollIntoView({ block: 'start' });
+      }, 80);
+      return () => window.clearTimeout(timer);
+    }
+  }, []);
+
+  useEffect(() => {
     if (!running) return;
     if (stage >= steps.length - 1) {
       const stop = window.setTimeout(() => setRunning(false), 520);
@@ -47,7 +60,7 @@ export function PublicDemo() {
   }
 
   return (
-    <main id="top" className="min-h-screen overflow-hidden bg-[#06100d] text-[#edf8f2] selection:bg-[#d8ff67] selection:text-[#06100d]">
+    <main id="top" data-capture-stage={stage} className="min-h-screen overflow-hidden bg-[#06100d] text-[#edf8f2] selection:bg-[#d8ff67] selection:text-[#06100d]">
       <div className="pointer-events-none fixed inset-x-0 top-0 h-[760px] bg-[radial-gradient(circle_at_72%_4%,rgba(205,252,84,0.15),transparent_32%),radial-gradient(circle_at_12%_12%,rgba(49,156,118,0.18),transparent_30%)]" />
       <div className="relative mx-auto max-w-[1500px] px-5 sm:px-8 lg:px-12">
         <header className="flex flex-wrap items-center justify-between gap-5 border-b border-white/10 py-5">
@@ -60,6 +73,7 @@ export function PublicDemo() {
           </a>
           <nav className="flex flex-wrap items-center gap-2 text-xs" aria-label="Primary navigation">
             <a href="#demo" className="rounded-full bg-white/[0.06] px-4 py-2 text-[#dce9e2]">Two-minute demo</a>
+            <a href="#walkthrough" className="rounded-full border border-white/10 px-4 py-2 text-[#9fb2a8]">Watch proof</a>
             <a href="https://github.com/harrisonoconnorhover/gtm-control-tower#quick-start-one-command-no-accounts-required" className="rounded-full border border-white/10 px-4 py-2 text-[#9fb2a8] transition hover:border-white/25 hover:text-white">Self-host setup</a>
             <a href="https://github.com/harrisonoconnorhover/gtm-control-tower" target="_blank" rel="noreferrer" className="rounded-full border border-[#d8ff67]/25 px-4 py-2 font-semibold text-[#d8ff67] transition hover:bg-[#d8ff67]/10">GitHub ↗</a>
           </nav>
@@ -195,6 +209,33 @@ export function PublicDemo() {
           </article>
         </section>
 
+        <section id="walkthrough" className="scroll-mt-6 py-8" aria-label="Live sandbox acceptance and walkthrough">
+          <div className="overflow-hidden rounded-[34px] border border-[#83bcff]/20 bg-[#0a1b17]">
+            <div className="grid gap-0 xl:grid-cols-[0.82fr_1.18fr]">
+              <div className="p-6 sm:p-8 lg:p-10">
+                <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#83bcff]">Live development-system acceptance</p>
+                <h2 className="mt-3 text-4xl font-semibold leading-tight tracking-[-0.05em]">The receipt caught what the local validator missed.</h2>
+                <p className="mt-5 text-sm leading-6 text-[#8ca096]">A separate 72-row privacy-safe batch ran through the real operator flow and both CRM sandboxes. Eight duplicates were merged, six malformed emails stayed out, and an internationalized-domain mismatch surfaced as six honest HubSpot failures. IDNA normalization fixed the provider boundary; the retry completed without duplicating prior successes.</p>
+                <div className="mt-6 grid grid-cols-2 gap-3">
+                  <ProofStat value="72" label="messy input rows" />
+                  <ProofStat value="58" label="governed CRM identities" />
+                  <ProofStat value="0" label="duplicate Salesforce emails" />
+                  <ProofStat value="58/58" label="final HubSpot receipt" />
+                </div>
+                <p className="mt-5 font-mono text-[9px] leading-5 text-[#657d72]">REPEAT PROOF · SALESFORCE 0 CREATED / 58 UPDATED · HUBSPOT 52 UPDATED / 6 CORRECTED CREATED</p>
+              </div>
+              <div className="border-t border-white/10 bg-[#06100d] p-4 xl:border-l xl:border-t-0 sm:p-5">
+                <div className="mb-3 flex items-center justify-between gap-3"><div><p className="text-sm font-semibold">Two-minute product walkthrough</p><p className="mt-1 text-[10px] text-[#71877c]">Synthetic data only · captions and full script included</p></div><a href="/gtm-control-tower-walkthrough.mp4" download className="rounded-full border border-white/10 px-3 py-2 text-[10px] text-[#a8bbb1]">Download MP4</a></div>
+                <video controls preload="metadata" poster="/og.png" className="aspect-video w-full rounded-2xl border border-white/10 bg-black" aria-label="Two-minute GTM Control Tower walkthrough">
+                  <source src="/gtm-control-tower-walkthrough.mp4" type="video/mp4" />
+                  <track kind="captions" src="/gtm-control-tower-walkthrough.vtt" srcLang="en" label="English" default />
+                  Your browser does not support the walkthrough video.
+                </video>
+              </div>
+            </div>
+          </div>
+        </section>
+
         <section className="my-8 overflow-hidden rounded-[34px] border border-white/10 bg-[#edf4e9] text-[#102019]">
           <div className="grid gap-8 p-6 sm:p-8 lg:grid-cols-[0.86fr_1.14fr] lg:items-center lg:p-10">
             <div>
@@ -248,6 +289,10 @@ function HeroStat({ value, label, warning = false }: { value: string; label: str
 
 function OutcomeMetric({ label, value, tone = 'good' }: { label: string; value: string; tone?: 'good' | 'warning' }) {
   return <div className="rounded-2xl border border-white/10 bg-[#06100d]/45 p-4"><p className="text-xs text-[#7f958a]">{label}</p><p className={`mt-2 text-2xl font-semibold ${tone === 'warning' ? 'text-[#ff9c82]' : 'text-[#d8ff67]'}`}>{value}</p></div>;
+}
+
+function ProofStat({ value, label }: { value: string; label: string }) {
+  return <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-4"><p className="text-3xl font-semibold text-[#83bcff]">{value}</p><p className="mt-1 text-[10px] text-[#71877c]">{label}</p></div>;
 }
 
 function PathNode({ eyebrow, title, detail, accent = false }: { eyebrow: string; title: string; detail: string; accent?: boolean }) {

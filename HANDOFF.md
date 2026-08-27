@@ -2,39 +2,39 @@
 
 ## Finished
 
-- Imported the 72-row SEC fixture through the visible CSV workflow and executed eight duplicate merges, six reroutes, and four lifecycle replays.
-- Synced 58 governed contacts to HubSpot with a complete native receipt; eight merged and six malformed-email rows stayed out.
-- Verified Salesforce contains 58 unique active Leads for the batch, then reran it with zero creates, 58 updates, and zero failures.
-- Added provider-compatible IDNA email normalization after HubSpot correctly surfaced six rejected internationalized test domains.
-- Saved both final CRM receipts in the durable workspace and documented the live acceptance result.
+- Added durable Sync Runs with filters, evidence export, native receipts, field-level plans, rollback backups, and idempotent undo.
+- Added guided HubSpot and Salesforce read/write checks plus CRM-as-source imports into the standard mapping and repair workflow.
+- Added governed two-step CRM write-back: bounded preview, fresh provider re-read, exact diffs, conflict holds, and update rollback.
+- Added the inactive-by-default HubSpot source workflow and documented direct-token versus n8n connector modes.
+- Added and embedded a captioned, reproducible 120-second portfolio walkthrough with live 72-row sandbox evidence.
 
 ## Try It
 
-- Open `/app`, choose **CSV file**, and import `public/sec-public-company-messy-crm.csv`.
-- Select **Validate + load**, then execute merge, reroute, and lifecycle replay.
-- Choose a configured CRM and sync the 58 eligible identities; inspect its per-record receipt before rerunning.
+- Run `docker compose up --build`, open `http://localhost:3000/setup`, and prove each configured connector.
+- Open `/app`, import a CSV or CRM source, repair it, preview a CRM write plan, execute it, then inspect `/runs`.
+- Regenerate the walkthrough with `npm run generate:walkthrough -- http://localhost:3001` while the local dev server is running.
 
 ## Checks
 
-- HubSpot: final receipt wrote 58/58 with zero failures; the retry updated prior successes instead of creating duplicates.
-- Salesforce: SOQL read-back returned 58 unique emails, zero missing, and zero duplicates; rerun was 0 created / 58 updated / 0 failed.
-- `npm test` passed 38/38; lint, app build, static build, doctor, secret scan, Compose validation, deterministic fixture check, diff check, and fresh-install smoke passed.
-- `npm run audit` passed the high-severity gate; four moderate development-only esbuild advisories remain behind a breaking Drizzle downgrade.
+- `npm test`: 11 files and 43 tests passed; TypeScript, lint, app build, static build, diff check, and secret scan passed.
+- Fresh-install Docker smoke passed with isolated state and no credentials; app and n8n both became ready and undo survived restart.
+- Salesforce live acceptance passed for read, preview, exact-null write, conflict hold, rollback, and repeated rollback; original data was restored.
+- Walkthrough verified as 1600x900 H.264/AAC, exactly 120 seconds; local setup, Sync Runs, and public demo passed DOM and visual inspection.
+- `npm audit --audit-level=high` passed; four moderate Drizzle development-tool advisories remain because the offered fix is breaking.
 
 ## Decisions
 
-- Internationalized email domains retain their diagnostic flag, while governed writes use the provider-compatible ASCII IDNA identity.
-- CRM gates intentionally exclude held and merged records; trustworthy output does not mean writing every input row.
-- The public site remains a static demonstration; real CSV and CRM operations remain self-hosted.
+- All CRM writes remain preview-first, limited to 100 records, and blocked when provider state changes after preview.
+- Creates are never auto-deleted during rollback; only snapshotted updates are eligible, and a second undo is a safe no-op.
+- The public site stays static and synthetic; credentials, durable workspaces, and real provider actions remain self-hosted.
 
 ## Remaining
 
-- Add a compact sync-runs screen for connector receipts.
-- Add a guided Google Sheets connection test when a second account is available.
-- Attach a custom public domain when the preferred hostname is chosen.
+- Reauthorize the local n8n HubSpot credential with `crm.objects.contacts.read`; the checked-in source workflow is installed but correctly reports the missing scope.
+- Choose a custom public domain if desired.
 
 ## Review First
 
-- `lib/csv-control-tower.ts`
-- `scripts/generate_public_company_fixture.mjs`
-- `tests/public-company-fixture.test.ts`
+- `app/api/control-tower/crm-writeback/route.ts`
+- `components/sync-runs.tsx`
+- `docs/two-minute-walkthrough.md`

@@ -10,6 +10,7 @@ import {
   type CsvPreview,
 } from '@/lib/csv-control-tower';
 import type { ConnectorCatalog, ConnectorId, ConnectorReceipt } from '@/lib/connector-contract';
+import type { CrmSourcePreview } from '@/lib/crm-source';
 import { tabularRowsToCsv, type GoogleSheetsPreview } from '@/lib/google-sheets';
 import type { LiveContactState } from '@/lib/live-control-tower';
 import { messyLeadDemoCsv } from '@/lib/messy-lead-demo';
@@ -67,6 +68,7 @@ export function SelfHostConsole({
   const [sourceSpreadsheet, setSourceSpreadsheet] = useState('');
   const [sourceSheet, setSourceSheet] = useState('Sheet1');
   const [destinationSpreadsheet, setDestinationSpreadsheet] = useState('');
+  const [crmImportLimit, setCrmImportLimit] = useState(100);
   const [status, setStatus] = useState<'idle' | 'working' | 'ready' | 'error'>('idle');
   const [message, setMessage] = useState<string | null>(null);
   const configured = catalog?.connectors.filter((connector) => connector.configured) ?? [];
@@ -125,6 +127,25 @@ export function SelfHostConsole({
     } catch (error) {
       setStatus('error');
       setMessage(error instanceof Error ? error.message : 'Google Sheets preview failed.');
+    }
+  }
+
+  async function previewCrm() {
+    if (sourceType !== 'hubspot' && sourceType !== 'salesforce') return;
+    setStatus('working');
+    setMessage(null);
+    try {
+      const response = await fetch('/api/control-tower/crm-source', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ connectorId: sourceType, limit: crmImportLimit }),
+      });
+      const result = await response.json() as CrmSourcePreview | { error?: string };
+      if (!response.ok || !('csv' in result)) throw new Error('error' in result ? result.error : 'CRM preview failed.');
+      await prepareCsv(result.csv, `${sourceType}-contacts-${result.readAt.slice(0, 10)}.csv`);
+      setMessage(`${result.contacts.length} ${result.sourceLabel} read into a local preview${result.truncated ? ' (sample cap reached)' : ''}. Validate the mapping before anything can write.`);
+    } catch (error) {
+      setStatus('error');
+      setMessage(error instanceof Error ? error.message : 'CRM preview failed.');
     }
   }
 
@@ -192,7 +213,7 @@ export function SelfHostConsole({
           <div className="flex items-center justify-between gap-3">
             <div>
               <p className="font-mono text-[9px] uppercase tracking-wider text-[#83bcff]">Source</p>
-              <h3 className="mt-1 text-lg font-semibold">{sourceType === 'google-sheets' ? 'Preview a worksheet' : sourceType === 'csv' ? 'Choose a CSV' : 'Configured live source'}</h3>
+              <h3 className="mt-1 text-lg font-semibold">{sourceType === 'google-sheets' ? 'Preview a worksheet' : sourceType === 'csv' ? 'Choose a CSV' : `Preview ${sourceType === 'hubspot' ? 'contacts' : 'active Leads'}`}</h3>
             </div>
             <span className={`rounded-full px-3 py-1 font-mono text-[9px] uppercase ${persistenceStatus === 'saved' ? 'bg-[#cdfc54]/10 text-[#cdfc54]' : persistenceStatus === 'disabled' ? 'bg-white/[0.06] text-[#71877c]' : 'bg-[#e6bd68]/10 text-[#e6bd68]'}`}>
               {persistenceStatus === 'disabled' ? 'Session only' : workspaceRevision === null ? persistenceStatus : `SQLite r${workspaceRevision} · ${persistenceStatus}`}
@@ -212,6 +233,17 @@ export function SelfHostConsole({
               <input value={sourceSpreadsheet} onChange={(event) => setSourceSpreadsheet(event.target.value)} placeholder="Google Sheet URL or spreadsheet ID" className="rounded-2xl border border-white/10 bg-[#07130f] px-4 py-3 text-sm outline-none focus:border-[#83bcff]/50" />
               <input value={sourceSheet} onChange={(event) => setSourceSheet(event.target.value)} placeholder="Source worksheet, e.g. Leads" className="rounded-2xl border border-white/10 bg-[#07130f] px-4 py-3 text-sm outline-none focus:border-[#83bcff]/50" />
               <button onClick={() => void previewGoogleSheet()} disabled={status === 'working'} className="rounded-2xl bg-[#83bcff] px-5 py-3 text-sm font-bold text-[#07130f] disabled:opacity-50">Read through n8n</button>
+            </div>
+          )}
+
+          {(sourceType === 'hubspot' || sourceType === 'salesforce') && (
+            <div className="mt-4 grid gap-3">
+              <label className="grid gap-1 font-mono text-[8px] uppercase tracking-wider text-[#71877c]">
+                Maximum records · 1–500
+                <input type="number" min={1} max={500} value={crmImportLimit} onChange={(event) => setCrmImportLimit(Math.max(1, Math.min(500, Number(event.target.value) || 1)))} className="rounded-2xl border border-white/10 bg-[#07130f] px-4 py-3 text-sm normal-case tracking-normal outline-none focus:border-[#83bcff]/50" />
+              </label>
+              <button onClick={() => void previewCrm()} disabled={status === 'working'} className="rounded-2xl bg-[#83bcff] px-5 py-3 text-sm font-bold text-[#07130f] disabled:opacity-50">{status === 'working' ? 'Reading CRM…' : `Read from ${sourceType === 'hubspot' ? 'HubSpot' : 'Salesforce'}`}</button>
+              <p className="text-[10px] leading-5 text-[#566b61]">Read-only source access creates a local preview. It does not modify the CRM.</p>
             </div>
           )}
 

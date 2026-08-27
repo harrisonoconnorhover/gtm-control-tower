@@ -11,6 +11,17 @@ export type ConnectorCapability = {
   directions: ConnectorDirection[];
   phases: ConnectorPhase[];
   setupHint?: string;
+  mode?: 'built-in' | 'direct' | 'n8n' | 'hybrid';
+  features?: Array<'preview' | 'write' | 'safe-writeback' | 'rollback'>;
+};
+
+export type ConnectorHealth = {
+  connectorId: Extract<ConnectorId, 'hubspot' | 'salesforce'>;
+  action: 'read' | 'write';
+  status: 'ready' | 'needs_action' | 'failed';
+  message: string;
+  checkedAt: string;
+  nativeReceiptId?: string;
 };
 
 export type ConnectorReceipt = {
@@ -33,6 +44,7 @@ export type ConnectorCatalog = {
 };
 
 export const connectorPhases: ConnectorPhase[] = ['preview', 'validate', 'execute', 'receipt', 'undo', 'export'];
+export const connectorStatuses: ConnectorStatus[] = ['ready', 'blocked', 'executed', 'partial', 'failed', 'undone'];
 
 export function isConnectorReceipt(value: unknown): value is ConnectorReceipt {
   if (!value || typeof value !== 'object') return false;
@@ -40,7 +52,7 @@ export function isConnectorReceipt(value: unknown): value is ConnectorReceipt {
   return typeof receipt.id === 'string'
     && connectorIds.includes(receipt.connectorId as ConnectorId)
     && connectorPhases.includes(receipt.phase as ConnectorPhase)
-    && typeof receipt.status === 'string'
+    && connectorStatuses.includes(receipt.status as ConnectorStatus)
     && typeof receipt.summary === 'string'
     && typeof receipt.createdAt === 'string'
     && typeof receipt.undoAvailable === 'boolean';

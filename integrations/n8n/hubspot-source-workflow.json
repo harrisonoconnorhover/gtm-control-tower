@@ -1,0 +1,70 @@
+{
+  "id": "gtmControlTowerHubSpotSource01",
+  "name": "GTM Control Tower - HubSpot Contact Source",
+  "nodes": [
+    {
+      "parameters": { "httpMethod": "POST", "path": "gtm-control-tower-hubspot-source", "responseMode": "responseNode", "options": {} },
+      "id": "20e69e36-77fc-4c0c-9168-f20169ba8011",
+      "name": "Receive Source Preview",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-520, 80],
+      "webhookId": "gtm-control-tower-hubspot-source"
+    },
+    {
+      "parameters": { "jsCode": "const body = $json.body ?? $json;\nconst requested = Number(body.limit ?? 100);\nconst limit = Math.max(1, Math.min(100, Number.isFinite(requested) ? Math.floor(requested) : 100));\nreturn [{ json: { limit } }];" },
+      "id": "6f36ab81-b5a0-4e12-8cc1-a3f81b07dd29",
+      "name": "Bound Read Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-280, 80]
+    },
+    {
+      "parameters": {
+        "url": "https://api.hubapi.com/crm/objects/2026-03/contacts",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "hubspotOAuth2Api",
+        "sendQuery": true,
+        "queryParameters": { "parameters": [
+          { "name": "limit", "value": "={{ $json.limit }}" },
+          { "name": "properties", "value": "email,firstname,lastname,company,phone,jobtitle,website" }
+        ] },
+        "options": {}
+      },
+      "id": "a61a628b-e3d0-487d-b237-441b9be931c9",
+      "name": "Read HubSpot Contacts",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [-20, 80],
+      "notes": "Bind a HubSpot OAuth2 credential with crm.objects.contacts.read after import. This workflow never writes."
+    },
+    {
+      "parameters": { "jsCode": "const response = $json;\nconst results = Array.isArray(response.results) ? response.results : [];\nconst text = (value) => typeof value === 'string' ? value : '';\nconst contacts = results.map((record) => {\n  const props = record.properties ?? {};\n  const firstName = text(props.firstname);\n  const lastName = text(props.lastname);\n  return { nativeId: text(record.id), fullName: [firstName, lastName].filter(Boolean).join(' '), firstName, lastName, email: text(props.email), company: text(props.company), phone: text(props.phone), jobTitle: text(props.jobtitle), website: text(props.website) };\n}).filter((contact) => contact.nativeId);\nreturn [{ json: { contacts, readAt: new Date().toISOString(), truncated: Boolean(response.paging?.next) } }];" },
+      "id": "dd2a415b-ef40-4052-9191-b4686fab5017",
+      "name": "Shape Source Preview",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [240, 80]
+    },
+    {
+      "parameters": { "respondWith": "json", "responseBody": "={{ $json }}", "options": { "responseCode": 200 } },
+      "id": "71ce7d4c-1051-4ba9-b02e-5184c3442540",
+      "name": "Return Read-only Preview",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [500, 80]
+    }
+  ],
+  "connections": {
+    "Receive Source Preview": { "main": [[{ "node": "Bound Read Request", "type": "main", "index": 0 }]] },
+    "Bound Read Request": { "main": [[{ "node": "Read HubSpot Contacts", "type": "main", "index": 0 }]] },
+    "Read HubSpot Contacts": { "main": [[{ "node": "Shape Source Preview", "type": "main", "index": 0 }]] },
+    "Shape Source Preview": { "main": [[{ "node": "Return Read-only Preview", "type": "main", "index": 0 }]] }
+  },
+  "pinData": {},
+  "active": false,
+  "settings": { "executionOrder": "v1", "saveManualExecutions": true },
+  "versionId": "5a3669fe-d2dc-4a69-83e2-8d193e29a234",
+  "meta": { "templateCredsSetupCompleted": false },
+  "tags": []
+}

@@ -74,7 +74,7 @@ async function syncThroughN8n(batch: HubSpotSyncBatch, webhookUrl: string): Prom
   return response.json();
 }
 
-async function syncDirectlyToHubSpot(
+export async function syncDirectlyToHubSpot(
   batch: HubSpotSyncBatch,
   accessToken: string,
 ): Promise<HubSpotSyncReceipt> {

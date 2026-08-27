@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { integer, primaryKey, sqliteTable, text } from 'drizzle-orm/sqlite-core';
+import { index, integer, primaryKey, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 
 export const workspaces = sqliteTable('workspaces', {
   id: text('id').primaryKey(),
@@ -37,4 +37,4 @@ export const connectorRuns = sqliteTable('connector_runs', {
   receiptJson: text('receipt_json').notNull(),
   undoJson: text('undo_json'),
   createdAt: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
-});
+}, (table) => [index('idx_connector_runs_workspace_created').on(table.workspaceId, table.createdAt)]);

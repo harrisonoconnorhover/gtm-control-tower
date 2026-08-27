@@ -1,5 +1,6 @@
 import { ensureWorkspaceSchema, getDatabase, type DatabaseAdapter } from '@/db';
 import type { ConnectorReceipt } from './connector-contract';
+import type { ConnectorRun, ConnectorRunInput } from './connector-run';
 import {
   emptyWorkspaceState,
   validateWorkspaceState,
@@ -162,13 +163,60 @@ export async function saveMappingPreset(
 }
 
 export async function saveConnectorReceipt(workspaceId: string, receipt: ConnectorReceipt): Promise<void> {
+  return saveConnectorRun(workspaceId, { receipt });
+}
+
+export async function saveConnectorRun(workspaceId: string, input: ConnectorRunInput): Promise<void> {
   await ensureWorkspaceSchema();
   const db = await getDatabase();
+  const exists = await db.prepare('SELECT id FROM workspaces WHERE id = ?').bind(workspaceId).first();
+  if (!exists) throw new Error('Workspace not found.');
+  const receipt = input.receipt;
+  const payload = input.details === undefined ? { receipt } : { receipt, details: input.details };
   await db.prepare(`INSERT INTO connector_runs
-    (id, workspace_id, connector_id, phase, status, receipt_json, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?)`)
-    .bind(receipt.id, workspaceId, receipt.connectorId, receipt.phase, receipt.status, JSON.stringify(receipt), receipt.createdAt)
+    (id, workspace_id, connector_id, phase, status, receipt_json, undo_json, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET status = excluded.status,
+      receipt_json = json_patch(connector_runs.receipt_json, excluded.receipt_json),
+      undo_json = COALESCE(excluded.undo_json, connector_runs.undo_json)`)
+    .bind(
+      receipt.id,
+      workspaceId,
+      receipt.connectorId,
+      receipt.phase,
+      receipt.status,
+      JSON.stringify(payload),
+      input.undo ? JSON.stringify(input.undo) : null,
+      receipt.createdAt,
+    )
     .run();
+}
+
+export async function listConnectorRuns(workspaceId: string, limit = 50): Promise<ConnectorRun[]> {
+  await ensureWorkspaceSchema();
+  const db = await getDatabase();
+  const boundedLimit = Number.isFinite(limit) ? Math.max(1, Math.min(100, Math.floor(limit))) : 50;
+  const result = await db.prepare(`SELECT id, workspace_id, connector_id, phase, status, receipt_json, undo_json, created_at
+    FROM connector_runs WHERE workspace_id = ? ORDER BY created_at DESC LIMIT ?`)
+    .bind(workspaceId, boundedLimit).all<{
+      id: string; workspace_id: string; connector_id: string; phase: string; status: string;
+      receipt_json: string; undo_json: string | null; created_at: string;
+    }>();
+  return result.results.flatMap((row): ConnectorRun[] => {
+    try {
+      const parsed = JSON.parse(row.receipt_json) as { receipt?: ConnectorReceipt; details?: ConnectorRun['details'] } | ConnectorReceipt;
+      const receipt = 'receipt' in parsed && parsed.receipt ? parsed.receipt : parsed as ConnectorReceipt;
+      return [{
+        id: row.id, workspaceId: row.workspace_id, connectorId: row.connector_id as ConnectorRun['connectorId'],
+        phase: row.phase as ConnectorRun['phase'], status: row.status as ConnectorRun['status'], receipt,
+        details: 'details' in parsed ? parsed.details ?? null : null,
+        undo: row.undo_json ? JSON.parse(row.undo_json) as ConnectorRun['undo'] : null,
+        createdAt: row.created_at,
+      }];
+    } catch {
+      return [];
+    }
+  });
 }
 
 async function readRevision(db: DatabaseAdapter, workspaceId: string, revision: number): Promise<WorkspaceState> {
