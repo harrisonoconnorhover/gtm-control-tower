@@ -3,7 +3,7 @@
 [![CI](https://github.com/harrisonoconnorhover/gtm-control-tower/actions/workflows/ci.yml/badge.svg)](https://github.com/harrisonoconnorhover/gtm-control-tower/actions/workflows/ci.yml)
 [![MIT License](https://img.shields.io/badge/license-MIT-174b45.svg)](LICENSE)
 
-**[Run the browser-only two-minute demo](https://gtm-control-tower.pages.dev/)** ·
+**[Audit a CRM CSV privately in your browser](https://gtm-control-tower.pages.dev/)** ·
 **[Self-host the operator workspace](#quick-start-one-command-no-accounts-required)**
 
 A self-hosted revenue-systems lab that turns deliberately messy CRM data into
@@ -36,12 +36,16 @@ the repository.
   static dashboard.
 - Builds the public proof as a static site while keeping the operator workspace
   and self-host diagnostics in the same repository.
+- Audits common CRM contact exports entirely in the visitor's browser and
+  downloads an aggregate Markdown readiness report without transmitting or
+  storing source rows.
 
 ## Public demonstration
 
-The Cloudflare Pages site is a static showroom: it runs the deterministic
-64-row cleanup entirely in the browser and uses synthetic data only. It does
-not accept uploads, store workspaces, run connectors, or expose the operator
+The Cloudflare Pages site is a static, browser-only showroom. Visitors can run
+the deterministic 64-row cleanup or audit a local CSV without transmitting the
+file; the audit produces aggregate counts and a downloadable Markdown report.
+The site does not store workspaces, run connectors, or expose the operator
 application. It also embeds the checked-in, captioned two-minute walkthrough
 and the verified 72-row development-system receipt. The working product remains
 the Docker self-host below.

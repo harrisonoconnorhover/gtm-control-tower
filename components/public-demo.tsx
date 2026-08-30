@@ -7,6 +7,7 @@ import {
   type DemoPipelineResult,
 } from '@/lib/messy-lead-demo';
 import type { LiveContactState } from '@/lib/live-control-tower';
+import { InstantCrmAudit } from '@/components/instant-crm-audit';
 
 const steps = [
   { label: 'Ingest', system: 'CSV / Sheets', detail: 'Accept the source exactly as it arrives.' },
@@ -26,8 +27,9 @@ export function PublicDemo() {
   const complete = stage === steps.length - 1 && !running;
 
   useEffect(() => {
-    const requestedStage = Number(new URLSearchParams(window.location.search).get('capture'));
-    if (Number.isInteger(requestedStage) && requestedStage >= 0 && requestedStage < steps.length) {
+    const captureParameter = new URLSearchParams(window.location.search).get('capture');
+    const requestedStage = captureParameter === null ? null : Number(captureParameter);
+    if (requestedStage !== null && Number.isInteger(requestedStage) && requestedStage >= 0 && requestedStage < steps.length) {
       const timer = window.setTimeout(() => {
         setResult(runMessyLeadDemo());
         setStage(requestedStage);
@@ -72,6 +74,7 @@ export function PublicDemo() {
             </div>
           </a>
           <nav className="flex flex-wrap items-center gap-2 text-xs" aria-label="Primary navigation">
+            <a href="#audit" className="rounded-full bg-[#83bcff]/10 px-4 py-2 font-semibold text-[#83bcff]">Audit your CSV</a>
             <a href="#demo" className="rounded-full bg-white/[0.06] px-4 py-2 text-[#dce9e2]">Two-minute demo</a>
             <a href="#walkthrough" className="rounded-full border border-white/10 px-4 py-2 text-[#9fb2a8]">Watch proof</a>
             <a href="https://github.com/harrisonoconnorhover/gtm-control-tower#quick-start-one-command-no-accounts-required" className="rounded-full border border-white/10 px-4 py-2 text-[#9fb2a8] transition hover:border-white/25 hover:text-white">Self-host setup</a>
@@ -92,10 +95,13 @@ export function PublicDemo() {
               GTM Control Tower maps messy lead files, contains unsafe records, executes merge and routing repairs, and leaves a receipt a revenue team can actually audit.
             </p>
             <div className="mt-8 flex flex-wrap items-center gap-3">
+              <a href="#audit" className="rounded-full bg-[#83bcff] px-6 py-3.5 text-sm font-black text-[#06100d] shadow-[0_14px_50px_rgba(131,188,255,0.16)] transition hover:-translate-y-0.5 hover:bg-[#acd5ff]">
+                Audit my CSV privately
+              </a>
               <button
                 onClick={runDemo}
                 disabled={running}
-                className="rounded-full bg-[#d8ff67] px-6 py-3.5 text-sm font-black text-[#06100d] shadow-[0_14px_50px_rgba(216,255,103,0.16)] transition hover:-translate-y-0.5 hover:bg-[#e5ff91] disabled:cursor-wait disabled:opacity-70"
+                className="rounded-full border border-[#d8ff67]/25 bg-[#d8ff67]/[0.08] px-6 py-3.5 text-sm font-bold text-[#d8ff67] transition hover:-translate-y-0.5 hover:bg-[#d8ff67]/[0.14] disabled:cursor-wait disabled:opacity-70"
                 data-testid="run-public-demo"
               >
                 {running ? `Running ${steps[Math.max(stage, 0)].label.toLowerCase()}…` : result ? 'Replay the 64-row cleanup' : 'Run the 64-row cleanup'}
@@ -141,6 +147,8 @@ export function PublicDemo() {
             </div>
           </article>
         </section>
+
+        <InstantCrmAudit />
 
         <section id="demo" className="scroll-mt-6 pb-8" aria-label="Interactive cleanup demonstration">
           <div className="mb-5 flex flex-wrap items-end justify-between gap-4">
@@ -258,7 +266,7 @@ export function PublicDemo() {
         </section>
 
         <footer className="flex flex-wrap items-center justify-between gap-4 border-t border-white/10 py-8 text-xs text-[#667c71]">
-          <p>Browser-only public demo · open-source workspace · synthetic data only</p>
+          <p>Browser-only audit · no uploads · open-source self-hosted workspace</p>
           <p className="font-mono">BUILT FOR GTM ENGINEERING, REVOPS, AND REVENUE SYSTEMS</p>
         </footer>
       </div>

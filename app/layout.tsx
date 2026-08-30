@@ -15,10 +15,10 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   metadataBase: new URL('https://gtm-control-tower.pages.dev'),
   title: 'GTM Control Tower · Bad CRM data in, defensible action out',
-  description: 'A self-hosted revenue systems lab that maps messy lead files, executes governed CRM repairs, and returns auditable receipts.',
+  description: 'Audit a CRM contact export privately in your browser, then execute governed repairs and return auditable receipts.',
   openGraph: {
     title: 'GTM Control Tower',
-    description: 'Watch 64 deliberately messy leads become a governed, destination-ready batch.',
+    description: 'Audit a CRM export privately in your browser and turn messy records into governed action.',
     type: 'website',
     images: [
       {
@@ -32,7 +32,7 @@ export const metadata: Metadata = {
   twitter: {
     card: 'summary_large_image',
     title: 'GTM Control Tower',
-    description: 'Watch 64 deliberately messy leads become a governed, destination-ready batch.',
+    description: 'Audit a CRM export privately in your browser and turn messy records into governed action.',
     images: ['/og.png'],
   },
   robots: {

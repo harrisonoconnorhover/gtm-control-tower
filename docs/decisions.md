@@ -79,6 +79,15 @@ and `/setup` as its local installation guide for Docker self-hosters. Reusing
 the public demo component avoids a second product codebase without publishing
 uploads, persistence, credentials, or connector routes.
 
+## Public audit is local-only
+
+The public showroom may accept a CSV only through browser-local file reading.
+It uses the same deterministic import and destination-gate rules as the
+self-hosted workspace, returns aggregate issue counts, and downloads a
+contact-free Markdown report. It never sends a filename, row, or audit result
+to a server, and it cannot execute connector writes. This gives a visitor an
+immediate personal proof without weakening the static hosting boundary.
+
 ## Destination-ready means unresolved rows stay out
 
 Generic destinations accept only active contacts without duplicate identity,
