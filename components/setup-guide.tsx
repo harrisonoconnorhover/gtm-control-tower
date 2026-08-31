@@ -10,6 +10,7 @@ export function SetupGuide() {
   const [catalog, setCatalog] = useState<ConnectorCatalog | null>(null);
   const [status, setStatus] = useState<'checking' | 'ready' | 'offline'>('checking');
   const [copied, setCopied] = useState(false);
+  const [accessKey, setAccessKey] = useState(() => typeof window === 'undefined' ? '' : window.sessionStorage.getItem('gtm-control-tower-operator-key') ?? '');
 
   useEffect(() => {
     let cancelled = false;
@@ -119,8 +120,9 @@ export function SetupGuide() {
             <h2 className="mt-2 text-3xl font-semibold tracking-[-0.04em]">Prove read and write access before a real batch.</h2>
             <p className="mt-3 max-w-3xl text-sm leading-6 text-[#81978c]">Secrets remain server-side. The read test changes nothing; the write test upserts one clearly labeled synthetic contact at an example.com address, so repeating it is safe.</p>
           </div>
+          {catalog?.accessKeyRequired && <div className="mb-5 rounded-2xl border border-[#83bcff]/20 bg-[#83bcff]/[0.05] p-4"><label htmlFor="setup-operator-key" className="text-xs font-semibold text-[#b8d9ff]">Operator access key</label><input id="setup-operator-key" type="password" value={accessKey} onChange={(event) => { const value = event.target.value; setAccessKey(value); if (value) window.sessionStorage.setItem('gtm-control-tower-operator-key', value); else window.sessionStorage.removeItem('gtm-control-tower-operator-key'); }} className="mt-3 block w-full max-w-lg rounded-xl border border-white/10 bg-[#06100d] px-4 py-3 text-sm outline-none focus:border-[#83bcff]/50" /><p className="mt-2 text-[10px] text-[#71877c]">Stored only for this browser tab.</p></div>}
           <div className="grid gap-5 lg:grid-cols-2">
-            {crmConnectors.map((connector) => <ConnectionTestCard key={connector.id} connector={connector} />)}
+            {crmConnectors.map((connector) => <ConnectionTestCard key={connector.id} connector={connector} accessKey={accessKey} />)}
           </div>
         </section>
 
@@ -138,7 +140,7 @@ function HealthRow({ name, detail, ready }: { name: string; detail: string; read
   return <div className="flex items-center justify-between gap-5 px-5 py-4 sm:px-6"><div><p className="text-sm font-semibold">{name}</p><p className="mt-1 text-xs text-[#71877c]">{detail}</p></div><span className={`shrink-0 rounded-full px-3 py-1 font-mono text-[8px] uppercase ${ready ? 'bg-[#d8ff67]/10 text-[#d8ff67]' : 'bg-white/[0.05] text-[#71877c]'}`}>{ready ? 'ready' : 'optional'}</span></div>;
 }
 
-function ConnectionTestCard({ connector }: { connector: ConnectorCapability }) {
+function ConnectionTestCard({ connector, accessKey }: { connector: ConnectorCapability; accessKey: string }) {
   const [checking, setChecking] = useState<'read' | 'write' | null>(null);
   const [results, setResults] = useState<Partial<Record<'read' | 'write', ConnectorHealth>>>({});
 
@@ -146,7 +148,7 @@ function ConnectionTestCard({ connector }: { connector: ConnectorCapability }) {
     setChecking(action);
     try {
       const response = await fetch('/api/control-tower/connector-health', {
-        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ connectorId: connector.id, action }),
+        method: 'POST', headers: { 'content-type': 'application/json', ...(accessKey ? { 'x-control-tower-key': accessKey } : {}) }, body: JSON.stringify({ connectorId: connector.id, action }),
       });
       const result = await response.json() as ConnectorHealth;
       setResults((current) => ({ ...current, [action]: result }));

@@ -13,6 +13,7 @@ export async function GET() {
   const fullLifecycle = ['preview', 'validate', 'execute', 'receipt', 'undo', 'export'] as const;
   const catalog: ConnectorCatalog = {
     persistenceEnabled: persistenceEnabled(),
+    accessKeyRequired: Boolean(process.env.CONTROL_TOWER_SYNC_KEY),
     connectors: [
       { id: 'csv', label: 'CSV file', configured: true, directions: ['source', 'destination'], phases: [...fullLifecycle], mode: 'built-in', features: ['preview', 'write', 'rollback'] },
       { id: 'google-sheets', label: 'Google Sheets through n8n', configured: sheetsRead && sheetsWrite, directions: ['source', 'destination'], phases: [...fullLifecycle], mode: 'n8n', features: ['preview', 'write'] },
@@ -20,10 +21,10 @@ export async function GET() {
         id: 'hubspot', label: 'HubSpot', configured: hubSpot,
         directions: [...(hubSpotDirect || hubSpotN8nRead ? ['source'] as const : []), ...(hubSpotDirect || hubSpotN8nWrite ? ['destination'] as const : [])],
         phases: [...fullLifecycle], mode: hubSpotDirect && (hubSpotN8nWrite || hubSpotN8nRead) ? 'hybrid' : hubSpotDirect ? 'direct' : 'n8n',
-        features: [...(hubSpotDirect || hubSpotN8nRead ? ['preview'] as const : []), ...(hubSpotDirect || hubSpotN8nWrite ? ['write'] as const : []), ...(hubSpotDirect ? ['safe-writeback', 'rollback'] as const : [])],
-        setupHint: 'Add a private-app token for read, diff, write, and rollback; or n8n webhooks for delegated OAuth.',
+        features: [...(hubSpotDirect || hubSpotN8nRead ? ['preview'] as const : []), ...(hubSpotDirect || hubSpotN8nWrite ? ['write'] as const : []), ...(hubSpotDirect ? ['safe-writeback', 'rollback', 'account-scan'] as const : [])],
+        setupHint: 'Add a service key with contact read/write access for account scans, diffs, writes, and rollback; or n8n webhooks for delegated OAuth.',
       },
-      { id: 'salesforce', label: 'Salesforce', configured: salesforce, directions: ['source', 'destination'], phases: [...fullLifecycle], mode: 'direct', features: ['preview', 'write', 'safe-writeback', 'rollback'], setupHint: 'Add the Salesforce instance URL and access token.' },
+      { id: 'salesforce', label: 'Salesforce', configured: salesforce, directions: ['source', 'destination'], phases: [...fullLifecycle], mode: 'direct', features: ['preview', 'write', 'safe-writeback', 'rollback', 'account-scan'], setupHint: 'Add the Salesforce instance URL and access token.' },
       { id: 'bigquery', label: 'BigQuery through n8n', configured: bigQuery, directions: ['source'], phases: [...fullLifecycle], setupHint: 'Import the warehouse workflow and set its n8n webhook URLs.' },
     ],
   };

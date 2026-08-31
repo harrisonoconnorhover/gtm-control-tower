@@ -71,6 +71,7 @@ export function SelfHostConsole({
   const [crmImportLimit, setCrmImportLimit] = useState(100);
   const [status, setStatus] = useState<'idle' | 'working' | 'ready' | 'error'>('idle');
   const [message, setMessage] = useState<string | null>(null);
+  const [operatorKey, setOperatorKey] = useState(() => typeof window === 'undefined' ? '' : window.sessionStorage.getItem('gtm-control-tower-operator-key') ?? '');
   const configured = catalog?.connectors.filter((connector) => connector.configured) ?? [];
   const sources = configured.filter((connector) => connector.directions.includes('source'));
   const destinations = configured.filter((connector) => connector.directions.includes('destination'));
@@ -136,7 +137,7 @@ export function SelfHostConsole({
     setMessage(null);
     try {
       const response = await fetch('/api/control-tower/crm-source', {
-        method: 'POST', headers: { 'content-type': 'application/json' },
+        method: 'POST', headers: { 'content-type': 'application/json', ...(operatorKey ? { 'x-control-tower-key': operatorKey } : {}) },
         body: JSON.stringify({ connectorId: sourceType, limit: crmImportLimit }),
       });
       const result = await response.json() as CrmSourcePreview | { error?: string };
@@ -189,6 +190,7 @@ export function SelfHostConsole({
 
   return (
     <section className="mb-6 overflow-hidden rounded-[30px] border border-[#83bcff]/20 bg-[#0b1b19]" aria-label="Self-hosted workspace setup">
+      {catalog?.accessKeyRequired && <div className="border-b border-white/10 px-5 py-4 sm:px-6"><label className="grid max-w-lg gap-2 text-xs font-semibold text-[#9cb0a7]">Operator access key<input type="password" value={operatorKey} onChange={(event) => { const value = event.target.value; setOperatorKey(value); if (value) window.sessionStorage.setItem('gtm-control-tower-operator-key', value); else window.sessionStorage.removeItem('gtm-control-tower-operator-key'); }} className="rounded-xl border border-white/10 bg-[#07130f] px-4 py-3 text-sm text-[#e5f1eb] outline-none focus:border-[#83bcff]/50" /></label><p className="mt-2 text-[10px] text-[#71877c]">Kept only in this browser tab and required for private CRM reads and writes.</p></div>}
       <div className="grid gap-6 border-b border-white/10 px-5 py-5 lg:grid-cols-[1fr_1fr_auto] lg:items-end sm:px-6">
         <label className="grid gap-2 text-xs font-semibold text-[#9cb0a7]">
           Where is your data?

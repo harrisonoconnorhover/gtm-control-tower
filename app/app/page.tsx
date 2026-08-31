@@ -1,5 +1,5 @@
-import { ControlTowerDashboard } from '@/components/control-tower-dashboard';
+import { DuplicateAudit } from '@/components/duplicate-audit';
 
 export default function OperatorWorkspacePage() {
-  return <ControlTowerDashboard />;
+  return <DuplicateAudit />;
 }

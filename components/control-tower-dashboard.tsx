@@ -173,12 +173,12 @@ export function ControlTowerDashboard() {
   const [hubSpotSyncStatus, setHubSpotSyncStatus] = useState<'idle' | 'sending' | 'complete' | 'partial' | 'error'>('idle');
   const [hubSpotSyncReceipt, setHubSpotSyncReceipt] = useState<HubSpotSyncReceipt | null>(null);
   const [hubSpotSyncError, setHubSpotSyncError] = useState<string | null>(null);
-  const [hubSpotSyncKey, setHubSpotSyncKey] = useState('');
+  const [hubSpotSyncKey, setHubSpotSyncKey] = useState(() => typeof window === 'undefined' ? '' : window.sessionStorage.getItem('gtm-control-tower-operator-key') ?? '');
   const [hubSpotPlan, setHubSpotPlan] = useState<CrmWritePlan | null>(null);
   const [salesforceSyncStatus, setSalesforceSyncStatus] = useState<'idle' | 'sending' | 'complete' | 'partial' | 'error'>('idle');
   const [salesforceSyncReceipt, setSalesforceSyncReceipt] = useState<SalesforceSyncReceipt | null>(null);
   const [salesforceSyncError, setSalesforceSyncError] = useState<string | null>(null);
-  const [salesforceSyncKey, setSalesforceSyncKey] = useState('');
+  const [salesforceSyncKey, setSalesforceSyncKey] = useState(() => typeof window === 'undefined' ? '' : window.sessionStorage.getItem('gtm-control-tower-operator-key') ?? '');
   const [salesforcePlan, setSalesforcePlan] = useState<CrmWritePlan | null>(null);
   const [connectorCatalog, setConnectorCatalog] = useState<ConnectorCatalog | null>(null);
   const [sourceType, setSourceType] = useState<ConnectorId>('csv');
@@ -213,6 +213,12 @@ export function ControlTowerDashboard() {
   const hubSpotSafeWriteback = connectorCatalog?.connectors.find((connector) => connector.id === 'hubspot')?.features?.includes('safe-writeback') ?? false;
   const salesforceSafeWriteback = connectorCatalog?.connectors.find((connector) => connector.id === 'salesforce')?.features?.includes('safe-writeback') ?? false;
   const googleSheetsConfigured = connectorCatalog?.connectors.some((connector) => connector.id === 'google-sheets' && connector.configured) ?? false;
+  function rememberOperatorKey(value: string) {
+    setHubSpotSyncKey(value);
+    setSalesforceSyncKey(value);
+    if (value) window.sessionStorage.setItem('gtm-control-tower-operator-key', value);
+    else window.sessionStorage.removeItem('gtm-control-tower-operator-key');
+  }
   const visibleIntegrations = useMemo(() => [
     { name: 'CSV', role: 'free source + export', status: 'always ready', tone: 'live' },
     ...(googleSheetsConfigured ? [{ name: 'Google Sheets', role: 'worksheet source + destination', status: 'configured', tone: 'live' }] : []),
@@ -798,6 +804,7 @@ export function ControlTowerDashboard() {
           </div>
           <div className="flex flex-wrap items-center justify-end gap-2">
             <Link href="/" className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 font-mono text-[10px] uppercase tracking-wider text-[#9db1a7] transition hover:border-white/25 hover:text-white">Demo</Link>
+            <Link href="/app" className="rounded-full border border-[#83bcff]/20 bg-[#83bcff]/[0.06] px-3 py-2 font-mono text-[10px] uppercase tracking-wider text-[#83bcff] transition hover:border-[#83bcff]/40">Duplicate audit</Link>
             <Link href="/setup" className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 font-mono text-[10px] uppercase tracking-wider text-[#9db1a7] transition hover:border-white/25 hover:text-white">Setup</Link>
             <Link href="/runs" className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 font-mono text-[10px] uppercase tracking-wider text-[#9db1a7] transition hover:border-white/25 hover:text-white">Sync runs</Link>
             <a
@@ -914,11 +921,11 @@ export function ControlTowerDashboard() {
           onHubSpotSync={syncNextCsvBatchToHubSpot}
           onHubSpotPreview={() => previewCrmWriteback('hubspot')}
           onHubSpotExecute={() => executeCrmWriteback('hubspot')}
-          onHubSpotSyncKeyChange={setHubSpotSyncKey}
+          onHubSpotSyncKeyChange={rememberOperatorKey}
           onSalesforceSync={syncNextCsvBatchToSalesforce}
           onSalesforcePreview={() => previewCrmWriteback('salesforce')}
           onSalesforceExecute={() => executeCrmWriteback('salesforce')}
-          onSalesforceSyncKeyChange={setSalesforceSyncKey}
+          onSalesforceSyncKeyChange={rememberOperatorKey}
           onReset={() => dataMode === 'csv' ? Promise.resolve(resetCsvWorkspace()) : resetFunkyBatch(false)}
         />
 

@@ -13,7 +13,7 @@ cd gtm-control-tower
 docker compose up --build
 ```
 
-Open `http://localhost:3000/app`, choose **CSV file**, and load the bundled
+Open `http://localhost:3000/app/lab`, choose **CSV file**, and load the bundled
 64-row practice batch or use the included
 [`control-tower-csv-template.csv`](../public/control-tower-csv-template.csv).
 The more adversarial
@@ -67,10 +67,12 @@ For any internet-accessible deployment, set `CONTROL_TOWER_SYNC_KEY`, use
 HTTPS, and put the entire application behind authentication. The repository
 does not provide multi-tenant identity or secret storage.
 
-Both CRMs can also be sources. The operator reads a bounded contact/Lead sample
-into the same mapper used by CSV; that read never writes. A direct HubSpot token
-needs `crm.objects.contacts.read` and `crm.objects.contacts.write`. n8n users
-import both the write workflow and the separate read-only
+Both CRMs can also be sources. The CSV lab reads a bounded contact/Lead sample
+into the same mapper used by CSV; that read never writes. A direct HubSpot
+service key needs `crm.objects.contacts.read` for reads and account scans, plus
+`crm.objects.contacts.write` for governed writes and rollback. Those governed
+paths need both scopes because they read current Contacts before writing. n8n
+users import both the write workflow and the separate read-only
 `hubspot-source-workflow.json`, bind the same appropriately scoped OAuth
 credential, and set both webhook URLs. Salesforce source access is included in
 the CLI-authorized connector.
@@ -79,6 +81,39 @@ Direct CRM mode adds a second approval gate: preview a field-level plan,
 download its portable backup, then execute within fifteen minutes. The server
 re-reads provider state before execution. Updated fields can be rolled back from
 `/runs`; created records are left in place for deliberate provider-side review.
+
+### Scan the connected account for duplicate people
+
+Open `http://localhost:3000/app` after configuring a direct CRM connector.
+HubSpot account scans require a service key with
+`crm.objects.contacts.read`. The write connection test requires
+`crm.objects.contacts.write`; governed preview/write, rollback, and the
+synthetic seed require both scopes. The n8n HubSpot source preview is
+intentionally not presented as a whole-account scanner.
+
+Salesforce scans read every unconverted Lead and then every Contact
+visible to the configured user. Contacts use Account name and website as
+company context. A Lead-to-Contact match stays in human review because it is a
+cross-object cleanup or conversion decision, not a same-object merge.
+
+The UI advances one provider page at a time and commits both records and the
+next cursor to SQLite/D1. Pause after a page or return later to resume the saved
+scan. The ceiling is 25,000 unique provider records on local SQLite and 10,000
+on D1. Use `CONTROL_TOWER_MAX_SCAN_RECORDS` to choose a lower value of at least
+100. When the ceiling is reached before provider pagination ends, the UI and
+durable run receipt label the result as partial.
+
+The duplicate queue is deterministic and decision-only. The scan stores its
+field-recovery proposal; the review saves **not a duplicate** or **confirmed
+duplicate** and, for confirmation, the selected primary record. It does not
+execute a native HubSpot or Salesforce merge. See
+[whole-account duplicate audit](duplicate-audit.md) for the matching rules,
+blockers, evidence export, and safe development fixtures.
+
+Local SQLite is the recommended scanner runtime. The schema also supports D1,
+but whole-account resolution is compute-heavy and is not designed for the
+[10-millisecond Workers Free CPU limit](https://developers.cloudflare.com/workers/platform/limits/);
+use an adequately provisioned Worker and test it at the configured ceiling.
 
 ## 4. Add BigQuery and dbt
 
@@ -113,11 +148,17 @@ contain no credential IDs.
 
 ## Production notes
 
-The default public experience is a credential-free synthetic demo. CRM routes
-return a configuration error until server-side credentials are present, and
-production writes also require `CONTROL_TOWER_SYNC_KEY`. Use a managed secret
-store and refreshable OAuth for a long-running instance; do not bake `.env`
-files into a build artifact.
+The default public experience is a credential-free static demonstration. It can
+audit a visitor-selected CSV inside the browser, but it cannot open `/app`, call
+the whole-account scanner, persist decisions, or reach CRM credentials. Those
+operator features exist only in the self-hosted application.
+
+Private CRM routes return a configuration error until server-side credentials
+are present. In production, account scans and CRM writes also require
+`CONTROL_TOWER_SYNC_KEY`. The operator enters the matching value in the
+self-hosted UI; it is retained only for the browser tab and sent as a request
+header. Use a managed secret store and refreshable OAuth for a long-running
+instance; do not bake `.env` files into a build artifact.
 
 Run `npm run doctor` after setup and `npm run check:secrets` before publishing a
 fork. For an internet-accessible self-host, put the whole application behind

@@ -15,14 +15,15 @@ import {
   type NativeCrmRecord,
   type PortableCrmContact,
 } from '@/lib/crm-workflow';
+import { toHubSpotFieldPayload, toSalesforceFieldPayload } from '@/lib/crm-field-mapping';
+import { operatorAccessError } from '@/lib/operator-auth';
 
 const HUBSPOT_PROPERTIES = ['email', 'firstname', 'lastname', 'company', 'phone', 'jobtitle', 'website'];
 const DEFAULT_API_VERSION = '67.0';
 
 export async function POST(request: Request) {
-  const requiredKey = process.env.CONTROL_TOWER_SYNC_KEY;
-  if (process.env.NODE_ENV === 'production' && !requiredKey) return Response.json({ error: 'Safe CRM write-back requires CONTROL_TOWER_SYNC_KEY in production.' }, { status: 503 });
-  if (requiredKey && !safeEqual(request.headers.get('x-control-tower-key') ?? '', requiredKey)) return Response.json({ error: 'The sync access key is invalid.' }, { status: 401 });
+  const accessError = operatorAccessError(request);
+  if (accessError) return accessError;
   let payload: unknown;
   try { payload = await request.json(); } catch { return Response.json({ error: 'A JSON body is required.' }, { status: 400 }); }
   if (!isRecord(payload) || (payload.connectorId !== 'hubspot' && payload.connectorId !== 'salesforce')) return Response.json({ error: 'Choose HubSpot or Salesforce.' }, { status: 400 });
@@ -157,7 +158,7 @@ async function executeHubSpotPlan(
       body: JSON.stringify({ inputs: updates.map((record) => ({
         id: record.nativeId,
         objectWriteTraceId: `${runId}:${record.contactId}`,
-        properties: toHubSpotProperties(record.after),
+        properties: toHubSpotFieldPayload(record.after),
       })) }),
     });
     const payload: unknown = await response.json();
@@ -203,7 +204,7 @@ async function executeSalesforcePlan(plan: CrmWritePlan, runId: string): Promise
       body: JSON.stringify({ allOrNone: false, records: batch.map((record) => ({
         attributes: { type: 'Lead', referenceId: `${runId}:${record.contactId}` },
         ...(record.nativeId ? { Id: record.nativeId } : {}),
-        ...(operation === 'create' ? compact({ Email: record.email, ...toSalesforceFields(record.after) }) : toSalesforceFields(record.after)),
+        ...(operation === 'create' ? compact({ Email: record.email, ...toSalesforceFieldPayload(record.after) }) : toSalesforceFieldPayload(record.after)),
       })) }),
     });
     const payload: unknown = await response.json();
@@ -255,7 +256,7 @@ async function executeRollback(rollback: CrmRollbackPlan): Promise<CrmWritebackR
       body: JSON.stringify({ inputs: eligible.map((record) => ({
         id: record.nativeId,
         objectWriteTraceId: `${rollback.rollbackId}:${record.contactId}`,
-        properties: toHubSpotProperties(record.before),
+        properties: toHubSpotFieldPayload(record.before, record.changedFields),
       })) }),
     });
     const payload: unknown = await response.json();
@@ -281,7 +282,7 @@ async function executeRollback(rollback: CrmRollbackPlan): Promise<CrmWritebackR
     const { apiRoot, headers } = salesforceConnection();
     const response = await fetch(`${apiRoot}/composite/sobjects`, {
       method: 'PATCH', cache: 'no-store', headers, signal: AbortSignal.timeout(30_000),
-      body: JSON.stringify({ allOrNone: false, records: eligible.map((record) => ({ attributes: { type: 'Lead' }, Id: record.nativeId, ...toSalesforceFields(record.before) })) }),
+      body: JSON.stringify({ allOrNone: false, records: eligible.map((record) => ({ attributes: { type: 'Lead' }, Id: record.nativeId, ...toSalesforceFieldPayload(record.before, record.changedFields) })) }),
     });
     const results: unknown = await response.json();
     if (!response.ok || !Array.isArray(results)) throw new Error(`Salesforce rollback returned ${response.status}`);
@@ -343,17 +344,6 @@ function nativeRecord(nativeId: string, email: string, raw: Record<string, unkno
   return { nativeId, email, fields: Object.fromEntries(portableCrmFieldNames.map((field) => [field, nullableString(raw[field])])) as NativeCrmRecord['fields'] };
 }
 
-function toHubSpotProperties(fields: NativeCrmRecord['fields']) {
-  return Object.fromEntries(Object.entries({
-    firstname: fields.firstName, lastname: fields.lastName, company: fields.company,
-    phone: fields.phone, jobtitle: fields.jobTitle, website: fields.website,
-  }).map(([key, value]) => [key, value ?? '']));
-}
-
-function toSalesforceFields(fields: NativeCrmRecord['fields']) {
-  return { FirstName: fields.firstName, LastName: fields.lastName, Company: fields.company, Phone: fields.phone, Title: fields.jobTitle, Website: fields.website };
-}
-
 function compact(value: Record<string, string | null>) { return Object.fromEntries(Object.entries(value).filter((entry): entry is [string, string] => entry[1] !== null)); }
 function hubSpotHeaders(token: string) { return { authorization: `Bearer ${token}`, 'content-type': 'application/json', accept: 'application/json' }; }
 function salesforceConnection() {
@@ -368,5 +358,4 @@ function salesforceConnection() {
 function escapeSoql(value: string) { return value.replace(/\\/gu, '\\\\').replace(/'/gu, "\\'"); }
 function stringValue(value: unknown) { return typeof value === 'string' ? value : ''; }
 function nullableString(value: unknown): string | null { const cleaned = stringValue(value).trim(); return cleaned || null; }
-function safeEqual(left: string, right: string) { const maximum = Math.max(left.length, right.length); let difference = left.length ^ right.length; for (let i = 0; i < maximum; i += 1) difference |= (left.charCodeAt(i) || 0) ^ (right.charCodeAt(i) || 0); return difference === 0; }
 function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === 'object' && value !== null; }

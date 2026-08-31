@@ -4,10 +4,13 @@ import {
   readSalesforceLeads,
   toCrmSourcePreview,
 } from '@/lib/crm-source';
+import { operatorAccessError } from '@/lib/operator-auth';
 
 const DEFAULT_API_VERSION = '67.0';
 
 export async function POST(request: Request) {
+  const accessError = operatorAccessError(request);
+  if (accessError) return accessError;
   let payload: unknown;
   try { payload = await request.json(); } catch { return Response.json({ error: 'A JSON body is required.' }, { status: 400 }); }
   if (!isRecord(payload) || (payload.connectorId !== 'hubspot' && payload.connectorId !== 'salesforce')) {

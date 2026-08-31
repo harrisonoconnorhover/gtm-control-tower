@@ -12,6 +12,7 @@ export function SyncRuns() {
   const [filter, setFilter] = useState<'all' | ConnectorId>('all');
   const [rollingBack, setRollingBack] = useState<string | null>(null);
   const [rollbackError, setRollbackError] = useState<string | null>(null);
+  const [accessKey, setAccessKey] = useState(() => typeof window === 'undefined' ? '' : window.sessionStorage.getItem('gtm-control-tower-operator-key') ?? '');
   const [workspaceId] = useState<string | null>(() => typeof window === 'undefined' ? null : window.localStorage.getItem('gtm-control-tower-workspace-id'));
 
   async function refresh() {
@@ -55,7 +56,7 @@ export function SyncRuns() {
     setRollbackError(null);
     try {
       const response = await fetch('/api/control-tower/crm-writeback', {
-        method: 'POST', headers: { 'content-type': 'application/json' },
+        method: 'POST', headers: { 'content-type': 'application/json', ...(accessKey ? { 'x-control-tower-key': accessKey } : {}) },
         body: JSON.stringify({ action: 'rollback', connectorId: run.connectorId, rollback: run.undo }),
       });
       const result = await response.json() as CrmWritebackReceipt | { error?: string };
@@ -90,6 +91,7 @@ export function SyncRuns() {
             <div className="flex gap-2"><select value={filter} onChange={(event) => setFilter(event.target.value as typeof filter)} className="rounded-full border border-white/10 bg-[#0b1b16] px-4 py-2.5 text-xs"><option value="all">All connectors</option>{['csv', 'google-sheets', 'hubspot', 'salesforce', 'bigquery'].map((id) => <option key={id} value={id}>{id}</option>)}</select><button onClick={exportHistory} disabled={!visible.length} className="rounded-full bg-[#d8ff67] px-4 py-2.5 text-xs font-bold text-[#06100d] disabled:opacity-40">Export evidence</button></div>
           </div>
           <div className="mt-8 grid grid-cols-2 gap-3 lg:grid-cols-4"><RunStat label="Recorded runs" value={summary.runs} /><RunStat label="Records written" value={summary.written} /><RunStat label="Failures retained" value={summary.failed} warning={summary.failed > 0} /><RunStat label="Rollback ready" value={summary.undoable} /></div>
+          {summary.undoable > 0 && <div className="mt-4 rounded-2xl border border-white/10 bg-[#0b1b16] p-4"><label className="grid max-w-lg gap-2 text-xs font-semibold text-[#9fb2a8]">Operator access key for rollback<input type="password" value={accessKey} onChange={(event) => { const value = event.target.value; setAccessKey(value); if (value) window.sessionStorage.setItem('gtm-control-tower-operator-key', value); else window.sessionStorage.removeItem('gtm-control-tower-operator-key'); }} className="rounded-xl border border-white/10 bg-[#06100d] px-4 py-3 text-sm outline-none focus:border-[#83bcff]/50" /></label><p className="mt-2 text-[10px] text-[#71877c]">Leave blank when this local self-host does not require a key.</p></div>}
         </section>
 
         <section className="pb-16">
@@ -109,6 +111,7 @@ export function SyncRuns() {
 function RunCard({ run, rolledBack, rollingBack, onRollback }: { run: ConnectorRun; rolledBack: boolean; rollingBack: boolean; onRollback: () => void }) {
   const plan = run.details?.plan;
   const writeback = run.details?.writeback;
+  const scan = run.details?.scan;
   return (
     <article className="rounded-[24px] border border-white/10 bg-[#0b1b16] p-5">
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -118,6 +121,7 @@ function RunCard({ run, rolledBack, rollingBack, onRollback }: { run: ConnectorR
       {(plan || writeback) && <div className="mt-4 grid gap-2 border-t border-white/[0.06] pt-4 sm:grid-cols-3 lg:grid-cols-6">
         <Mini label="Input" value={plan?.requested ?? writeback?.requested ?? 0} /><Mini label="Create" value={writeback?.created ?? plan?.creates ?? 0} /><Mini label="Update" value={writeback?.updated ?? plan?.updates ?? 0} /><Mini label="Unchanged" value={writeback?.unchanged ?? plan?.unchanged ?? 0} /><Mini label="Held" value={writeback?.held ?? plan?.held ?? 0} /><Mini label="Failed" value={writeback?.failed ?? 0} />
       </div>}
+      {scan && <div className="mt-4 grid gap-2 border-t border-white/[0.06] pt-4 sm:grid-cols-3 lg:grid-cols-6"><Mini label="Scanned" value={run.receipt.recordsRead ?? 0} /><Mini label="Groups" value={scan.clusterCount} /><Mini label="High" value={scan.highConfidenceClusters} /><Mini label="Review" value={scan.reviewClusters} /><Mini label="Possible" value={scan.possibleClusters} /><Mini label="Pages" value={scan.pagesScanned} /></div>}
       {plan?.records.some((record) => record.changes.length) && <details className="mt-4 rounded-xl bg-[#06100d]/60 p-3"><summary className="cursor-pointer text-xs font-semibold text-[#a8bbb1]">Review field-level changes</summary><div className="mt-3 max-h-64 space-y-2 overflow-y-auto">{plan.records.filter((record) => record.changes.length).slice(0, 25).map((record) => <div key={record.contactId} className="font-mono text-[9px] leading-5 text-[#71877c]"><span className="text-[#a8bbb1]">{record.email}</span> · {record.changes.map((change) => `${change.field}: ${change.before ?? '∅'} → ${change.after ?? '∅'}`).join(' · ')}</div>)}</div></details>}
     </article>
   );

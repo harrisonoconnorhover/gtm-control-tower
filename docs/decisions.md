@@ -42,8 +42,11 @@ CSV mode is the default product, not a temporary fallback. A local SQLite file
 stores validated imports, visual mapping presets, repair history, receipts, and
 twenty undo revisions. The static public site stores no workspace data. The
 browser keeps only a random workspace capability key in the self-hosted app.
-Identity matching defaults to exact normalized email; plus-addresses are flagged
-rather than silently collapsed because that behavior is not universal.
+CSV cleanup still defaults to exact normalized email; plus-addresses are flagged
+rather than silently collapsed because that behavior is not universal. The
+separate account audit uses a versioned multi-signal resolver and persists
+provider pages, cursors, candidate groups, and review decisions in dedicated
+SQLite/D1 tables.
 
 ## One connector lifecycle
 
@@ -61,7 +64,12 @@ is deferred because it would duplicate n8n's credential boundary.
 
 ## Portable HubSpot authentication
 
-Single-portal users can supply a scoped private-app token; teams already using n8n can bind their own HubSpot OAuth credential to the included workflow. The same server contract and receipt validator wrap both paths. Production writes require a separate Control Tower access key so publishing the UI does not publish an open CRM write endpoint.
+Single-portal users can supply a scoped account service key; teams already using
+n8n can bind their own HubSpot OAuth credential to the included workflows. The
+service key enables the direct whole-account scanner, while n8n mode remains a
+bounded source preview and delegated write path. Production private CRM
+operations require a separate Control Tower access key so publishing the UI
+does not publish an open account read or write endpoint.
 
 ## Query-first Salesforce identity
 
@@ -74,10 +82,41 @@ The first public release is a self-hosted toolkit, not a multi-tenant SaaS. CSV-
 ## Separate experiences, one codebase
 
 The public Cloudflare Pages build contains only the fast, credential-free root
-demonstration. The same repository retains `/app` as the operational workspace
-and `/setup` as its local installation guide for Docker self-hosters. Reusing
-the public demo component avoids a second product codebase without publishing
-uploads, persistence, credentials, or connector routes.
+demonstration. The same repository retains `/app` as the whole-account duplicate
+audit, `/app/lab` as the CSV and guided repair workspace, and `/setup` as the
+local installation guide for Docker self-hosters. Reusing the public demo
+component avoids a second product codebase without publishing uploads,
+persistence, credentials, or connector routes.
+
+## Deterministic review before provider merge
+
+Duplicate confidence is an explainable rule result, not an AI probability and
+not an execution threshold. Exact and alias email, low-frequency phone, name,
+company, and domain evidence are visible beside conflicts. Unanchored context is
+capped below the review threshold, broad buckets are bounded, and Salesforce
+Lead-to-Contact candidates carry a cross-object blocker. A phone shared by more
+than three records is context-only. Competing overlapping candidates must be
+dismissed before the remaining cleanup plan can be approved, and a Salesforce
+Contact is the fixed survivor for a Lead/Contact group.
+
+The first whole-account release persists the proposed field recovery with the
+scan. A review saves only **not a duplicate** or **confirmed duplicate** and the
+chosen primary record. It does not call provider merge APIs, convert Leads,
+delete records, or apply the field plan. This creates a useful, auditable queue
+without presenting an irreversible CRM operation as rollback-safe.
+
+## Durable provider pagination with an explicit ceiling
+
+Whole-account scans are browser-driven but server-persisted one page at a time.
+The provider record upsert and cursor transition are committed together, so a
+pause or interrupted tab resumes without multiplying records. A 25,000-record
+local SQLite ceiling and 10,000-record D1 ceiling bound work; reaching either
+before provider completion is a partial audit with an explicit warning and
+partial run receipt. The UI claims a
+clean account only when provider pagination is complete, and a retried completed
+step reconciles the same scan-ID receipt instead of creating a second run.
+If the resolver version changes while a scan is paused, resume is refused and
+the operator must start over so one audit never mixes rule versions.
 
 ## Public audit is local-only
 

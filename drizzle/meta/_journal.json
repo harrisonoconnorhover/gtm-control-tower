@@ -15,6 +15,13 @@
       "when": 1787788638673,
       "tag": "0001_glorious_gideon",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1788135197498,
+      "tag": "0002_glamorous_the_leader",
+      "breakpoints": true
     }
   ]
 }

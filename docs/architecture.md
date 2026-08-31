@@ -47,6 +47,50 @@ reported but deliberately never auto-deleted. Rollback also re-reads the native
 record and holds the restore if any field changed by the run now contains newer
 provider state.
 
+## Whole-account identity-audit path
+
+```text
+HubSpot Contacts ───────┐
+                       ├─ provider page → durable records + cursor ─┐
+Salesforce Leads       │                                            │
+then Contacts ─────────┘                                            ▼
+                                                    deterministic candidate graph
+                                                                  │
+                                                                  ▼
+                                            evidence + blockers + review decision
+                                                                  │
+                                                                  ▼
+                                                 SQLite/D1 + /runs receipt
+```
+
+`/app` is the operator-first whole-account duplicate audit. `/app/lab` retains
+the CSV mapper, governed destinations, BigQuery controls, and guided repair lab.
+The static public root has neither route nor credentialed APIs.
+
+The browser advances the scan one provider page per same-origin request.
+HubSpot persists its `after` cursor; Salesforce persists `nextRecordsUrl` and
+the Lead-to-Contact object transition. Each page upserts provider records by a
+stable record key before its cursor advances, so pause, refresh, and retry do
+not multiply saved rows. If a Salesforce query locator expires, **Start over**
+retires that scan before beginning with a fresh Lead query. The measured
+25,000-record local SQLite ceiling (10,000 on D1) produces a partial receipt
+unless the provider itself reports pagination complete; only a complete source
+with no candidate groups can produce the clean-account state.
+
+The scan ID is also the connector-run receipt ID. A completed-step retry upserts
+that receipt, reconciling the evidence without creating a second run.
+
+Finalization currently runs the deterministic `identity-v3` resolver. Anchored
+email and low-frequency phone evidence, compatible names, company, and domain
+context produce candidate groups; conflicts reduce confidence and broad
+shared-value buckets produce warnings. Phones shared by more than three records
+are context-only. Overlapping interpretations are capped at review and must be
+dismissed before the remaining plan can be approved. Salesforce Contact is the
+recommended survivor in a Lead/Contact group, and both phone fields remain in
+the recovery plan. Confidence bands never execute an action. Review decisions
+and a selected primary are durable, while provider-native merge, Lead
+conversion, deletion, and field-plan execution remain outside this release.
+
 ## Data contract
 
 Every CRM event has a stable `event_id`, lead/account identity, lifecycle stage, event time, routing metadata, commercial segment, and quality flags. BigQuery partitions by event date and clusters by stage, segment, and region. dbt deduplicates on `event_id` before producing decision-ready marts.
@@ -73,9 +117,10 @@ The public route uses a deterministic 64-row synthetic batch with exact and
 plus-address duplicates, malformed email, missing company and owner, a Unicode
 domain, routing overload, and regressive lifecycle writes. Six visible stages
 show ingest, normalization, merge, reroute, replay, and the destination receipt.
-The full operator workspace lives at `/app`; setup and connector health live at
-`/setup`; durable connector evidence and update rollback live at `/runs`. These
-are separate experiences in one codebase.
+The whole-account identity audit lives at `/app`; the CSV and guided repair lab
+lives at `/app/lab`; setup and connector health live at `/setup`; durable scan
+and connector evidence lives at `/runs`. These are separate experiences in one
+codebase.
 
 ## Live operations path
 
@@ -102,10 +147,11 @@ upserts from racing on a previously unseen email. The server accepts a Sheets
 execution receipt only when n8n explicitly confirms that email-keyed idempotent
 contract.
 
-HubSpot source import can use a scoped private-app token or the included
+HubSpot source import can use a scoped account service key or the included
 read-only n8n OAuth workflow. Delegated n8n writes retain the strict receipt
-contract; direct-token mode additionally supports native preflight reads,
-field-level update calls, stale-plan rejection, and rollback.
+contract; direct service-key mode additionally supports whole-account Contact
+scans, native preflight reads, field-level update calls, stale-plan rejection,
+and rollback.
 
 Salesforce source import uses bounded SOQL and the sync path repeats that lookup
 by normalized email before sObject Collection creates and updates. Missing

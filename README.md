@@ -19,6 +19,9 @@ the repository.
 - Previews any CSV, lets the operator map arbitrary headers, saves reusable
   mapping presets, and diagnoses duplicate
   identity, missing fields, bad email, owner gaps, and lifecycle regression.
+- Scans every HubSpot Contact or every unconverted Salesforce Lead and Contact,
+  persists provider-page progress, and produces an evidence-backed duplicate
+  review queue without performing a native CRM merge.
 - Persists imports, repairs, field-level write plans, native receipts, rollback
   backups, and twenty workspace revisions in local SQLite.
 - Reads Google Sheets through n8n and writes governed records to a separate
@@ -50,6 +53,9 @@ application. It also embeds the checked-in, captioned two-minute walkthrough
 and the verified 72-row development-system receipt. The working product remains
 the Docker self-host below.
 
+The public site cannot open `/app`, read a CRM, save a review decision, or call
+an operator API. Those capabilities exist only in the self-hosted application.
+
 ## Quick start: one command, no accounts required
 
 Requires Docker. This starts the application and a local n8n Community Edition
@@ -61,8 +67,13 @@ cd gtm-control-tower
 docker compose up --build
 ```
 
-Open [http://localhost:3000/app](http://localhost:3000/app), choose **CSV file**,
-and either load the bundled 64-row practice batch or try
+Open [http://localhost:3000/app](http://localhost:3000/app) to scan a configured
+HubSpot or Salesforce account for duplicate people. The scanner is unavailable
+until a direct CRM connector and SQLite persistence are configured.
+
+For the account-free path, open
+[http://localhost:3000/app/lab](http://localhost:3000/app/lab), choose **CSV
+file**, and either load the bundled 64-row practice batch or try
 [`public/control-tower-csv-template.csv`](public/control-tower-csv-template.csv).
 For a rougher test, use the 72-row
 [`SEC public-company messy CRM fixture`](public/sec-public-company-messy-crm.csv):
@@ -76,6 +87,33 @@ The workspace survives browser and container restarts in
 you do not want n8n. Connector checks live at `/setup`; durable field diffs,
 provider receipts, failures, evidence export, and eligible rollbacks live at
 `/runs`.
+
+## Whole-account duplicate audit
+
+The self-hosted `/app` scanner follows provider pagination instead of loading a
+fixed preview. HubSpot contributes Contacts. Salesforce contributes unconverted
+Leads first and then Contacts, so a possible Lead-to-Contact match
+can be reviewed without being treated as a same-object merge.
+
+Matching is deterministic and versioned. Exact non-generic email, Gmail alias
+families, normalized phone, compatible names, company, and business-domain
+context add evidence; conflicting names, phones, and domains subtract evidence.
+Candidates are grouped as **high confidence**, **needs review**, or **possible**,
+and each group shows the evidence, conflicts, recommended primary record, and
+field-recovery plan. A Salesforce Lead-to-Contact group is always capped at
+review and carries a cross-object blocker.
+
+Provider records, the next-page cursor, candidate groups, warnings, and review
+decisions are durable in SQLite/D1. A paused or interrupted scan resumes at the
+saved page. The measured ceiling is 25,000 records on local SQLite and 10,000 on
+D1; reaching it produces a clearly labeled partial-account result rather than
+claiming full coverage or a clean account.
+
+**Approve cleanup plan** records the operator's duplicate decision and chosen
+survivor. It does not call HubSpot or Salesforce merge APIs. Existing governed
+write-back and rollback features remain separate under `/app/lab` and `/runs`.
+See the [duplicate-audit guide](docs/duplicate-audit.md) for connector scopes,
+confidence rules, limits, and the synthetic seed command.
 
 The Node.js development path remains available:
 
@@ -106,6 +144,7 @@ Lead webhook -> n8n normalize/score/route -> CRM + BigQuery -> dbt -> dashboard
 ```
 
 Full instructions: [self-hosting](docs/self-hosting.md),
+[duplicate audit](docs/duplicate-audit.md),
 [Google Sheets](docs/google-sheets-setup.md),
 [HubSpot](docs/hubspot-csv-setup.md), and
 [Salesforce](docs/salesforce-csv-setup.md).
@@ -124,6 +163,8 @@ Full instructions: [self-hosting](docs/self-hosting.md),
   native receipt.
 - Rollback restores only previously updated portable fields; it never guesses
   at provider merges or deletes records created by a successful run.
+- Duplicate-audit approval saves a review decision only; no confidence band
+  triggers an automatic native merge.
 - Multiple matching Salesforce Leads fail closed instead of selecting one.
 - Production CRM writes remain disabled until `CONTROL_TOWER_SYNC_KEY` is set.
 - The synthetic merge keeps source rows queryable and points them to a canonical
@@ -144,6 +185,17 @@ npm run build:public
 npm run generate:walkthrough -- http://localhost:3001
 npm run smoke:fresh-install
 ```
+
+With development CRM credentials in `.env.local`, run:
+
+```bash
+npm run seed:duplicate-audit -- both
+```
+
+The command upserts clearly labeled synthetic duplicate-audit fixtures into
+both systems. Use `hubspot` or `salesforce` instead of `both` to target one
+development account. This writes CRM records; do not run it against a customer
+or production portal.
 
 Run `npm run preview:public` to inspect only the static public site locally.
 The fresh-install smoke test creates isolated temporary Docker state, verifies

@@ -12,7 +12,7 @@ export type ConnectorCapability = {
   phases: ConnectorPhase[];
   setupHint?: string;
   mode?: 'built-in' | 'direct' | 'n8n' | 'hybrid';
-  features?: Array<'preview' | 'write' | 'safe-writeback' | 'rollback'>;
+  features?: Array<'preview' | 'write' | 'safe-writeback' | 'rollback' | 'account-scan'>;
 };
 
 export type ConnectorHealth = {
@@ -40,6 +40,7 @@ export type ConnectorReceipt = {
 
 export type ConnectorCatalog = {
   persistenceEnabled: boolean;
+  accessKeyRequired: boolean;
   connectors: ConnectorCapability[];
 };
 

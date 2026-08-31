@@ -9,6 +9,18 @@ export type ConnectorRunDetails = {
   repairCounts?: { merged: number; rerouted: number; replayed: number };
   plan?: CrmWritePlan;
   writeback?: CrmWritebackReceipt;
+  scan?: {
+    scanId: string;
+    sourceComplete: boolean;
+    pagesScanned: number;
+    candidatesCompared: number;
+    clusterCount: number;
+    duplicateRecords: number;
+    highConfidenceClusters: number;
+    reviewClusters: number;
+    possibleClusters: number;
+    analysisWarnings: string[];
+  };
 };
 
 export type ConnectorRun = {

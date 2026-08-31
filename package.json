@@ -32,6 +32,7 @@
     "generate:walkthrough": "bash scripts/generate-walkthrough-video.sh",
     "smoke:fresh-install": "bash scripts/fresh-install-smoke.sh",
     "generate:data": "python3 scripts/generate_synthetic_crm.py",
+    "seed:duplicate-audit": "node --env-file-if-exists=.env.local scripts/seed_duplicate_audit.mjs",
     "configure:salesforce": "node scripts/configure_salesforce_env.mjs",
     "sync:n8n": "node scripts/sync_ops_workflow.mjs"
   },
