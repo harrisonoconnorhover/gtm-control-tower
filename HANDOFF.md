@@ -6,11 +6,11 @@
 - Verified idempotency, user-mode security, row locking, stale protection, partial DML, and Transaction Finalizer handling with six focused tests.
 - Ran a live synthetic batch: two Leads routed, one held, zero failed/stale, async job completed with zero errors.
 - Corrected run semantics so expected policy holds remain visible without being mislabeled as system errors.
-- Added an obvious local portfolio proof section, reviewer guide, source links, and development-org evidence.
+- Published the portfolio proof section, reviewer guide, source links, and development-org evidence.
 
 ## Try It
 
-Open the local public preview at `#salesforce-proof`, then follow `docs/salesforce-apex-routing.md` through the Flow, Apex, test, and live-proof evidence.
+Open `https://gtm-control-tower.pages.dev/#salesforce-proof`, then follow `docs/salesforce-apex-routing.md` through the Flow, Apex, test, and live-proof evidence.
 
 ## Checks
 
@@ -18,6 +18,7 @@ Open the local public preview at `#salesforce-proof`, then follow `docs/salesfor
 - Final Apex validation passed: 6/6 tests; planner 85.4% and Queueable 81.6% coverage.
 - Live Queueable job completed with zero errors; durable run recorded 2 succeeded, 1 held, 0 failed, 0 stale.
 - Local repository tests, lint, XML/source validation, and public/full production builds passed.
+- Public Sites and Cloudflare Pages deployments succeeded; the live proof bundle and both GitHub reviewer links returned HTTP 200.
 
 ## Decisions
 
@@ -27,7 +28,6 @@ Open the local public preview at `#salesforce-proof`, then follow `docs/salesfor
 
 ## Remaining
 
-- Publish the portfolio update only with explicit public-deployment approval.
 - Create an Einstein Agent User only if explicitly approved; the activated agent still lacks that dedicated runtime identity.
 - Do not describe this development-org proof as production/customer deployment or years of Apex ownership.
 
