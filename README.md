@@ -33,6 +33,10 @@ the repository.
 - Syncs eligible contacts to HubSpot Contacts or Salesforce Leads with
   read-before-write field diffs, 100-record ceilings, per-record receipts, and
   update rollback. Newly created records are never auto-deleted.
+- Includes a source-driven Salesforce development slice: tested bulk-safe Apex,
+  an autolaunched Flow with explicit branching, and a validated read-only
+  Agentforce Employee Agent source bundle that invokes the Flow for explainable
+  Lead triage.
 - Routes synthetic leads through n8n, records immutable BigQuery events, and
   models funnel conversion, routing SLA, and data quality with dbt.
 - Shows how operational defects change revenue metrics instead of presenting a
@@ -147,7 +151,8 @@ Full instructions: [self-hosting](docs/self-hosting.md),
 [duplicate audit](docs/duplicate-audit.md),
 [Google Sheets](docs/google-sheets-setup.md),
 [HubSpot](docs/hubspot-csv-setup.md), and
-[Salesforce](docs/salesforce-csv-setup.md).
+[Salesforce](docs/salesforce-csv-setup.md). The deployable Salesforce developer
+slice is documented in [Flow, Apex, and Agentforce proof](docs/salesforce-agentforce.md).
 
 ## Safe-by-default boundaries
 

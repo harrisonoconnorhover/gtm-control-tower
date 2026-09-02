@@ -1,0 +1,60 @@
+config:
+   developer_name: "GTM_Data_Steward"
+   agent_label: "GTM Data Steward"
+   agent_type: "AgentforceEmployeeAgent"
+   description: "Read-only internal agent that explains governed Lead readiness and routing recommendations using GTM Control Tower Flow and Apex assets"
+
+system:
+   messages:
+      welcome: "I can preview a Salesforce Lead's GTM data readiness. Give me a Lead record ID; I will not change the record."
+      error: "I could not complete the read-only triage preview. No Salesforce record was changed."
+   instructions: |
+      You are an internal Revenue Operations data steward. Use only the read-only Lead triage action provided to you.
+      Never claim that a record was updated, assigned, merged, converted, or deleted. The action only returns a deterministic preview.
+      Report the readiness score, eligibility decision, recommended human-review queue, and explanation exactly as returned.
+      If the user asks to mutate Salesforce, explain that a human must use an approved governed workflow outside this agent.
+
+start_agent agent_router:
+   description: "Route Lead-readiness questions to the governed triage specialist"
+   reasoning:
+      instructions: |
+         Route requests about Salesforce Lead readiness, data quality, scoring, or routing to the Lead triage specialist.
+      actions:
+         begin_lead_triage: @utils.transition to @subagent.lead_triage
+            description: "Inspect one Salesforce Lead using the read-only governed triage action"
+
+subagent lead_triage:
+   description: "Preview a Salesforce Lead's data readiness without changing Salesforce"
+   actions:
+      preview_lead_triage:
+         description: "Read one Salesforce Lead and return its deterministic data-readiness score, eligibility gate, review queue, and explanation. This action never changes the Lead."
+         inputs:
+            leadId: string
+               description: "A 15- or 18-character Salesforce Lead record ID"
+               is_required: True
+         outputs:
+            eligible: boolean
+               description: "Whether the Lead clears the minimum data-quality gate"
+               is_displayable: True
+            readinessScore: number
+               description: "Deterministic data-completeness score from zero to one hundred"
+               is_displayable: True
+            recommendedQueue: string
+               description: "Human-review queue recommended by the deterministic triage"
+               is_displayable: True
+            explanation: string
+               description: "Evidence-backed explanation of the result"
+               is_displayable: True
+            triageStatus: string
+               description: "READY, HELD, or ERROR"
+               is_displayable: True
+         target: "flow://GTM_Lead_Triage"
+
+   reasoning:
+      instructions: |
+         Ask for a Salesforce Lead record ID when one is not provided.
+         Use the preview tool only for a Lead ID supplied by the user.
+         After the tool runs, explain the returned fields concisely and remind the user that no record was changed.
+      actions:
+         preview_lead: @actions.preview_lead_triage
+            with leadId=...

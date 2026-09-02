@@ -75,6 +75,15 @@ does not publish an open account read or write endpoint.
 
 Standard Salesforce Lead email is not a portable external ID, while `Company` and `LastName` are required. The Salesforce adapter therefore queries active Leads by normalized email before writing: create on zero matches, update on exactly one, and hold on multiple matches. It writes only portable standard fields and never requires a Harrison-specific custom field. A server-side access token authenticates the local connector; production should use a refreshable connected-app OAuth flow.
 
+## Read-only Agentforce triage as the first agent action
+
+The first Agentforce action previews a Salesforce Lead's deterministic data
+readiness through an autolaunched Flow and bulk-safe invocable Apex. It performs
+no DML. This keeps the agent aligned with the Control Tower's human-approval
+boundary while demonstrating a real Agentforce → Flow → Apex execution path.
+Mutation remains in the existing governed connector workflow, where plans,
+fresh reads, receipts, and rollback evidence already exist.
+
 ## Self-hosted open-source release
 
 The first public release is a self-hosted toolkit, not a multi-tenant SaaS. CSV-only mode needs no account, while optional setup renders BigQuery and n8n assets from portable project and dataset tokens. A public demo carries no CRM credentials; each operator owns their deployment, secrets, connector permissions, and resulting data.
