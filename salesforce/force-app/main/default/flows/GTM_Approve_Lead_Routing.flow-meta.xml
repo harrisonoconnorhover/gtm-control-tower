@@ -1,0 +1,175 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Flow xmlns="http://soap.sforce.com/2006/04/metadata">
+    <actionCalls>
+        <name>Queue_Approved_Routing</name>
+        <label>Queue Approved Routing</label>
+        <locationX>176</locationX>
+        <locationY>398</locationY>
+        <actionName>GTMLeadRoutingService</actionName>
+        <actionType>apex</actionType>
+        <connector>
+            <targetReference>Routing_Queued</targetReference>
+        </connector>
+        <faultConnector>
+            <targetReference>Routing_Error</targetReference>
+        </faultConnector>
+        <flowTransactionModel>CurrentTransaction</flowTransactionModel>
+        <inputParameters>
+            <name>approvalToken</name>
+            <value>
+                <elementReference>$Flow.InterviewGuid</elementReference>
+            </value>
+        </inputParameters>
+        <inputParameters>
+            <name>approved</name>
+            <value>
+                <elementReference>approvalConfirmed</elementReference>
+            </value>
+        </inputParameters>
+        <inputParameters>
+            <name>leadIds</name>
+            <value>
+                <elementReference>ids</elementReference>
+            </value>
+        </inputParameters>
+        <storeOutputAutomatically>true</storeOutputAutomatically>
+    </actionCalls>
+    <apiVersion>67.0</apiVersion>
+    <areMetricsLoggedToDataCloud>false</areMetricsLoggedToDataCloud>
+    <decisions>
+        <name>Approval_Confirmed</name>
+        <label>Approval confirmed?</label>
+        <locationX>176</locationX>
+        <locationY>278</locationY>
+        <defaultConnector>
+            <targetReference>Routing_Cancelled</targetReference>
+        </defaultConnector>
+        <defaultConnectorLabel>Not approved</defaultConnectorLabel>
+        <rules>
+            <name>Approved</name>
+            <conditionLogic>and</conditionLogic>
+            <conditions>
+                <leftValueReference>approvalConfirmed</leftValueReference>
+                <operator>EqualTo</operator>
+                <rightValue>
+                    <booleanValue>true</booleanValue>
+                </rightValue>
+            </conditions>
+            <connector>
+                <targetReference>Queue_Approved_Routing</targetReference>
+            </connector>
+            <label>Approved</label>
+        </rules>
+    </decisions>
+    <description>Human approval boundary for bulk Lead routing. Accepts up to 200 selected Lead IDs, shows the operator the consequences, and queues idempotent Apex execution with durable receipts.</description>
+    <environments>Default</environments>
+    <interviewLabel>GTM Approve Lead Routing {!$Flow.CurrentDateTime}</interviewLabel>
+    <label>GTM Approve Lead Routing</label>
+    <processMetadataValues>
+        <name>BuilderType</name>
+        <value><stringValue>LightningFlowBuilder</stringValue></value>
+    </processMetadataValues>
+    <processMetadataValues>
+        <name>CanvasMode</name>
+        <value><stringValue>AUTO_LAYOUT_CANVAS</stringValue></value>
+    </processMetadataValues>
+    <processMetadataValues>
+        <name>OriginBuilderType</name>
+        <value><stringValue>LightningFlowBuilder</stringValue></value>
+    </processMetadataValues>
+    <processType>Flow</processType>
+    <runInMode>DefaultMode</runInMode>
+    <screens>
+        <name>Confirm_Routing</name>
+        <label>Approve GTM Lead Routing</label>
+        <locationX>176</locationX>
+        <locationY>158</locationY>
+        <allowBack>false</allowBack>
+        <allowFinish>true</allowFinish>
+        <allowPause>false</allowPause>
+        <connector>
+            <targetReference>Approval_Confirmed</targetReference>
+        </connector>
+        <fields>
+            <name>Approval_Context</name>
+            <fieldText>&lt;p&gt;&lt;strong&gt;This will change Lead ownership.&lt;/strong&gt;&lt;/p&gt;&lt;p&gt;Apex will re-check every selected Lead, refuse stale records, apply active Custom Metadata policies, and write a per-Lead receipt. One failure will not roll back successful records.&lt;/p&gt;</fieldText>
+            <fieldType>DisplayText</fieldType>
+        </fields>
+        <fields>
+            <name>approvalConfirmed</name>
+            <dataType>Boolean</dataType>
+            <defaultValue>
+                <booleanValue>false</booleanValue>
+            </defaultValue>
+            <fieldText>I reviewed the selected Leads and approve the ownership changes.</fieldText>
+            <fieldType>InputField</fieldType>
+            <isRequired>true</isRequired>
+        </fields>
+        <showFooter>true</showFooter>
+        <showHeader>true</showHeader>
+    </screens>
+    <screens>
+        <name>Routing_Queued</name>
+        <label>Routing queued</label>
+        <locationX>44</locationX>
+        <locationY>518</locationY>
+        <allowBack>false</allowBack>
+        <allowFinish>true</allowFinish>
+        <allowPause>false</allowPause>
+        <fields>
+            <name>Queued_Message</name>
+            <fieldText>&lt;p&gt;&lt;strong&gt;{!Queue_Approved_Routing.message}&lt;/strong&gt;&lt;/p&gt;&lt;p&gt;Run: {!Queue_Approved_Routing.runId}&lt;br/&gt;Status: {!Queue_Approved_Routing.status}&lt;br/&gt;Requested: {!Queue_Approved_Routing.requestedCount}&lt;br/&gt;Planned: {!Queue_Approved_Routing.plannedCount}&lt;br/&gt;Held: {!Queue_Approved_Routing.heldCount}&lt;/p&gt;&lt;p&gt;&lt;a href=&quot;/lightning/r/GTM_Routing_Run__c/{!Queue_Approved_Routing.runId}/view&quot; target=&quot;_blank&quot;&gt;Open the routing run and per-Lead receipts&lt;/a&gt;&lt;/p&gt;</fieldText>
+            <fieldType>DisplayText</fieldType>
+        </fields>
+        <showFooter>true</showFooter>
+        <showHeader>true</showHeader>
+    </screens>
+    <screens>
+        <name>Routing_Cancelled</name>
+        <label>Routing not approved</label>
+        <locationX>308</locationX>
+        <locationY>398</locationY>
+        <allowBack>true</allowBack>
+        <allowFinish>true</allowFinish>
+        <allowPause>false</allowPause>
+        <fields>
+            <name>Cancelled_Message</name>
+            <fieldText>&lt;p&gt;No records were changed. Go back and confirm approval, or finish to leave the Leads untouched.&lt;/p&gt;</fieldText>
+            <fieldType>DisplayText</fieldType>
+        </fields>
+        <showFooter>true</showFooter>
+        <showHeader>true</showHeader>
+    </screens>
+    <screens>
+        <name>Routing_Error</name>
+        <label>Routing could not be queued</label>
+        <locationX>308</locationX>
+        <locationY>518</locationY>
+        <allowBack>true</allowBack>
+        <allowFinish>true</allowFinish>
+        <allowPause>false</allowPause>
+        <fields>
+            <name>Error_Message</name>
+            <fieldText>&lt;p&gt;&lt;strong&gt;Salesforce did not queue the routing run.&lt;/strong&gt;&lt;/p&gt;&lt;p&gt;{!$Flow.FaultMessage}&lt;/p&gt;</fieldText>
+            <fieldType>DisplayText</fieldType>
+        </fields>
+        <showFooter>true</showFooter>
+        <showHeader>true</showHeader>
+    </screens>
+    <start>
+        <locationX>50</locationX>
+        <locationY>0</locationY>
+        <connector>
+            <targetReference>Confirm_Routing</targetReference>
+        </connector>
+    </start>
+    <status>Active</status>
+    <variables>
+        <description>Selected Salesforce Lead IDs supplied by a list-view launcher or parent orchestration.</description>
+        <name>ids</name>
+        <dataType>String</dataType>
+        <isCollection>true</isCollection>
+        <isInput>true</isInput>
+        <isOutput>false</isOutput>
+    </variables>
+</Flow>

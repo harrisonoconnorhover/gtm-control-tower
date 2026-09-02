@@ -2,41 +2,37 @@
 
 ## Finished
 
-- Added a bulk-safe, `with sharing`, read-only Apex Lead-triage action.
-- Added an active autolaunched Flow with ready, held, and fault branches.
-- Published and activated the read-only Agentforce Employee Agent as version 1.
-- Live-tested the real Agentforce → Flow → Apex action against a synthetic Lead.
-- Deployed a least-privilege, read-only permission set for the future agent user.
+- Deployed the human-approved Screen Flow, bulk Apex planner/Queueable, policies, queues, permission set, and durable receipt objects.
+- Verified idempotency, user-mode security, row locking, stale protection, partial DML, and Transaction Finalizer handling with six focused tests.
+- Ran a live synthetic batch: two Leads routed, one held, zero failed/stale, async job completed with zero errors.
+- Corrected run semantics so expected policy holds remain visible without being mislabeled as system errors.
+- Added an obvious local portfolio proof section, reviewer guide, source links, and development-org evidence.
 
 ## Try It
 
-Review `docs/salesforce-agentforce.md`, especially the dedicated execution-user boundary, before completing the final published-agent preview.
+Open the local public preview at `#salesforce-proof`, then follow `docs/salesforce-apex-routing.md` through the Flow, Apex, test, and live-proof evidence.
 
 ## Checks
 
-- Salesforce deployment: succeeded; three tests passed.
-- `GTMLeadTriageAction`: 63/63 lines, 100% coverage.
-- Flow test: four of five elements covered; only the defensive fault assignment was unforced.
-- Agent Script authoring-bundle validation: succeeded.
-- Publish and activation: succeeded for `GTM_Data_Steward` version 1.
-- Live action: returned `READY`, 85/100, and `PRIORITY_REVIEW`; Lead state was unchanged.
-- Repository checks: 73 tests, lint, both production builds, XML validation, secret scan, and diff check passed.
+- Full Salesforce deployment succeeded: 40/40 metadata components.
+- Final Apex validation passed: 6/6 tests; planner 85.4% and Queueable 81.6% coverage.
+- Live Queueable job completed with zero errors; durable run recorded 2 succeeded, 1 held, 0 failed, 0 stale.
+- Local repository tests, lint, XML/source validation, and public/full production builds passed.
 
 ## Decisions
 
-- Agentforce is read-only; existing governed connector workflows retain mutations.
-- Triage is deterministic and explainable; the agent does not invent scores.
-- The published agent uses a dedicated non-login execution user, not an administrator.
+- Agentforce stays read-only; only the separate Screen Flow can request mutation.
+- Admin-editable policy lives in Custom Metadata; Apex owns concurrency, security, and receipts.
+- The app permission set does not grant broad `Transfer Leads`; org administrators retain that business-access decision.
 
 ## Remaining
 
-- Obtain explicit approval to create the persistent Einstein Agent User.
-- Assign `GTM_Data_Steward_Read_Only` and add that username to the Agent Script access block.
-- Republish and preview the activated published agent with the synthetic Lead.
+- Publish the portfolio update only with explicit public-deployment approval.
+- Create an Einstein Agent User only if explicitly approved; the activated agent still lacks that dedicated runtime identity.
+- Do not describe this development-org proof as production/customer deployment or years of Apex ownership.
 
 ## Review First
 
-- `salesforce/force-app/main/default/classes/GTMLeadTriageAction.cls`
-- `salesforce/force-app/main/default/flows/GTM_Lead_Triage.flow-meta.xml`
-- `salesforce/force-app/main/default/permissionsets/GTM_Data_Steward_Read_Only.permissionset-meta.xml`
-- `docs/salesforce-agentforce.md`
+- `salesforce/force-app/main/default/classes/GTMLeadRoutingService.cls`
+- `salesforce/force-app/main/default/classes/GTMLeadRoutingQueueable.cls`
+- `docs/salesforce-apex-routing.md`

@@ -84,6 +84,17 @@ boundary while demonstrating a real Agentforce → Flow → Apex execution path.
 Mutation remains in the existing governed connector workflow, where plans,
 fresh reads, receipts, and rollback evidence already exist.
 
+## Separate human-approved Salesforce execution plane
+
+Agentforce remains a read-only recommendation surface. Native Salesforce Lead
+ownership changes use a separate Screen Flow approval, an idempotent invocable
+Apex planner, and one Queueable executor. Routing thresholds and queues live in
+Custom Metadata; the worker locks records, refuses stale snapshots, uses
+partial-success user-mode DML, and persists a parent run plus per-Lead receipts.
+A Transaction Finalizer records unhandled async failures after the worker
+transaction rolls back. This makes the write boundary obvious,
+admin-configurable, and auditable without giving the agent mutation authority.
+
 ## Self-hosted open-source release
 
 The first public release is a self-hosted toolkit, not a multi-tenant SaaS. CSV-only mode needs no account, while optional setup renders BigQuery and n8n assets from portable project and dataset tokens. A public demo carries no CRM credentials; each operator owns their deployment, secrets, connector permissions, and resulting data.

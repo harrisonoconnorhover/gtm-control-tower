@@ -76,6 +76,7 @@ export function PublicDemo() {
           <nav className="flex flex-wrap items-center gap-2 text-xs" aria-label="Primary navigation">
             <a href="#audit" className="rounded-full bg-[#83bcff]/10 px-4 py-2 font-semibold text-[#83bcff]">Audit your CSV</a>
             <a href="#demo" className="rounded-full bg-white/[0.06] px-4 py-2 text-[#dce9e2]">Two-minute demo</a>
+            <a href="#salesforce-proof" className="rounded-full border border-[#83bcff]/20 px-4 py-2 font-semibold text-[#83bcff]">Apex proof</a>
             <a href="#walkthrough" className="rounded-full border border-white/10 px-4 py-2 text-[#9fb2a8]">Watch proof</a>
             <a href="https://github.com/harrisonoconnorhover/gtm-control-tower#quick-start-one-command-no-accounts-required" className="rounded-full border border-white/10 px-4 py-2 text-[#9fb2a8] transition hover:border-white/25 hover:text-white">Self-host setup</a>
             <a href="https://github.com/harrisonoconnorhover/gtm-control-tower" target="_blank" rel="noreferrer" className="rounded-full border border-[#d8ff67]/25 px-4 py-2 font-semibold text-[#d8ff67] transition hover:bg-[#d8ff67]/10">GitHub ↗</a>
@@ -217,6 +218,40 @@ export function PublicDemo() {
           </article>
         </section>
 
+        <section id="salesforce-proof" className="scroll-mt-6 py-8" aria-label="Salesforce Apex and Flow architecture proof">
+          <div className="overflow-hidden rounded-[34px] border border-[#83bcff]/25 bg-[#081814]">
+            <div className="grid gap-0 xl:grid-cols-[0.78fr_1.22fr]">
+              <div className="border-b border-white/10 p-6 sm:p-8 lg:p-10 xl:border-b-0 xl:border-r">
+                <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#83bcff]">Salesforce-native execution plane</p>
+                <h2 className="mt-3 text-4xl font-semibold leading-tight tracking-[-0.05em]">Apex that protects the business operation, not just a trigger demo.</h2>
+                <p className="mt-5 text-sm leading-6 text-[#8ca096]">Agentforce and the triage Flow stay read-only. Ownership changes cross a separate Screen Flow approval boundary, then one Queueable Apex job locks the selected Leads, rejects stale data, applies deployable Custom Metadata policies, and writes a durable receipt for every record.</p>
+                <p className="mt-4 rounded-2xl border border-[#d8ff67]/20 bg-[#d8ff67]/[0.06] px-4 py-3 font-mono text-[10px] leading-5 text-[#b9d978]">DEVELOPMENT-ORG VERIFIED · 6/6 ROUTING TESTS PASSED · LIVE 3-LEAD RUN: 2 ROUTED, 1 HELD, 0 FAILED · IDEMPOTENT REPLAY RETURNED THE SAME RUN</p>
+                <div className="mt-6 grid grid-cols-2 gap-3">
+                  <ProofStat value="200" label="Leads per approved run" />
+                  <ProofStat value="1" label="Queueable job per run" />
+                  <ProofStat value="0" label="duplicate jobs per token" />
+                  <ProofStat value="5" label="durable receipt states" />
+                </div>
+                <div className="mt-6 flex flex-wrap gap-3">
+                  <a href="https://github.com/harrisonoconnorhover/gtm-control-tower/blob/main/salesforce/force-app/main/default/classes/GTMLeadRoutingService.cls" target="_blank" rel="noreferrer" className="rounded-full bg-[#83bcff] px-5 py-3 text-sm font-black text-[#06100d]">Read the Apex ↗</a>
+                  <a href="https://github.com/harrisonoconnorhover/gtm-control-tower/blob/main/docs/salesforce-apex-routing.md" target="_blank" rel="noreferrer" className="rounded-full border border-white/15 px-5 py-3 text-sm font-semibold text-[#c8d7d0]">See the test contract ↗</a>
+                </div>
+              </div>
+              <div className="p-6 sm:p-8 lg:p-10">
+                <div className="grid gap-3 md:grid-cols-2">
+                  <ApexProofStep number="01" eyebrow="Recommend" title="Agentforce → read-only Flow" detail="Deterministic Apex explains readiness and recommends a queue without changing Salesforce." />
+                  <ApexProofStep number="02" eyebrow="Authorize" title="Human approval Screen Flow" detail="A required confirmation and Flow interview token create an explicit, idempotent write boundary." />
+                  <ApexProofStep number="03" eyebrow="Plan" title="Custom Metadata policies" detail="Admins change score, segment, priority, and queue rules without editing or redeploying Apex." />
+                  <ApexProofStep number="04" eyebrow="Protect" title="FOR UPDATE + stale guard" detail="The async worker locks Leads and refuses to overwrite a record changed after the operator approved it." />
+                  <ApexProofStep number="05" eyebrow="Execute" title="Partial-success Queueable" detail="Database.update(..., false) preserves valid ownership changes when an individual Lead fails." />
+                  <ApexProofStep number="06" eyebrow="Recover" title="Receipts + Transaction Finalizer" detail="Per-Lead outcomes stay queryable, and a separate finalizer transaction records terminal async failures." />
+                </div>
+                <p className="mt-5 font-mono text-[9px] leading-5 text-[#657d72]">WITH SHARING · USER-MODE CRUD/FLS · BULK 200 · ROW LOCKS · IDEMPOTENCY · CUSTOM METADATA · PARTIAL DML · TRANSACTION FINALIZER</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
         <section id="walkthrough" className="scroll-mt-6 py-8" aria-label="Live sandbox acceptance and walkthrough">
           <div className="overflow-hidden rounded-[34px] border border-[#83bcff]/20 bg-[#0a1b17]">
             <div className="grid gap-0 xl:grid-cols-[0.82fr_1.18fr]">
@@ -301,6 +336,19 @@ function OutcomeMetric({ label, value, tone = 'good' }: { label: string; value: 
 
 function ProofStat({ value, label }: { value: string; label: string }) {
   return <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-4"><p className="text-3xl font-semibold text-[#83bcff]">{value}</p><p className="mt-1 text-[10px] text-[#71877c]">{label}</p></div>;
+}
+
+function ApexProofStep({ number, eyebrow, title, detail }: { number: string; eyebrow: string; title: string; detail: string }) {
+  return (
+    <article className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
+      <div className="flex items-center justify-between gap-3">
+        <span className="grid h-8 w-8 place-items-center rounded-full bg-[#83bcff]/10 font-mono text-[9px] text-[#83bcff]">{number}</span>
+        <span className="font-mono text-[8px] uppercase tracking-[0.16em] text-[#688075]">{eyebrow}</span>
+      </div>
+      <h3 className="mt-4 font-semibold text-[#edf8f2]">{title}</h3>
+      <p className="mt-2 text-xs leading-5 text-[#81978c]">{detail}</p>
+    </article>
+  );
 }
 
 function PathNode({ eyebrow, title, detail, accent = false }: { eyebrow: string; title: string; detail: string; accent?: boolean }) {

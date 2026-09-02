@@ -14,6 +14,13 @@ uses one coherent business case instead of disconnected demo artifacts:
    Agent Script bundle. Its only business action invokes the Flow in read-only
    mode. It cannot write, assign, merge, convert, or delete Salesforce records.
 
+A separate write-side path begins only after a human uses
+`GTM_Approve_Lead_Routing`. Its invocable Apex planner evaluates Custom Metadata
+policies and creates durable receipts; one Queueable Apex job then locks and
+routes eligible Leads. The full architecture and test contract are in
+[Human-approved Salesforce routing](salesforce-apex-routing.md). The Agentforce
+agent has no access to that Flow or either write-side Apex class.
+
 This extends the project's existing Salesforce proof: SOQL pagination,
 query-before-write REST integration, Composite API creates and updates, standard
 and custom Lead field metadata, native receipts, duplicate holds, bounded
@@ -25,6 +32,15 @@ The Apex classes, active Flow, and five custom Lead fields are deployed in the
 project's Salesforce development org. The focused deployment ran three passing
 tests, reported 100% coverage for `GTMLeadTriageAction`, and exercised four of
 the Flow's five elements. The unforced element is the defensive fault assignment.
+
+The separate write-side routing slice is also deployed in the development org.
+Its six focused tests passed, including a 200-Lead Queueable batch, duplicate
+approval replay, Flow invocable contract, mixed partial-success outcomes,
+expected-hold semantics, and missing-approval rejection. A live synthetic run
+routed two Leads, held one below-policy Lead, produced durable per-record
+receipts, completed with zero failures, and returned the original run when its
+approval token was replayed. Full evidence is in
+[Human-approved Salesforce routing](salesforce-apex-routing.md).
 
 The org administrator has the built-in **Agentforce Default Admin** permission,
 and the Agentforce master setting is enabled. `GTM_Data_Steward` passes the

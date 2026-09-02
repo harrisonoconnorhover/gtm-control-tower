@@ -33,10 +33,10 @@ the repository.
 - Syncs eligible contacts to HubSpot Contacts or Salesforce Leads with
   read-before-write field diffs, 100-record ceilings, per-record receipts, and
   update rollback. Newly created records are never auto-deleted.
-- Includes a source-driven Salesforce development slice: tested bulk-safe Apex,
-  an autolaunched Flow with explicit branching, a least-privilege permission
-  set, and a published read-only Agentforce Employee Agent that invokes the Flow
-  for explainable Lead triage.
+- Includes a source-driven Salesforce development slice: a published read-only
+  Agentforce triage path plus a separate human-approved Screen Flow, invocable
+  Apex planner, Queueable executor, Custom Metadata policies, stale-record
+  protection, idempotency, partial-success DML, and durable per-Lead receipts.
 - Routes synthetic leads through n8n, records immutable BigQuery events, and
   models funnel conversion, routing SLA, and data quality with dbt.
 - Shows how operational defects change revenue metrics instead of presenting a
@@ -46,6 +46,46 @@ the repository.
 - Audits common CRM contact exports entirely in the visitor's browser and
   downloads an aggregate Markdown readiness report without transmitting or
   storing source rows.
+
+## Salesforce-native proof: Agentforce, Flow, and advanced Apex
+
+The Salesforce slice is one governed business workflow, not a folder of syntax
+examples:
+
+```text
+Agentforce -> read-only triage Flow -> explainable Apex recommendation
+                                          |
+                                          v
+operator -> approval Screen Flow -> invocable Apex planner -> Queueable executor
+                                                |                    |
+                                      Custom Metadata policy   locked Lead updates
+                                                \____________________/
+                                                          |
+                                              run + per-Lead receipts
+```
+
+The write path accepts up to 200 selected Leads. A unique Flow interview token
+prevents duplicate jobs; `WITH USER_MODE` and `with sharing` enforce the
+operator's access; `FOR UPDATE` plus a captured `LastModifiedDate` prevents an
+async job from overwriting newer work; and `Database.update(..., false)` records
+individual failures without rolling back valid ownership changes. Routing rules
+are deployable Custom Metadata, so an admin can change thresholds and queues
+without changing Apex. A Transaction Finalizer records terminal async failures
+in a separate transaction instead of leaving a run stuck at `Processing`.
+
+Verified in the Salesforce development org on 2026-09-02: all six focused
+routing tests passed, including the 200-Lead bulk case; validation reported
+85.4% coverage for the planner and 81.6% for the Queueable worker. A live
+three-Lead run routed two records to the expected queues, held one below-policy
+record, recorded zero failures or stale writes, completed its async job with
+zero errors, and returned the original run when the approval token was replayed.
+
+Start with the [architecture and test contract](docs/salesforce-apex-routing.md),
+then inspect the
+[`GTMLeadRoutingService`](salesforce/force-app/main/default/classes/GTMLeadRoutingService.cls),
+[`GTMLeadRoutingQueueable`](salesforce/force-app/main/default/classes/GTMLeadRoutingQueueable.cls),
+and [`GTM_Approve_Lead_Routing`](salesforce/force-app/main/default/flows/GTM_Approve_Lead_Routing.flow-meta.xml)
+source.
 
 ## Public demonstration
 
