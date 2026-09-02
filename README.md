@@ -34,9 +34,9 @@ the repository.
   read-before-write field diffs, 100-record ceilings, per-record receipts, and
   update rollback. Newly created records are never auto-deleted.
 - Includes a source-driven Salesforce development slice: tested bulk-safe Apex,
-  an autolaunched Flow with explicit branching, and a validated read-only
-  Agentforce Employee Agent source bundle that invokes the Flow for explainable
-  Lead triage.
+  an autolaunched Flow with explicit branching, a least-privilege permission
+  set, and a published read-only Agentforce Employee Agent that invokes the Flow
+  for explainable Lead triage.
 - Routes synthetic leads through n8n, records immutable BigQuery events, and
   models funnel conversion, routing SLA, and data quality with dbt.
 - Shows how operational defects change revenue metrics instead of presenting a

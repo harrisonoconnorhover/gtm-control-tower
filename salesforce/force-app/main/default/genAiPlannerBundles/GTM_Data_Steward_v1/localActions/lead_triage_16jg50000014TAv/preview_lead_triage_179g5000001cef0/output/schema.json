@@ -1,0 +1,46 @@
+{
+  "unevaluatedProperties" : false,
+  "properties" : {
+    "eligible" : {
+      "title" : "Eligible",
+      "description" : "Whether the Lead clears the minimum data-quality gate",
+      "lightning:type" : "lightning__booleanType",
+      "lightning:isPII" : false,
+      "copilotAction:isDisplayable" : true,
+      "copilotAction:isUsedByPlanner" : true
+    },
+    "explanation" : {
+      "title" : "Explanation",
+      "description" : "Evidence-backed explanation of the result",
+      "lightning:type" : "lightning__textType",
+      "lightning:isPII" : false,
+      "copilotAction:isDisplayable" : true,
+      "copilotAction:isUsedByPlanner" : true
+    },
+    "readinessScore" : {
+      "title" : "Readiness Score",
+      "description" : "Deterministic data-completeness score from zero to one hundred",
+      "lightning:type" : "lightning__numberType",
+      "lightning:isPII" : false,
+      "copilotAction:isDisplayable" : true,
+      "copilotAction:isUsedByPlanner" : true
+    },
+    "recommendedQueue" : {
+      "title" : "Recommended Queue",
+      "description" : "Human-review queue recommended by the deterministic triage",
+      "lightning:type" : "lightning__textType",
+      "lightning:isPII" : false,
+      "copilotAction:isDisplayable" : true,
+      "copilotAction:isUsedByPlanner" : true
+    },
+    "triageStatus" : {
+      "title" : "Triage Status",
+      "description" : "READY, HELD, or ERROR",
+      "lightning:type" : "lightning__textType",
+      "lightning:isPII" : false,
+      "copilotAction:isDisplayable" : true,
+      "copilotAction:isUsedByPlanner" : true
+    }
+  },
+  "lightning:type" : "lightning__objectType"
+}

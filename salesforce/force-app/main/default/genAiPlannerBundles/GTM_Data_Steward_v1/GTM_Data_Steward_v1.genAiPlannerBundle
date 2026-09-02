@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<GenAiPlannerBundle xmlns="http://soap.sforce.com/2006/04/metadata">
+    <description>Read-only internal agent that explains governed Lead readiness and routing recommendations using GTM Control Tower Flow and Apex assets</description>
+    <localTopicLinks>
+        <genAiPluginName>agent_router_16jg50000014TAv</genAiPluginName>
+    </localTopicLinks>
+    <localTopicLinks>
+        <genAiPluginName>lead_triage_16jg50000014TAv</genAiPluginName>
+    </localTopicLinks>
+    <localTopics>
+        <fullName>agent_router_16jg50000014TAv</fullName>
+        <canEscalate>false</canEscalate>
+        <description>Route Lead-readiness questions to the governed triage specialist</description>
+        <developerName>agent_router_16jg50000014TAv</developerName>
+        <genAiPluginInstructions>
+            <description>You are an internal Revenue Operations data steward. Use only the read-only Lead triage action provided to you.
+Never claim that a record was updated, assigned, merged, converted, or deleted. The action only returns a deterministic preview.
+Report the readiness score, eligibility decision, recommended human-review queue, and explanation exactly as returned.
+If the user asks to mutate Salesforce, explain that a human must use an approved governed workflow outside this agent.</description>
+            <developerName>instruction0_179g5000001ceez</developerName>
+            <language>en_US</language>
+            <masterLabel>instruction0_179g5000001ceez</masterLabel>
+            <sortOrder>1</sortOrder>
+        </genAiPluginInstructions>
+        <language>en_US</language>
+        <localDeveloperName>agent_router</localDeveloperName>
+        <masterLabel>Agent Router</masterLabel>
+        <pluginType>Topic</pluginType>
+    </localTopics>
+    <localTopics>
+        <fullName>lead_triage_16jg50000014TAv</fullName>
+        <canEscalate>false</canEscalate>
+        <description>Preview a Salesforce Lead&apos;s data readiness without changing Salesforce</description>
+        <developerName>lead_triage_16jg50000014TAv</developerName>
+        <genAiPluginInstructions>
+            <description>You are an internal Revenue Operations data steward. Use only the read-only Lead triage action provided to you.
+Never claim that a record was updated, assigned, merged, converted, or deleted. The action only returns a deterministic preview.
+Report the readiness score, eligibility decision, recommended human-review queue, and explanation exactly as returned.
+If the user asks to mutate Salesforce, explain that a human must use an approved governed workflow outside this agent.</description>
+            <developerName>instruction0_179g5000001cef0</developerName>
+            <language>en_US</language>
+            <masterLabel>instruction0_179g5000001cef0</masterLabel>
+            <sortOrder>1</sortOrder>
+        </genAiPluginInstructions>
+        <language>en_US</language>
+        <localActionLinks>
+            <functionName>preview_lead_triage_179g5000001cef0</functionName>
+        </localActionLinks>
+        <localActions>
+            <fullName>preview_lead_triage_179g5000001cef0</fullName>
+            <description>Read one Salesforce Lead and return its deterministic data-readiness score, eligibility gate, review queue, and explanation. This action never changes the Lead.</description>
+            <developerName>preview_lead_triage_179g5000001cef0</developerName>
+            <invocationTarget>GTM_Lead_Triage</invocationTarget>
+            <invocationTargetType>flow</invocationTargetType>
+            <isConfirmationRequired>false</isConfirmationRequired>
+            <isIncludeInProgressIndicator>false</isIncludeInProgressIndicator>
+            <localDeveloperName>preview_lead_triage</localDeveloperName>
+            <masterLabel>Preview Lead Triage</masterLabel>
+        </localActions>
+        <localDeveloperName>lead_triage</localDeveloperName>
+        <masterLabel>Lead Triage</masterLabel>
+        <pluginType>Topic</pluginType>
+    </localTopics>
+    <masterLabel>GTM Data Steward</masterLabel>
+    <plannerType>Atlas__ConcurrentMultiAgentOrchestration</plannerType>
+</GenAiPlannerBundle>

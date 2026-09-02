@@ -26,12 +26,23 @@ project's Salesforce development org. The focused deployment ran three passing
 tests, reported 100% coverage for `GTMLeadTriageAction`, and exercised four of
 the Flow's five elements. The unforced element is the defensive fault assignment.
 
-The `GTM_Data_Steward` Agent Script bundle passes Salesforce's authoring-bundle
-validator. Publishing it is still pending because the org's Agentforce master
-switch requires the built-in **Agentforce Default Admin** permission set. That
-permission has not been assigned. Until it is assigned and the published agent
-is previewed successfully, describe this as validated Agentforce source—not a
-live Agentforce deployment.
+The org administrator has the built-in **Agentforce Default Admin** permission,
+and the Agentforce master setting is enabled. `GTM_Data_Steward` passes the
+Agent Script validator, is published as version 1, and is active in the org.
+Salesforce's publish command also retrieved the generated Bot, BotVersion, and
+planner metadata into source control.
+
+A live-action preview from the Agent Script executed the real Flow and Apex
+action against a synthetic Lead. Its trace recorded action status `success`,
+status `READY`, score `85`, eligibility `true`, and queue `PRIORITY_REVIEW`.
+The Lead's before-and-after fields and `LastModifiedDate` were identical. The
+activated published agent still needs a dedicated Einstein Agent User before a
+published-agent preview can start; no such user has been created yet.
+
+`GTM_Data_Steward_Read_Only` is deployed and ready to assign to that agent user.
+It grants only Flow execution, this Apex class, Lead read access, and read access
+to the non-required Lead fields used by the score. It grants no create, edit,
+delete, modify-all, or view-all permissions.
 
 ## Deploy and verify in a development org
 
@@ -53,6 +64,7 @@ sf project deploy start \
   --source-dir salesforce/force-app/main/default/classes \
   --source-dir salesforce/force-app/main/default/flows \
   --source-dir salesforce/force-app/main/default/objects/Lead/fields \
+  --source-dir salesforce/force-app/main/default/permissionsets \
   --target-org gtm-control-tower-salesforce \
   --test-level RunSpecifiedTests \
   --tests GTMLeadTriageActionTest \
@@ -72,17 +84,23 @@ sf agent publish authoring-bundle \
   --concise
 ```
 
-Preview the agent with a synthetic Lead ID from your development org. Confirm
-that the response includes the Flow outputs and explicitly says no record was
-changed. Do not point the agent at a customer or production org. Record the
-preview result before changing the project status above to “deployed.”
+For an activated published agent, create a dedicated non-login Einstein Agent
+User, assign `GTM_Data_Steward_Read_Only`, add its username to an Agent Script
+`access` block as `default_agent_user`, and republish. The user is a persistent
+org account with Salesforce-provided licenses and base permissions, so creation
+must be an explicit administrator decision.
+
+Preview with a synthetic Lead ID only. Confirm the trace includes the successful
+Flow outputs and that a before-and-after SOQL read shows an unchanged
+`LastModifiedDate`. Do not point the agent at a customer or production org.
 
 ## Honest portfolio boundary
 
 The current evidence supports: “built and deployed a tested invocable Apex
-action and autolaunched Flow, plus validated a read-only Agentforce action source
-bundle, in a Salesforce development org.” After a successful agent publish and
-preview, “validated” can become “published and tested.” Neither statement
-establishes years of production Salesforce administration, Apex ownership,
-customer deployment, or Agentforce operations. Keep those distinctions explicit
-in résumés and interviews.
+action and autolaunched Flow, and published an activated read-only Agentforce
+agent whose real Flow/Apex action passed a live development-org preview.” It does
+not yet support claiming the activated published agent itself passed preview;
+that final session needs the dedicated execution user described above. Neither
+statement establishes years of production Salesforce administration, Apex
+ownership, customer deployment, or Agentforce operations. Keep those
+distinctions explicit in résumés and interviews.
