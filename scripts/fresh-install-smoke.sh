@@ -22,6 +22,10 @@ cleanup() {
   if [[ $status -ne 0 ]]; then
     docker compose -p "$project_name" logs --tail=200 >&2 || true
   fi
+  # n8n creates nested bind-mount directories as its container user. Make the
+  # isolated smoke-test data removable by the host runner before teardown.
+  docker compose -p "$project_name" exec -T --user root n8n \
+    chmod -R a+rwX /home/node/.n8n >/dev/null 2>&1 || true
   docker compose -p "$project_name" down -v --remove-orphans >/dev/null 2>&1 || true
   rm -rf "$runtime_root"
   exit "$status"
