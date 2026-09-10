@@ -194,6 +194,139 @@ private class GTMDemoIntakeTest {
         }
     }
 
+    @IsTest
+    static void publicInquiryCreatesAccountContactAndIdempotentActivity() {
+        System.runAs(integration()) {
+            GTMDemoIntake.Submission input = publicSubmission('hollis-new-company-01', 'maya@cedarworks.example', 'Cedar Works');
+            GTMDemoIntake.Receipt first = GTMDemoIntake.process(input);
+            GTMDemoIntake.Receipt retry = GTMDemoIntake.process(input);
+            System.assertEquals('Routed', first.status);
+            System.assertEquals('Contact', first.personType);
+            System.assertNotEquals(null, first.accountId);
+            System.assertEquals(first.taskId, retry.taskId);
+            System.assertEquals(first.accountId, [SELECT AccountId FROM Contact WHERE Id = :first.personId].AccountId);
+            System.assertEquals(first.accountId, [SELECT WhatId FROM Task WHERE Id = :first.taskId].WhatId);
+            Account account = [SELECT Name, Website, GTM_Intake_Domain__c FROM Account WHERE Id = :first.accountId];
+            System.assertEquals('Cedar Works', account.Name);
+            System.assertEquals(null, account.Website);
+            System.assertEquals('cedarworks.example', account.GTM_Intake_Domain__c);
+            GTMDemoIntake.Receipt colleague = GTMDemoIntake.process(publicSubmission('hollis-colleague-0001', 'ben@cedarworks.example', 'Cedar Works'));
+            System.assertEquals(first.accountId, colleague.accountId);
+            System.assertNotEquals(first.personId, colleague.personId);
+            System.assertEquals(1, [SELECT COUNT() FROM Account]);
+            System.assertEquals(2, [SELECT COUNT() FROM Contact]);
+            System.assertEquals(0, [SELECT COUNT() FROM Lead]);
+            System.assertEquals(2, [SELECT COUNT() FROM Task]);
+        }
+    }
+
+    @IsTest
+    static void publicInquiryMatchesWebsiteAndPreservesOwnership() {
+        Account account = new Account(Name = 'DECKED', Website = 'https://www.decked.com/products'); insert account;
+        System.runAs(integration()) {
+            GTMDemoIntake.Receipt first = GTMDemoIntake.process(publicSubmission('hollis-decked-000001', 'morgan@decked.com', 'decked'));
+            System.assertEquals('Routed', first.status);
+            System.assertEquals(account.Id, first.accountId);
+            Id owner = [SELECT OwnerId FROM Account WHERE Id = :account.Id].OwnerId;
+            System.assertEquals(owner, first.ownerId);
+            GTMDemoIntake.Receipt again = GTMDemoIntake.process(publicSubmission('hollis-decked-000002', 'morgan@decked.com', 'Newly entered company'));
+            System.assertEquals(first.personId, again.personId);
+            System.assertEquals(account.Id, again.accountId);
+            System.assertEquals(false, again.createdPerson);
+            System.assertNotEquals(first.taskId, again.taskId);
+            System.assertEquals(1, [SELECT COUNT() FROM Account]);
+            System.assertEquals(1, [SELECT COUNT() FROM Contact]);
+        }
+    }
+
+    @IsTest
+    static void similarCompanyAndPersonalEmailAreHeldWithoutFalseMatch() {
+        insert new Account(Name = 'Northline Express', Website = 'https://northlineexpress.com');
+        System.runAs(integration()) {
+            GTMDemoIntake.Receipt sameName = GTMDemoIntake.process(publicSubmission('hollis-wrong-domain01', 'person@northlinefreight.example', 'Northline Express'));
+            System.assertEquals('Held', sameName.status);
+            GTMDemoIntake.Receipt sameDomain = GTMDemoIntake.process(publicSubmission('hollis-wrong-name-01', 'person@northlineexpress.com', 'Northline Logistics'));
+            System.assertEquals('Held', sameDomain.status);
+            GTMDemoIntake.Receipt personal = GTMDemoIntake.process(publicSubmission('hollis-personal-0001', 'a.person@gmail.com', 'Unverified Company'));
+            System.assertEquals('Held', personal.status);
+            System.assertEquals(1, [SELECT COUNT() FROM Account]);
+            System.assertEquals(0, [SELECT COUNT() FROM Contact]);
+            System.assertEquals(3, [SELECT COUNT() FROM Task]);
+        }
+    }
+
+    @IsTest
+    static void publicInquiryConvertsKnownLeadWithoutNewOpportunity() {
+        Lead lead = new Lead(FirstName = 'Original', LastName = 'Requester', Company = 'Cedar Works', Email = 'known@cedar.example'); insert lead;
+        System.runAs(integration()) {
+            GTMDemoIntake.Receipt result = GTMDemoIntake.process(publicSubmission('hollis-convert-00001', lead.Email, lead.Company));
+            System.assertEquals('Routed', result.status);
+            System.assertEquals('Contact', result.personType);
+            Lead after = [SELECT IsConverted, ConvertedContactId, ConvertedAccountId, OwnerId FROM Lead WHERE Id = :lead.Id];
+            System.assertEquals(true, after.IsConverted);
+            System.assertEquals(result.personId, after.ConvertedContactId);
+            System.assertEquals(result.accountId, after.ConvertedAccountId);
+            System.assertEquals(after.OwnerId, result.ownerId);
+            System.assertEquals('Original', [SELECT FirstName FROM Contact WHERE Id = :result.personId].FirstName);
+            System.assertEquals(0, [SELECT COUNT() FROM Opportunity]);
+        }
+    }
+
+    @IsTest
+    static void publicFailureRollsBackCompanyAndContactTogether() {
+        System.runAs(integration()) {
+            GTMDemoIntake.Submission input = publicSubmission('hollis-rollback-0001', 'rollback@cedar.example', 'Cedar Works');
+            GTMDemoIntake.failAfterTask = true; callRest(input);
+            System.assertEquals(503, RestContext.response.statusCode);
+            System.assertEquals(0, [SELECT COUNT() FROM Account]);
+            System.assertEquals(0, [SELECT COUNT() FROM Contact]);
+            System.assertEquals(0, [SELECT COUNT() FROM GTM_Demo_Request__c]);
+            GTMDemoIntake.failAfterTask = false; callRest(input);
+            System.assertEquals(200, RestContext.response.statusCode);
+            System.assertEquals(1, [SELECT COUNT() FROM Account]);
+            System.assertEquals(1, [SELECT COUNT() FROM Contact]);
+        }
+    }
+
+    @IsTest
+    static void companyCollisionAndModeChangeCannotCreateDuplicates() {
+        insert new Account(Name = 'Cedar Works', Website = 'https://cedar.example');
+        insert new Account(Name = 'Cedar Works', Website = 'https://www.cedar.example');
+        System.runAs(integration()) {
+            GTMDemoIntake.Submission input = publicSubmission('hollis-collision-001', 'p@cedar.example', 'Cedar Works');
+            System.assertEquals('Held', GTMDemoIntake.process(input).status);
+            input.createContact = false; callRest(input);
+            System.assertEquals(409, RestContext.response.statusCode);
+            System.assertEquals(0, [SELECT COUNT() FROM Contact]);
+            System.assertEquals(0, [SELECT COUNT() FROM Lead]);
+        }
+    }
+
+    @IsTest
+    static void heldCompanyCanBeReviewedAndRetriedWithoutDuplicateActivity() {
+        Account account = new Account(Name = 'Cedar Works'); insert account;
+        System.runAs(integration()) {
+            GTMDemoIntake.Submission input = publicSubmission('hollis-review-000001', 'review@cedar.example', 'Cedar Works');
+            GTMDemoIntake.Receipt held = GTMDemoIntake.process(input);
+            System.assertEquals('Held', held.status);
+            System.assertNotEquals(null, held.taskId);
+            System.assertEquals(null, [SELECT WhoId FROM Task WHERE Id = :held.taskId].WhoId);
+            System.assertEquals(held.taskId, GTMDemoIntake.process(input).taskId);
+            account.Website = 'https://cedar.example'; update account;
+            GTMDemoIntake.Receipt routed = GTMDemoIntake.process(input);
+            System.assertEquals('Routed', routed.status);
+            System.assertEquals(held.taskId, routed.taskId);
+            System.assertEquals(account.Id, routed.accountId);
+            System.assertEquals(routed.personId, [SELECT WhoId FROM Task WHERE Id = :routed.taskId].WhoId);
+            System.assertEquals(1, [SELECT COUNT() FROM Task]);
+        }
+    }
+
+    private static GTMDemoIntake.Submission publicSubmission(String key, String email, String company) {
+        GTMDemoIntake.Submission input = submission(key, email);
+        input.createContact = true; input.company = company; input.source = 'hollis-website'; return input;
+    }
+
     private static User integration() { return [SELECT Id FROM User WHERE Alias = 'demoin' LIMIT 1]; }
     private static GTMDemoIntake.Submission submission(String key, String email) {
         GTMDemoIntake.Submission input = new GTMDemoIntake.Submission();

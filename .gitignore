@@ -48,3 +48,7 @@ next-env.d.ts
 /analytics/logs/
 /analytics/target/
 /analytics/dbt_packages/
+
+# Hollis Worker build output
+/hollis/.runtime/
+/hollis/.wrangler/

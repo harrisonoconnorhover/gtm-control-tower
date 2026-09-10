@@ -2,40 +2,34 @@
 
 ## Finished
 
-- Connected the inbound form to the project's Salesforce development org; choose **Use Salesforce** from the lab.
-- Added Salesforce intake records, Contact/unconverted Lead matching, owner preservation, follow-up tasks, last-request timestamps, and desktop/mobile notification requests.
-- Added request-ID reconciliation and an email lock so retries reuse activity and competing submissions share one person.
-- Updated practice mode to create activity per genuine submission; older local traces are retained without invented tasks.
-- Added portable metadata, setup guidance, and a repeatable live proof script with saved request IDs.
+- Built Hollis Consulting's public website with original imagery, service and approach content, privacy notice, and the five-field demo form.
+- Extended Control Tower's Salesforce intake to create/reuse linked Accounts and Contacts, convert suitable existing Leads, and preserve ownership.
+- Added domain locking, owner review tasks for ambiguity, and retry-safe follow-up activity while preserving the existing operator intake.
+- Added a public Cloudflare entry point with automatic Salesforce session renewal and server-only credentials.
 
 ## Try It
 
-Refresh `http://127.0.0.1:4176/#inbound-lab`, choose **Use Salesforce**, and submit the fictional Elena Foster preset. Open the person and task from the receipt. **Retry same request** keeps the task; **Start a new submission** creates fresh activity for the same person.
-
-For another checkout: deploy `salesforce/manifests/demo-intake.xml`, assign `GTM_Demo_Intake_Integration`, configure the existing Salesforce connection, then run `npm run dev`. See `docs/salesforce-demo-intake.md`.
+Local preview: `http://127.0.0.1:4192/` (static preview only). The public release and native submission proof are in progress. Deployment instructions: `docs/hollis-consulting.md`.
 
 ## Checks
 
-- Salesforce deployment succeeded: 29 components; 10 Apex tests passed, with 169/169 executable service locations covered.
-- Live app-to-Salesforce proof: six request records, six tasks, three people; existing Contact preserved, two new Leads, repeated request reused its task, concurrent requests shared one Lead. Salesforce accepted six notifications.
-- `npm test`: 93 tests passed across 18 files.
-- TypeScript, repository lint, public build, and Sites full build passed. Local root and intake health returned HTTP 200. Secret, diff, and company-reference checks passed.
-- Live request IDs and native read-back receipts are in ignored `.runtime/demo-intake-proof.json`; no device-delivery or browser-interaction test was performed.
+- Salesforce deployment: 31 components, 17 Apex tests passed.
+- All 101 application tests passed, including public intake boundaries and existing operator behavior.
+- TypeScript and syntax checks passed. Full Sites build and Cloudflare Worker dry-run passed.
+- Secret scan passed; lint's default-export warning was fixed and focused lint passed.
 
 ## Decisions
 
-- Salesforce Apex owns the transaction and email lock; credentials stay on the server behind the existing operator boundary.
-- Each genuine submission gets activity. Changed input cannot reuse an old request ID. Notification retries preserve the task.
-- Existing queue/inactive ownership is held. New Leads initially belong to the connected integration user; the simulated rep pools do not route real Salesforce records.
+- Publish a dedicated Worker in the user's Cloudflare account; preserve existing Pages projects and the private operator app.
+- Require company name/domain agreement for existing Accounts; do not invent websites, territories, or tiers.
+- New Accounts use the integration owner. Held matches require human review in Salesforce.
 
 ## Remaining
 
-- Public site publication still awaits the earlier approval; the static showcase remains practice-only.
-- A production integration account needs appropriate CRM record access and `CONTROL_TOWER_SYNC_KEY`; this is not an anonymous public intake endpoint.
-- The development proof leaves its fictional records and tasks for inspection. Notification acceptance does not prove human reading or device delivery.
+- Publish the configured Worker and verify public submissions against native Salesforce records.
 
 ## Review First
 
-- `salesforce/force-app/main/default/classes/GTMDemoIntake.cls` and its tests.
-- `app/api/control-tower/demo-intake/route.ts` and `components/salesforce-demo-intake.tsx`.
-- `docs/salesforce-demo-intake.md`.
+- `hollis/worker.ts` and `hollis/site/index.html`.
+- `salesforce/force-app/main/default/classes/GTMDemoIntake.cls`.
+- `docs/hollis-consulting.md`.

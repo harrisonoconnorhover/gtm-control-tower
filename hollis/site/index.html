@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hollis Consulting | Turn ambition into action</title>
+  <meta name="description" content="Practical consulting for growing businesses. Connect your strategy, revenue operations, and customer systems with Hollis Consulting.">
+  <meta name="theme-color" content="#171c22">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="/style.css">
+  <script src="/form.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="header wrap">
+  <a class="brand" href="/" aria-label="Hollis Consulting home">hollis<span>CONSULTING</span></a>
+  <nav aria-label="Main navigation"><a href="#services">What we do</a><a href="#approach">How we work</a><a class="button small" href="#demo">Request a demo <span aria-hidden="true">↗</span></a></nav>
+</header>
+<main id="main">
+<section class="hero wrap" aria-labelledby="hero-title">
+  <div class="hero-copy">
+    <p class="eyebrow">CLARITY. DIRECTION. PROGRESS.</p>
+    <h1 id="hero-title">Turn ambition<br>into <em>action.</em></h1>
+    <p class="lead">Good strategy should move your business forward. We connect the plans, people, and systems that make it happen.</p>
+    <a class="button" href="#demo">Let's talk about what's next <span aria-hidden="true">↗</span></a>
+    <p class="hero-note">Practical advice. Hands-on implementation.</p>
+  </div>
+  <div class="hero-image"><img src="/assets/architecture.jpg" alt="A sunlit concrete stairway opening toward a bright blue sky" width="1536" height="1024" fetchpriority="high"><span class="image-caption">A clearer way forward.</span></div>
+</section>
+<div class="focus-line"><div class="wrap">BUSINESS STRATEGY <span aria-hidden="true">/</span> REVENUE OPERATIONS <span aria-hidden="true">/</span> CUSTOMER SYSTEMS</div></div>
+<section id="services" class="services light">
+ <div class="wrap services-grid"><div class="section-intro"><p class="eyebrow">WHAT WE DO</p><h2>Big picture.<br>Real-world<br><em>execution.</em></h2><p>Growth gets complicated. We help you find what matters, fix what gets in the way, and build a better way to work.</p></div>
+ <div class="service-list">
+  <article><span class="index">01</span><div><h3>Strategy with a next step</h3><p>Turn business priorities into a focused roadmap. Define the work, the owners, and the measures that keep everyone moving in the same direction.</p><p class="service-detail">Operating plans · Process design · Performance measures</p></div></article>
+  <article><span class="index">02</span><div><h3>A connected revenue engine</h3><p>Bring marketing, sales, and customer teams together. Make lead handoffs clearer, account ownership easier to follow, and pipeline reporting more useful.</p><p class="service-detail">Lead routing · Sales workflows · Revenue reporting</p></div></article>
+  <article><span class="index">03</span><div><h3>Systems that work together</h3><p>Make your CRM a useful part of the working day. Connect your tools, improve the quality of your data, and automate the repetitive work.</p><p class="service-detail">CRM design · Integrations · Data quality & automation</p></div></article>
+ </div></div>
+</section>
+<section id="approach" class="approach">
+ <div class="wrap"><div class="approach-heading"><p class="eyebrow">HOW WE WORK</p><h2>Less distance between<br>the idea and the impact.</h2></div>
+ <div class="steps"><article><p class="step-number">01 / UNDERSTAND</p><h3>Start with the real problem.</h3><p>We look at how your business works today, listen to the people doing the work, and agree on what a useful outcome looks like.</p></article><article><p class="step-number">02 / BUILD</p><h3>Make progress tangible.</h3><p>We turn the plan into working processes and systems, starting with a focused change your team can use and evaluate.</p></article><article><p class="step-number">03 / IMPROVE</p><h3>Make the change stick.</h3><p>We test what works, document the decisions, and help your team take ownership of the next step.</p></article></div></div>
+</section>
+<section id="demo" class="demo wrap" aria-labelledby="demo-title">
+ <div class="demo-copy"><p class="eyebrow">LET'S GET TO WORK</p><h2 id="demo-title">Your next move<br>starts <em>here.</em></h2><p>Tell us a little about yourself. We'll follow up to discuss your priorities and show you how a more connected workflow could work for your business.</p><div class="expect"><h3>A useful first conversation.</h3><p>We'll talk through your current process, the friction you're seeing, and where a focused improvement could help.</p></div></div>
+ <form id="demo-form" action="/api/demo-request" method="post">
+  <h3>Request a demo</h3><p class="form-note">All fields are required except phone number.</p>
+  <div class="form-row"><div class="field"><label for="firstName">First Name</label><input id="firstName" name="firstName" autocomplete="given-name" maxlength="40" required></div><div class="field"><label for="lastName">Last Name</label><input id="lastName" name="lastName" autocomplete="family-name" maxlength="80" required></div></div>
+  <div class="field"><label for="email">Business Email</label><input id="email" name="email" type="email" autocomplete="email" maxlength="80" required></div>
+  <div class="form-row"><div class="field"><label for="phone">Phone Number <span class="optional">(optional)</span></label><input id="phone" name="phone" type="tel" autocomplete="tel" maxlength="40" placeholder="+1 (555) 123-4567"></div><div class="field"><label for="company">Company Name</label><input id="company" name="company" autocomplete="organization" maxlength="255" required></div></div>
+  <div class="trap" aria-hidden="true"><label for="website">Leave this field empty</label><input id="website" name="website" tabindex="-1" autocomplete="off"></div>
+  <p class="privacy-note">Hollis Consulting uses these details to respond to your request and discuss relevant services. See our <a href="/privacy">Privacy Notice</a> for how we handle your information.</p>
+  <button class="button" type="submit">Request a demo <span aria-hidden="true">↗</span></button>
+  <p id="form-status" class="form-status" role="status" aria-live="polite"></p>
+  <noscript><p>Enable JavaScript to send this form securely.</p></noscript>
+ </form>
+</section>
+</main>
+<footer class="footer wrap"><a class="brand" href="/">hollis<span>CONSULTING</span></a><p>Clear thinking. Practical progress.</p><div><a href="/privacy">Privacy</a><span>© 2026 Hollis Consulting</span></div></footer>
+</body></html>

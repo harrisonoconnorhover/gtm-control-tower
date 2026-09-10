@@ -1,0 +1,2 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata"><fullName>GTM_Intake_Domain__c</fullName><description>Business email domain used by GTM Control Tower for intake identity; not an independently verified website.</description><label>GTM Intake Email Domain</label><length>255</length><type>Text</type><externalId>true</externalId><unique>true</unique><caseSensitive>false</caseSensitive></CustomField>

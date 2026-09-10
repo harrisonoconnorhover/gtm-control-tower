@@ -244,3 +244,24 @@ belong to the connected integration user; this pilot does not silently apply the
 practice rep pools to Salesforce. Production operator access uses the existing
 Control Tower key boundary. Salesforce credentials remain server-side. Public
 static hosting continues to provide practice mode only.
+
+## Hollis adds a public Account-and-Contact intake
+
+Hollis Consulting is a distinct public Worker on the owner's Cloudflare account.
+It shares Control Tower's submission contract and Salesforce transaction, rather
+than exposing the operator app. The existing operator defaults and receipt hashes
+stay compatible; a server-selected `createContact` mode adds Account/Contact
+creation and native Lead conversion for Hollis.
+
+Existing contact identity wins; new company matching requires agreement between
+company name and business email domain. Conflicts are held. New Account websites,
+company sizes, regions, and tiers are left unset because the form supplies no
+verified evidence for them. New Accounts belong to the integration user; existing
+owners are preserved. A domain lock prevents two simultaneous people from
+creating two company records through this intake.
+
+Long-lived authorization stays in Cloudflare secrets with automatic access-token
+renewal. Only public assets and a bounded anonymous submission endpoint are
+published. The 5-per-minute IP limit and same-origin checks address this form's
+spam and cross-site submission exposure without adding a new database or operator
+login to the marketing site. Details are in `docs/hollis-consulting.md`.

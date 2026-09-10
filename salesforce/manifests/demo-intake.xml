@@ -2,7 +2,7 @@
 <Package xmlns="http://soap.sforce.com/2006/04/metadata">
     <types><members>GTMDemoIntake</members><members>GTMDemoIntakeTest</members><name>ApexClass</name></types>
     <types><members>GTM_Demo_Request__c</members><members>GTM_Demo_Identity__c</members><name>CustomObject</name></types>
-    <types><members>Lead.GTM_Last_Demo_Requested_At__c</members><members>Contact.GTM_Last_Demo_Requested_At__c</members><name>CustomField</name></types>
+    <types><members>Account.GTM_Intake_Domain__c</members><members>Lead.GTM_Last_Demo_Requested_At__c</members><members>Contact.GTM_Last_Demo_Requested_At__c</members><name>CustomField</name></types>
     <types><members>GTM_Demo_Request</members><name>CustomNotificationType</name></types>
     <types><members>GTM_Submit_Demo_Requests</members><name>CustomPermission</name></types>
     <types><members>GTM_Demo_Intake_Integration</members><name>PermissionSet</name></types>

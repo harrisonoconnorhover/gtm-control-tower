@@ -13,6 +13,7 @@ global with sharing class GTMDemoIntake {
         global String company;
         global String source;
         global String campaign;
+        global Boolean createContact;
     }
 
     global class Receipt {
@@ -28,6 +29,7 @@ global with sharing class GTMDemoIntake {
         global String taskId;
         global String notificationStatus;
         global Boolean reusedRequest;
+        global Id accountId;
     }
 
     @HttpGet
@@ -36,7 +38,7 @@ global with sharing class GTMDemoIntake {
             respond(403, new Map<String, Object>{'error' => 'The integration needs Submit Demo Requests permission.'});
             return;
         }
-        respond(200, new Map<String, Object>{'ready' => true, 'version' => 1});
+        respond(200, new Map<String, Object>{'ready' => true, 'version' => 2});
     }
 
     @HttpPost
@@ -77,12 +79,15 @@ global with sharing class GTMDemoIntake {
         ];
         if (identities.isEmpty()) insert as user new GTM_Demo_Identity__c(Email_Key__c = emailKey);
 
-        String payloadHash = digest(JSON.serialize(new List<String>{
+        List<String> hashFields = new List<String>{
             input.firstName, input.lastName, input.email, input.phone, input.company, input.source, input.campaign
-        }));
+        };
+        // Keep existing operator request hashes valid after this compatible extension.
+        if (input.createContact == true) hashFields.add('account-contact-v1');
+        String payloadHash = digest(JSON.serialize(hashFields));
         List<GTM_Demo_Request__c> requests = [
             SELECT Id, Request_Key__c, Payload_Hash__c, Status__c, Reason__c, Lead__c, Contact__c,
-                Person_Type__c, New_Person__c, Task_Id__c, Notification_Status__c, Follow_Up_Owner__c,
+                Person_Type__c, New_Person__c, Account__c, Task_Id__c, Notification_Status__c, Follow_Up_Owner__c,
                 Received_At__c, First_Name__c, Last_Name__c, Email__c, Company__c, Source__c, Campaign__c
             FROM GTM_Demo_Request__c WHERE Request_Key__c = :input.requestId WITH USER_MODE LIMIT 1 FOR UPDATE
         ];
@@ -94,7 +99,7 @@ global with sharing class GTMDemoIntake {
                 throw new ConflictingRequestException('This request ID already belongs to different form details. Start a new submission.');
             }
             if (request.Status__c == 'Routed') return receipt(request, true);
-            if (request.Task_Id__c != null) {
+            if (request.Task_Id__c != null && request.Status__c != 'Held') {
                 notifyOwner(request);
                 return receipt(request, true);
             }
@@ -110,25 +115,61 @@ global with sharing class GTMDemoIntake {
         }
 
         List<Contact> contacts = [
-            SELECT Id, OwnerId, GTM_Last_Demo_Requested_At__c FROM Contact
+            SELECT Id, OwnerId, AccountId, GTM_Last_Demo_Requested_At__c FROM Contact
             WHERE Email = :input.email WITH USER_MODE LIMIT 2 FOR UPDATE
         ];
         List<Lead> leads = [
-            SELECT Id, OwnerId, GTM_Last_Demo_Requested_At__c FROM Lead
+            SELECT Id, OwnerId, Company, GTM_Last_Demo_Requested_At__c FROM Lead
             WHERE Email = :input.email AND IsConverted = false WITH USER_MODE LIMIT 2 FOR UPDATE
         ];
         if (contacts.size() + leads.size() > 1) {
             request.Status__c = 'Held';
             request.Reason__c = 'Multiple Contacts or unconverted Leads share this email. Review the matches before creating a person or follow-up.';
+            if (input.createContact == true) return hold(request, reused, request.Reason__c);
             update as user request;
             return receipt(request, reused);
         }
 
+        if (input.createContact == true && (contacts.isEmpty() || contacts[0].AccountId == null)) {
+            if (!leads.isEmpty()) {
+                Id leadOwner = leads[0].OwnerId;
+                List<User> activeOwners = [SELECT Id FROM User WHERE Id = :leadOwner AND IsActive = true WITH USER_MODE];
+                if (activeOwners.isEmpty() || companyKey(leads[0].Company) != companyKey(input.company)) {
+                    return hold(request, reused, 'The existing Lead owner or company needs review before conversion.');
+                }
+            }
+            AccountMatch match = companyAccount(input);
+            if (match.reason != null) return hold(request, reused, match.reason);
+            request.Account__c = match.account.Id;
+            if (!leads.isEmpty()) {
+                Database.LeadConvert conversion = new Database.LeadConvert();
+                conversion.setLeadId(leads[0].Id);
+                conversion.setAccountId(match.account.Id);
+                conversion.setOwnerId(leads[0].OwnerId);
+                conversion.setConvertedStatus([SELECT MasterLabel FROM LeadStatus WHERE IsConverted = true LIMIT 1].MasterLabel);
+                conversion.setDoNotCreateOpportunity(true);
+                Database.LeadConvertResult converted = Database.convertLead(conversion);
+                Id contactId = converted.getContactId();
+                contacts = [SELECT Id, OwnerId, AccountId, GTM_Last_Demo_Requested_At__c FROM Contact WHERE Id = :contactId WITH USER_MODE];
+                leads.clear();
+                request.New_Person__c = true;
+            } else if (contacts.isEmpty()) {
+                Contact person = new Contact(FirstName = input.firstName, LastName = input.lastName,
+                    Email = input.email, Phone = input.phone, AccountId = match.account.Id, OwnerId = match.account.OwnerId);
+                insert as user person;
+                contacts.add(person);
+                request.New_Person__c = true;
+            } else {
+                contacts[0].AccountId = match.account.Id;
+                update as user contacts[0];
+            }
+        }
         Id ownerId;
         Datetime lastRequestAt;
         if (!contacts.isEmpty()) {
             Contact person = contacts[0];
             request.Contact__c = person.Id;
+            request.Account__c = person.AccountId;
             request.Lead__c = null;
             request.Person_Type__c = 'Contact';
             ownerId = person.OwnerId;
@@ -154,19 +195,21 @@ global with sharing class GTMDemoIntake {
         if (owners.isEmpty() || !owners[0].IsActive) {
             request.Status__c = 'Held';
             request.Reason__c = 'The existing owner is a queue or an inactive user. Assign an active follow-up owner in Salesforce and retry.';
+            if (input.createContact == true) return hold(request, reused, request.Reason__c);
             update as user request;
             return receipt(request, reused);
         }
         request.Follow_Up_Owner__c = ownerId;
         Id personId = request.Contact__c != null ? request.Contact__c : request.Lead__c;
         Task followUp = new Task(
+            Id = request.Task_Id__c,
             Subject = 'Demo requested - ' + input.firstName + ' ' + input.lastName,
-            WhoId = personId, OwnerId = ownerId, Status = 'Not Started', Priority = 'High', ActivityDate = Date.today(),
+            WhoId = personId, WhatId = request.Account__c, OwnerId = ownerId, Status = 'Not Started', Priority = 'High', ActivityDate = Date.today(),
             Description = 'Demo form submitted at ' + String.valueOf(request.Received_At__c) + ' UTC.\n' +
                 'Company: ' + input.company + '\nSource: ' + input.source + '\nCampaign: ' + input.campaign +
                 '\nRequest ID: ' + input.requestId
         );
-        insert as user followUp;
+        upsert as user followUp;
         if (failAfterTask) throw new NotificationFailureException('Simulated downstream transaction failure.');
         request.Task_Id__c = followUp.Id;
         // An older held request must not move the "last requested" date backwards.
@@ -180,6 +223,75 @@ global with sharing class GTMDemoIntake {
         update as user request;
         notifyOwner(request);
         return receipt(request, reused);
+    }
+
+    private class AccountMatch { Account account; String reason; }
+
+    private static AccountMatch companyAccount(Submission input) {
+        AccountMatch result = new AccountMatch();
+        String domain = input.email.substringAfter('@');
+        Set<String> personalDomains = new Set<String>{'gmail.com','googlemail.com','yahoo.com','yahoo.co.uk','hotmail.com',
+            'outlook.com','live.com','aol.com','icloud.com','me.com','proton.me','protonmail.com','msn.com','mail.com','gmx.com'};
+        if (personalDomains.contains(domain)) {
+            result.reason = 'A personal email domain cannot identify a company. Review this request before creating or linking an Account.';
+            return result;
+        }
+        // Serialize different people at the same business, as well as same-email retries.
+        String domainKey = digest('account-domain:' + domain);
+        List<GTM_Demo_Identity__c> locks = [SELECT Id FROM GTM_Demo_Identity__c WHERE Email_Key__c = :domainKey WITH USER_MODE LIMIT 1 FOR UPDATE];
+        if (locks.isEmpty()) insert as user new GTM_Demo_Identity__c(Email_Key__c = domainKey);
+        String websitePattern = '%' + domain + '%';
+        List<Account> candidates = [SELECT Id, Name, Website, OwnerId, GTM_Intake_Domain__c FROM Account
+            WHERE GTM_Intake_Domain__c = :domain OR Website LIKE :websitePattern OR Name = :input.company
+            WITH USER_MODE LIMIT 100];
+        List<Account> matches = new List<Account>();
+        Boolean conflict = candidates.size() == 100;
+        for (Account candidate : candidates) {
+            Boolean sameName = companyKey(candidate.Name) == companyKey(input.company);
+            Boolean sameDomain = candidate.GTM_Intake_Domain__c == domain || websiteDomain(candidate.Website) == domain;
+            // A same-name company at another website must never be silently selected.
+            if (sameName && sameDomain) matches.add(candidate);
+            else if (sameName || sameDomain) conflict = true;
+        }
+        if (conflict || matches.size() > 1) {
+            result.reason = 'Company name and email domain do not identify one unambiguous Account. Review the company matches.';
+            return result;
+        }
+        if (matches.size() == 1) {
+            result.account = matches[0];
+            Id accountOwner = result.account.OwnerId;
+            if ([SELECT COUNT() FROM User WHERE Id = :accountOwner AND IsActive = true WITH USER_MODE] != 1) {
+                result.reason = 'The matching Account has an inactive owner. Review ownership before creating a Contact.';
+            }
+        } else {
+            result.account = new Account(Name = input.company, OwnerId = UserInfo.getUserId(), Type = 'Prospect',
+                GTM_Intake_Domain__c = domain,
+                Description = 'Created from a Hollis Consulting demo inquiry through GTM Control Tower. Business email domain: ' + domain +
+                    '. Company name is supplied by the requester; website and company size have not been independently verified.');
+            insert as user result.account;
+        }
+        return result;
+    }
+
+    private static Receipt hold(GTM_Demo_Request__c request, Boolean reused, String reason) {
+        request.Status__c = 'Held'; request.Reason__c = reason;
+        if (request.Task_Id__c == null) {
+            // Triage is assigned to the integration owner, without linking a guessed person.
+            Task review = new Task(Subject = 'Review demo request - ' + request.First_Name__c + ' ' + request.Last_Name__c,
+                OwnerId = UserInfo.getUserId(), Status = 'Not Started', Priority = 'High', ActivityDate = Date.today(),
+                Description = reason + '\nCompany: ' + request.Company__c + '\nEmail: ' + request.Email__c +
+                    '\nDemo Request: ' + URL.getOrgDomainUrl().toExternalForm() + '/' + request.Id);
+            insert as user review;
+            request.Task_Id__c = review.Id;
+            request.Follow_Up_Owner__c = UserInfo.getUserId();
+        }
+        update as user request;
+        return receipt(request, reused);
+    }
+    private static String companyKey(String value) { return clean(value).toLowerCase().replaceAll('\\s+', ' '); }
+    private static String websiteDomain(String value) {
+        String domain = clean(value).toLowerCase().replaceFirst('^https?://', '').substringBefore('/').substringBefore('?').substringBefore('#').substringBefore(':');
+        return domain.startsWith('www.') ? domain.substring(4) : domain;
     }
 
     private static void notifyOwner(GTM_Demo_Request__c request) {
@@ -208,6 +320,7 @@ global with sharing class GTMDemoIntake {
     private static Receipt receipt(GTM_Demo_Request__c request, Boolean reused) {
         Receipt result = new Receipt();
         result.requestId = request.Request_Key__c;
+        result.accountId = request.Account__c;
         result.submissionId = request.Id;
         result.status = request.Status__c;
         result.reason = request.Reason__c;
