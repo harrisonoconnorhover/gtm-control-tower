@@ -805,6 +805,7 @@ export function ControlTowerDashboard() {
           <div className="flex flex-wrap items-center justify-end gap-2">
             <Link href="/" className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 font-mono text-[10px] uppercase tracking-wider text-[#9db1a7] transition hover:border-white/25 hover:text-white">Demo</Link>
             <Link href="/app" className="rounded-full border border-[#83bcff]/20 bg-[#83bcff]/[0.06] px-3 py-2 font-mono text-[10px] uppercase tracking-wider text-[#83bcff] transition hover:border-[#83bcff]/40">Duplicate audit</Link>
+            <Link href="/app/inbound" className="rounded-full border border-[#d8ff67]/20 px-3 py-2 text-sm text-[#d8ff67]">Inbound routing lab</Link>
             <Link href="/setup" className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 font-mono text-[10px] uppercase tracking-wider text-[#9db1a7] transition hover:border-white/25 hover:text-white">Setup</Link>
             <Link href="/runs" className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 font-mono text-[10px] uppercase tracking-wider text-[#9db1a7] transition hover:border-white/25 hover:text-white">Sync runs</Link>
             <a

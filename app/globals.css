@@ -1,5 +1,6 @@
 @import 'tailwindcss';
 @source "../components/public-demo.tsx";
+@source "../components/inbound-lead-lab.tsx";
 
 :root {
   --background: #07130f;

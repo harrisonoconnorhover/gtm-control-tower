@@ -16,6 +16,10 @@ the repository.
 
 ## What it does
 
+- Includes an [Inbound Routing Lab](docs/inbound-routing-lab.md): a working demo
+  request form, 32 fictional requests, account matching, rep assignment, and
+  deliberately broken handoffs with replay. Open `/#inbound-lab` in the showroom
+  or `/app/inbound` when self-hosted; CRM writes and notifications are simulated.
 - Previews any CSV, lets the operator map arbitrary headers, saves reusable
   mapping presets, and diagnoses duplicate
   identity, missing fields, bad email, owner gaps, and lifecycle regression.

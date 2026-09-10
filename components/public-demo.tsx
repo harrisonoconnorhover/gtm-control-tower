@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import {
   previewMessyLeadDemo,
   runMessyLeadDemo,
@@ -8,6 +8,12 @@ import {
 } from '@/lib/messy-lead-demo';
 import type { LiveContactState } from '@/lib/live-control-tower';
 import { InstantCrmAudit } from '@/components/instant-crm-audit';
+import { InboundLeadLab } from '@/components/inbound-lead-lab';
+
+function subscribeNavigation(callback: () => void) {
+  window.addEventListener('hashchange', callback);
+  return () => window.removeEventListener('hashchange', callback);
+}
 
 const steps = [
   { label: 'Ingest', system: 'CSV / Sheets', detail: 'Accept the source exactly as it arrives.' },
@@ -21,6 +27,7 @@ const steps = [
 const preview = previewMessyLeadDemo();
 
 export function PublicDemo() {
+  const inboundLab = useSyncExternalStore(subscribeNavigation, () => window.location.hash === '#inbound-lab', () => false);
   const [stage, setStage] = useState(-1);
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<DemoPipelineResult | null>(null);
@@ -61,6 +68,8 @@ export function PublicDemo() {
     setRunning(true);
   }
 
+  if (inboundLab) return <InboundLeadLab />;
+
   return (
     <main id="top" data-capture-stage={stage} className="min-h-screen overflow-hidden bg-[#06100d] text-[#edf8f2] selection:bg-[#d8ff67] selection:text-[#06100d]">
       <div className="pointer-events-none fixed inset-x-0 top-0 h-[760px] bg-[radial-gradient(circle_at_72%_4%,rgba(205,252,84,0.15),transparent_32%),radial-gradient(circle_at_12%_12%,rgba(49,156,118,0.18),transparent_30%)]" />
@@ -74,6 +83,7 @@ export function PublicDemo() {
             </div>
           </a>
           <nav className="flex flex-wrap items-center gap-2 text-xs" aria-label="Primary navigation">
+            <a href="#inbound-lab" className="rounded-full bg-[#d8ff67]/15 px-4 py-2 font-semibold text-[#d8ff67]">Inbound routing lab</a>
             <a href="#audit" className="rounded-full bg-[#83bcff]/10 px-4 py-2 font-semibold text-[#83bcff]">Audit your CSV</a>
             <a href="#demo" className="rounded-full bg-white/[0.06] px-4 py-2 text-[#dce9e2]">Two-minute demo</a>
             <a href="#salesforce-proof" className="rounded-full border border-[#83bcff]/20 px-4 py-2 font-semibold text-[#83bcff]">Apex proof</a>
