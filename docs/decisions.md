@@ -208,9 +208,9 @@ plan's repeated rollback control.
 
 ## Inbound practice shares the showroom, with simulated destinations
 
-The inbound lab uses the five WPForms field keys observed on MNTN's public demo
-page, with separate fictional enrichment. Downstream integrations were not
-observed, so CRM behavior, ownership rules, and notifications are explicitly
+The inbound lab uses a generic five-field demo request with WPForms-style payload
+keys and separate fictional enrichment. Product copy and documentation stay
+company-neutral. CRM behavior, ownership rules, and notifications are explicitly
 simulated. The same client component serves `/#inbound-lab` in the static
 showroom and `/app/inbound` in the self-hosted app. Browser storage keeps the
 practice session useful without credentials or new infrastructure.
@@ -220,4 +220,4 @@ each complete once per contact. Existing owners take precedence over pool
 capacity. The lab retains attempt payload/context snapshots, including after
 correction. This is a synchronous practice model, not proof of provider semantics
 or a concurrent production queue. See `docs/inbound-routing-lab.md` for the
-observations, policies, limits, and walkthrough.
+schema, policies, limits, and walkthrough.

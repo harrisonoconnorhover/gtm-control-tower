@@ -1,8 +1,8 @@
 # Inbound Routing Lab
 
-A working, browser-local practice flow inspired by the public fields on MNTN's
-demo form. Every CRM record, account, rep, notification, and routing rule in this
-lab is simulated. It does not send requests to MNTN or use their private systems.
+A working, browser-local practice flow for demo requests and lead routing. Every
+CRM record, account, rep, notification, and routing rule in this lab is simulated.
+The lab uses fictional details and keeps the practice session in the browser.
 
 ## Open and practice
 
@@ -37,42 +37,27 @@ synthetic CRM state, payloads, enrichment, and each attempt. **Reset practice**
 clears the session and restores the starting account/rep pool. This is a practice
 session, not a durable shared queue; multiple tabs do not coordinate writes.
 
-## What Chrome inspection established
+## Practice form schema
 
-Read-only inspection of [MNTN's request-demo page](https://mountain.com/request-demo/)
-on September 10, 2026 found:
+The lab models a five-field demo request using WPForms-style payload keys.
+These keys are a concrete mapping exercise; no form service is connected.
 
-| Evidence | Observed value |
-| --- | --- |
-| Visible form | `wpforms-form-91088` |
-| Form classes | `wpforms-validate wpforms-form wpforms-ajax-form` |
-| Form action / method | `/request-demo/` / `post` |
-| AJAX configuration | `https://mountain.com/wp-admin/admin-ajax.php` |
-| First name | `wpforms[fields][10]`, required |
-| Last name | `wpforms[fields][11]`, required |
-| Business email | `wpforms[fields][3]`, required |
-| Phone | `wpforms[fields][4]`, optional; visible telephone input uses a `wpf-temp-` prefix |
-| Company | `wpforms[fields][5]`, required |
+| Field | Practice payload key | Required |
+| --- | --- | --- |
+| First name | `wpforms[fields][10]` | Yes |
+| Last name | `wpforms[fields][11]` | Yes |
+| Business email | `wpforms[fields][3]` | Yes |
+| Phone | `wpforms[fields][4]` | No |
+| Company | `wpforms[fields][5]` | Yes |
 
-Loaded assets included WPForms frontend JavaScript at
-`/wp-content/plugins/wpforms/assets/js/frontend/wpforms.min.js?ver=2.0.1.1`,
-WPForms phone support and intlTelInput, and WordPress theme scripts.
-Marketo Forms 2 also loaded from
-`https://pages.mountain.com/js/forms2/js/forms2.min.js`, together with a
-FormsPlus script. That establishes script presence, not that this visible form
-submits to Marketo.
-
-Hidden inputs included additional numbered fields and page/referrer metadata.
-Their business meanings were not established. We did not submit the form or
-observe a submission response. The server-side integration, any CRM mapping,
-LeanData involvement, deduplication, routing rules, and downstream outcomes remain
-unverified. WordPress's configured AJAX URL is not a captured submission receipt.
+Region, media budget, source, and campaign are added as separate synthetic
+context. The lab's routing decisions and recovery behavior use this context.
 
 ## Lab policy and scope
 
 `Capture → map → match → choose owner → CRM upsert → assign → notify`
 
-- The numeric field mapping follows the observed form. Region, monthly media
+- The numeric field mapping follows the practice schema above. Region, monthly media
   budget, source, and campaign are separate synthetic context added by this lab.
 - Exact normalized email identifies a contact. Exact business domain identifies
   an existing account. Conflicting known company/domain evidence is held.
@@ -91,9 +76,8 @@ unverified. WordPress's configured AJAX URL is not a captured submission receipt
   exists, changing its email through correction is refused to prevent creating a
   second identity during recovery.
 
-These are practice rules, not MNTN policies or a LeanData implementation. Real
-integration work would replace the local CRM and notification steps with provider
-reads/writes, documented identity and notification policies, and durable request
+These rules belong to the practice lab. Real integration work would replace the
+local CRM and notification steps with provider reads/writes, documented identity and notification policies, and durable request
 storage. Those are outside this slice. No deliverability or vendor API behavior
 has been demonstrated here.
 
