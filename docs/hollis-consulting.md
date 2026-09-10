@@ -11,7 +11,7 @@ The implementation builds on the **build for MNTN** task's connected intake
 business email, phone number, and company name. Hollis uses those five fields;
 phone is optional and accepts an international number. The public copy contains
 no claimed clients, testimonials, invented results, or third-party branding.
-The architectural hero is an original generated image, not a client location.
+The hero uses a licensed photograph of workflow planning. It does not depict Hollis staff or a client; source and license are recorded in `hollis/ASSETS.md`.
 
 ## Record behavior
 

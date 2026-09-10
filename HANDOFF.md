@@ -2,10 +2,10 @@
 
 ## Finished
 
-- Published [Hollis Consulting](https://hollis-consulting.harrisonoconnorhoover.workers.dev) in Harrison's Cloudflare account, with original imagery, consulting content, privacy notice, and the five-field demo form.
-- Connected the public form to GTM Control Tower's Salesforce transaction: linked Account/Contact creation, exact identity matching, owner preservation, and native Lead conversion.
-- Added follow-up tasks, owner notifications, and review tasks for ambiguous company matches. Request retries reuse activity.
-- Configured server-only Salesforce authorization with automatic session renewal; existing Pages projects and the private operator app remain intact.
+- Published the refreshed [Hollis Consulting](https://hollis-consulting.harrisonoconnorhoover.workers.dev) in Harrison's Cloudflare account.
+- Replaced the generated staircase with licensed workflow-planning photography; source and license are in `hollis/ASSETS.md`.
+- Made the copy specific to revenue operations and CRM, reduced oversized headings and spacing, and removed pill shapes, captions, slogans, and decorative arrows.
+- Preserved the five-field form, validation, and existing Salesforce Account/Contact matching, Lead conversion, follow-up tasks, and owner notifications.
 
 ## Try It
 
@@ -17,17 +17,16 @@ Deployment and matching rules: `docs/hollis-consulting.md`.
 
 ## Checks
 
-- Submitted the published form in a browser; its success reference matched native Salesforce Account, Contact, Demo Request, and Task records.
-- Seven genuine live requests produced seven distinct tasks: six routed requests and one ambiguity review. Same-request replay reused its task; a new submission reused its Contact; a colleague reused its Account; Guesty's known website matched correctly.
-- Concurrent new-company requests produced one Account, two Contacts, and two Tasks after a same-ID retry resolved the initial collision. Native records and links were read back; details are in ignored `.runtime/hollis-live-proof.json`.
-- 101 application tests and 17 Apex tests passed. TypeScript, lint, syntax, full Sites build, Worker build/deployment, secret scan, and diff checks passed.
-- Public pages/assets returned 200; private API, environment file, and missing-page requests returned 404. Salesforce accepted owner notifications; device delivery was not tested.
+- Current refresh: CSS syntax, local asset/anchor references, duplicate-ID checks, and unchanged form control/validation attributes passed. Worker and form JavaScript match the prior release exactly.
+- Worker dry run and deployment passed. Live home page, stylesheet, photograph, privacy page, and form JavaScript return 200 and match local files byte for byte; old staircase URL returns 404. Diff checks passed.
+- Cloudflare version: `d2fc3e06-ef71-443c-af00-a694883da0b0`.
+- Prior functional release: 101 application tests and 17 Apex tests passed; seven live requests produced seven tasks, including ambiguity review. Native identity matching, replay, conversion, and concurrency records were read back in `.runtime/hollis-live-proof.json`. Those tests were not rerun for this static refresh. Notification device delivery remains untested.
 
 ## Decisions
 
-- Require company name/domain agreement to reuse Accounts; preserve existing Contact identity and ownership.
-- Leave unverified websites, company sizes, tiers, and regions unset. New Accounts belong to the integration user.
-- Keep held inquiries visible through owner review tasks instead of guessing a company match.
+- Applied recurring Reddit critiques selectively; common design patterns are not proof of AI authorship. Sources and rationale are in `docs/decisions.md`.
+- The photograph illustrates the work; it does not depict Hollis staff or a client engagement.
+- Existing identity, ownership, and ambiguity-review behavior stays unchanged. Unverified company metadata remains unset.
 
 ## Remaining
 
@@ -36,6 +35,6 @@ Deployment and matching rules: `docs/hollis-consulting.md`.
 
 ## Review First
 
-- `hollis/site/index.html` and `hollis/worker.ts`.
-- `salesforce/force-app/main/default/classes/GTMDemoIntake.cls`.
-- `docs/hollis-consulting.md` and the live Salesforce links above.
+- The live home page, `hollis/site/index.html`, and `hollis/site/style.css`.
+- `hollis/ASSETS.md` and the design rationale in `docs/decisions.md`.
+- `docs/hollis-consulting.md` and the native Salesforce links above.

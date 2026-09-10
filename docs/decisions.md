@@ -265,3 +265,18 @@ renewal. Only public assets and a bounded anonymous submission endpoint are
 published. The 5-per-minute IP limit and same-origin checks address this form's
 spam and cross-site submission exposure without adding a new database or operator
 login to the marketing site. Details are in `docs/hollis-consulting.md`.
+
+## Hollis design uses specific copy and restrained decoration
+
+The September 10 revision replaces the generated staircase metaphor with real
+workflow-planning photography. Headlines now name the service and practical
+work. We removed the floating image caption, promotional eyebrows, repeated
+slogans, decorative arrows, exaggerated corner radii, and the duplicate service
+strip. Process steps use an ordered list, secondary text is larger, and section
+spacing is tighter. The charcoal/cyan palette and familiar demo form remain.
+
+This is a limited application of recurring comments in
+[r/web_design](https://www.reddit.com/r/web_design/comments/1uzascg/every_vibecoded_websites_looks_the_same/)
+and [r/UX_Design](https://www.reddit.com/r/UX_Design/comments/1v3tghy/what_gives_away_a_website_as_fully_vibecoded/),
+not a rule that any one color, font, or layout proves AI authorship. Neither
+Salesforce behavior nor the public submission contract changes in this revision.
