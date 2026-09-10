@@ -15,18 +15,24 @@ The hero uses a licensed photograph of workflow planning. It does not depict Hol
 
 ## Record behavior
 
-- One exact email match reuses its Contact and Account, preserving ownership and
-  existing fields. Two or more Contact/unconverted Lead matches are held.
+- One exact email match reuses its Contact and Account, preserving existing
+  Contact ownership and fields. For public inquiries, the current Account owner
+  receives the follow-up task, even when a Contact still has its previous owner.
+  Two or more Contact/unconverted Lead matches are held.
 - For an unknown person, both company name (trimmed, case-insensitive, repeated
   spaces collapsed) and the exact business email domain must agree with an
   existing Account's website or intake domain. Website paths and `www.` are
-  removed. Similar names, conflicting domains, shared domains with different
-  names, or duplicate candidates are held rather than guessed.
+  removed. One exact name-and-domain match can resolve a shared-domain business
+  unit. A name or domain alone, an unknown business unit, duplicate exact matches,
+  or a truncated candidate search is held rather than guessed.
 - Otherwise, the transaction creates one Prospect Account and a linked Contact.
   The intake domain is labeled as requester-supplied identity evidence; it does
   **not** populate an unverified Website, employee count, tier, or region.
-- A single existing Lead with a matching company and active user owner is
-  converted to the selected Account and a Contact, without an Opportunity.
+- A single existing Lead with a matching company is converted to the selected
+  Account and a Contact, without an Opportunity. A queue-owned marketing Lead
+  can use the matched Account's active owner. Without a known Account or active
+  Lead owner, it waits for review; supplying trusted CRM company data and replaying
+  the same request resumes conversion. Original marketing fields stay intact.
 - A second person at the same company reuses the Account. Domain and email locks
   serialize submissions. Each genuine request creates one Task, linked to both
   Account and Contact, and requests an owner notification. Retrying the same ID
@@ -34,8 +40,19 @@ The hero uses a licensed photograph of workflow planning. It does not depict Hol
 - Common personal email domains and uncertain matches are saved as Held Demo
   Requests with a high-priority owner task for manual review. They do not silently create a company. Correct the
   Salesforce data and replay the same request to re-evaluate a held match; its review task becomes the matched follow-up task.
-- New Accounts use the integration user's ownership. The form has no territory
-  or tier data; it does not guess assignments to the practice AE roster.
+- New Accounts retain an existing active Lead owner when present; otherwise they
+  use the integration user. The form has no territory or tier data and does not
+  guess assignments to the AE roster. Known Account ownership supplies the routing
+  context. Each request records its routing decision and includes it on the task.
+- The Worker makes one automatic recovery attempt after a network failure or
+  HTTP 502/503/504, preserving the payload and request ID. Changed-payload conflicts
+  and CRM throttling are not retried automatically. A prolonged outage still
+  needs a form retry; this is not a durable background delivery queue.
+
+## Interview scenarios
+
+See [the routing walkthrough](hollis-routing-scenarios.md) for repeatable company,
+person, and ownership fixtures plus the native Salesforce verification script.
 
 ## Hosting and authentication
 

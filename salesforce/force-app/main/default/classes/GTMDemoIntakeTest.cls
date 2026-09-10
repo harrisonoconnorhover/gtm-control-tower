@@ -327,6 +327,110 @@ private class GTMDemoIntakeTest {
         input.createContact = true; input.company = company; input.source = 'hollis-website'; return input;
     }
 
+    @IsTest
+    static void queuedMarketingLeadUsesKnownAccountOwner() {
+        Account account = new Account(Name = 'Cedar Analytics', Website = 'https://cedar.example', OwnerId = UserInfo.getUserId()); insert account;
+        Id queueId = [SELECT Id FROM Group WHERE DeveloperName = 'Demo_Test_Queue'].Id;
+        Lead person = new Lead(FirstName = 'Morgan', LastName = 'Reed', Company = account.Name,
+            Email = 'morgan@cedar.example', OwnerId = queueId, LeadSource = 'Trade Show', Description = 'Original marketing context');
+        insert person;
+        System.runAs(integration()) {
+            GTMDemoIntake.Submission input = publicSubmission('queue-account-000001', person.Email, account.Name);
+            GTMDemoIntake.Receipt result = GTMDemoIntake.process(input);
+            System.assertEquals('Routed', result.status);
+            System.assertEquals(account.OwnerId, result.ownerId);
+            System.assertEquals(account.Id, result.accountId);
+            Lead converted = [SELECT IsConverted, ConvertedContactId, LeadSource, Description FROM Lead WHERE Id = :person.Id];
+            System.assertEquals(true, converted.IsConverted);
+            System.assertEquals(result.personId, converted.ConvertedContactId);
+            System.assertEquals('Trade Show', converted.LeadSource);
+            System.assertEquals('Original marketing context', converted.Description);
+            System.assertEquals(result.taskId, GTMDemoIntake.process(input).taskId);
+            System.assertEquals(1, [SELECT COUNT() FROM Contact]);
+            System.assertEquals(1, [SELECT COUNT() FROM Account]);
+            System.assertEquals(0, [SELECT COUNT() FROM Opportunity]);
+            System.assert(result.routingDetail.contains('existing marketing Lead'));
+        }
+    }
+
+    @IsTest
+    static void queuedUnknownCompanyWaitsForEnrichmentAndReusesReviewTask() {
+        Id queueId = [SELECT Id FROM Group WHERE DeveloperName = 'Demo_Test_Queue'].Id;
+        Lead person = new Lead(LastName = 'Reed', Company = 'Cedar Analytics', Email = 'waiting@cedar.example', OwnerId = queueId); insert person;
+        System.runAs(integration()) {
+            GTMDemoIntake.Submission input = publicSubmission('queue-enrichment-001', person.Email, person.Company);
+            GTMDemoIntake.Receipt held = GTMDemoIntake.process(input);
+            System.assertEquals('Held', held.status);
+            System.assertEquals(0, [SELECT COUNT() FROM Account]);
+            System.assertEquals(0, [SELECT COUNT() FROM Contact]);
+            System.assertEquals(false, [SELECT IsConverted FROM Lead WHERE Id = :person.Id].IsConverted);
+            // A trusted marketing/RevOps update supplies the verified business and owner.
+            Account enriched = new Account(Name = person.Company, Website = 'https://cedar.example'); insert enriched;
+            GTMDemoIntake.Receipt resumed = GTMDemoIntake.process(input);
+            System.assertEquals('Routed', resumed.status);
+            System.assertEquals(held.taskId, resumed.taskId);
+            System.assertEquals(enriched.Id, resumed.accountId);
+            System.assertEquals(1, [SELECT COUNT() FROM Task]);
+        }
+    }
+
+    @IsTest
+    static void accountHandoffWinsWithoutOverwritingContactOrFirstTouch() {
+        Account account = new Account(Name = 'Cedar Analytics', Website = 'https://cedar.example', OwnerId = UserInfo.getUserId()); insert account;
+        Id priorOwner = integration().Id;
+        Contact person = new Contact(FirstName = 'Priya', LastName = 'Shah', Email = 'priya@cedar.example',
+            AccountId = account.Id, OwnerId = priorOwner, LeadSource = 'Partner Referral', Phone = '555-0105'); insert person;
+        System.runAs(integration()) {
+            GTMDemoIntake.Submission input = publicSubmission('account-handoff-0001', person.Email, account.Name);
+            GTMDemoIntake.Receipt first = GTMDemoIntake.process(input);
+            System.assertEquals(account.OwnerId, first.ownerId);
+            Contact after = [SELECT OwnerId, LeadSource, Phone FROM Contact WHERE Id = :person.Id];
+            System.assertEquals(priorOwner, after.OwnerId);
+            System.assertEquals('Partner Referral', after.LeadSource);
+            System.assertEquals('555-0105', after.Phone);
+            System.assertEquals(account.OwnerId, [SELECT OwnerId FROM Task WHERE Id = :first.taskId].OwnerId);
+            System.assert(first.routingDetail.contains('current Account owner'));
+            input.requestId = 'account-handoff-0002'; input.campaign = 'returning-demo';
+            GTMDemoIntake.Receipt again = GTMDemoIntake.process(input);
+            System.assertEquals(first.personId, again.personId);
+            System.assertNotEquals(first.taskId, again.taskId);
+            System.assertEquals('returning-demo', [SELECT Campaign__c FROM GTM_Demo_Request__c WHERE Id = :again.submissionId].Campaign__c);
+        }
+    }
+
+    @IsTest
+    static void sharedDomainUsesExactBusinessUnitAndHoldsUnknownUnit() {
+        Account analytics = new Account(Name = 'Cedar Analytics', Website = 'https://cedar.example'); insert analytics;
+        insert new Account(Name = 'Cedar Payments', Website = 'https://www.cedar.example/payments');
+        insert new Account(Name = 'Cedar Analytics', Website = 'https://unrelated.example');
+        System.runAs(integration()) {
+            GTMDemoIntake.Receipt matched = GTMDemoIntake.process(publicSubmission('business-unit-000001', 'devon@cedar.example', 'cedar analytics'));
+            System.assertEquals('Routed', matched.status);
+            System.assertEquals(analytics.Id, matched.accountId);
+            GTMDemoIntake.Receipt unknown = GTMDemoIntake.process(publicSubmission('business-unit-000002', 'sam@cedar.example', 'Cedar Group'));
+            System.assertEquals('Held', unknown.status);
+            System.assertEquals(null, unknown.accountId);
+            System.assertEquals(3, [SELECT COUNT() FROM Account]);
+            System.assertEquals(1, [SELECT COUNT() FROM Contact]);
+        }
+    }
+
+    @IsTest
+    static void publicCrossObjectCollisionHasOneReviewTaskAndNoNewPerson() {
+        insert new Lead(FirstName = 'Alex', LastName = 'Rivera', Company = 'Cedar Analytics', Email = 'shared@cedar.example');
+        insert new Contact(FirstName = 'Casey', LastName = 'Morgan', Email = 'shared@cedar.example');
+        System.runAs(integration()) {
+            GTMDemoIntake.Submission input = publicSubmission('cross-object-000001', 'shared@cedar.example', 'Cedar Analytics');
+            GTMDemoIntake.Receipt held = GTMDemoIntake.process(input);
+            System.assertEquals('Held', held.status);
+            System.assertEquals(held.taskId, GTMDemoIntake.process(input).taskId);
+            System.assertEquals(1, [SELECT COUNT() FROM Task]);
+            System.assertEquals(1, [SELECT COUNT() FROM Contact]);
+            System.assertEquals(1, [SELECT COUNT() FROM Lead]);
+            System.assertEquals(0, [SELECT COUNT() FROM Account]);
+        }
+    }
+
     private static User integration() { return [SELECT Id FROM User WHERE Alias = 'demoin' LIMIT 1]; }
     private static GTMDemoIntake.Submission submission(String key, String email) {
         GTMDemoIntake.Submission input = new GTMDemoIntake.Submission();

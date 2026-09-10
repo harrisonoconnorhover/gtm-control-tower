@@ -169,6 +169,11 @@
     <field>Contact.AccountId</field>
     <readable>true</readable>
   </fieldPermissions>
+  <fieldPermissions>
+    <editable>true</editable>
+    <field>GTM_Demo_Request__c.Routing_Detail__c</field>
+    <readable>true</readable>
+  </fieldPermissions>
   <hasActivationRequired>false</hasActivationRequired>
   <label>GTM Demo Intake Integration</label>
   <objectPermissions>

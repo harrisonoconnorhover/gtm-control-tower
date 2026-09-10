@@ -74,6 +74,47 @@ it('does not claim success when Salesforce did not confirm a linked Account and 
   expect(JSON.stringify(await response.json())).not.toContain('Private Owner');
 });
 
+it('reconciles a saved request after its response is lost without changing identity or attribution', async () => {
+  const saved = new Map<string, unknown>();
+  let deliveries = 0;
+  network.mockImplementation(async (url: string, init: RequestInit) => {
+    if (url.endsWith('/token')) return Response.json({ access_token: 'token', instance_url: sf });
+    const body = String(init.body);
+    const submission = JSON.parse(body);
+    if (!saved.has(submission.requestId)) saved.set(submission.requestId, body);
+    else expect(saved.get(submission.requestId)).toBe(body);
+    if (++deliveries === 1) throw new TypeError('Response lost after CRM commit');
+    return Response.json({ ...nativeReceipt, reusedRequest: true });
+  });
+  expect((await worker.fetch(request(), env)).status).toBe(200);
+  expect(deliveries).toBe(2);
+  expect(saved.size).toBe(1);
+  expect(JSON.parse(String(saved.get(input.requestId)))).toMatchObject({ source: 'hollis-website', campaign: 'request-a-demo' });
+});
+
+it('retries a temporary CRM failure once and preserves a clear failure after exhaustion', async () => {
+  network.mockResolvedValueOnce(Response.json({ access_token: 'token', instance_url: sf }));
+  network.mockResolvedValueOnce(new Response('', { status: 503 }));
+  network.mockResolvedValueOnce(Response.json(nativeReceipt));
+  expect((await worker.fetch(request(), env)).status).toBe(200);
+  expect(network.mock.calls[1][1].body).toBe(network.mock.calls[2][1].body);
+  network.mockClear();
+  network.mockRejectedValue(new TypeError('CRM unreachable'));
+  expect((await worker.fetch(request(), env)).status).toBe(503);
+  expect(network).toHaveBeenCalledTimes(2);
+});
+
+it('does not retry changed-payload conflicts or CRM throttling', async () => {
+  network.mockResolvedValueOnce(Response.json({ access_token: 'token', instance_url: sf }));
+  network.mockResolvedValueOnce(new Response('', { status: 409 }));
+  expect((await worker.fetch(request(), env)).status).toBe(409);
+  expect(network).toHaveBeenCalledTimes(2);
+  network.mockClear();
+  network.mockResolvedValue(new Response('', { status: 429 }));
+  expect((await worker.fetch(request(), env)).status).toBe(503);
+  expect(network).toHaveBeenCalledTimes(1);
+});
+
 it('keeps provider failures and credentials off the public response', async () => {
   network.mockResolvedValue(Response.json({ error: 'private-test-refresh', error_description: 'Private org details' }, { status: 400 }));
   const response = await worker.fetch(request(), env);

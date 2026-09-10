@@ -280,3 +280,24 @@ This is a limited application of recurring comments in
 and [r/UX_Design](https://www.reddit.com/r/UX_Design/comments/1v3tghy/what_gives_away_a_website_as_fully_vibecoded/),
 not a rule that any one color, font, or layout proves AI authorship. Neither
 Salesforce behavior nor the public submission contract changes in this revision.
+
+## Public demo follow-up uses the current Account owner
+
+For public Account/Contact intake, an exact existing Contact keeps its identity,
+ownership, and first-touch fields while the current Account owner receives the
+new follow-up task. This resolves partial territory handoffs without rewriting
+CRM history. A queue-owned marketing Lead may convert into an unambiguously
+matched Account using its active owner. An unknown company with no active Lead
+owner waits for trusted CRM enrichment, then reuses the held request and task.
+Private Lead-only intake retains its previous ownership behavior.
+
+A single exact normalized company-name and domain match can distinguish business
+units sharing a corporate domain. Partial evidence, multiple exact matches, and
+truncated searches remain held. Each request stores a readable routing decision.
+The form contract stays unchanged; existing CRM ownership supplies context.
+
+The public Worker retries network failures and 502/503/504 once using the same
+payload and request ID. It does not retry conflicts or throttling, and does not
+claim durable delivery during a long outage. Repeatable fictional fixtures and
+the boundaries of the marketing/enrichment simulation are documented in
+`docs/hollis-routing-scenarios.md`.

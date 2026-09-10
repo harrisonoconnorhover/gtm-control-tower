@@ -2,39 +2,41 @@
 
 ## Finished
 
-- Published the refreshed [Hollis Consulting](https://hollis-consulting.harrisonoconnorhoover.workers.dev) in Harrison's Cloudflare account.
-- Replaced the generated staircase with licensed workflow-planning photography; source and license are in `hollis/ASSETS.md`.
-- Made the copy specific to revenue operations and CRM, reduced oversized headings and spacing, and removed pill shapes, captions, slogans, and decorative arrows.
-- Preserved the five-field form, validation, and existing Salesforce Account/Contact matching, Lead conversion, follow-up tasks, and owner notifications.
+- Deployed five realistic routing scenarios behind the unchanged [Hollis form](https://hollis-consulting.harrisonoconnorhoover.workers.dev/#demo).
+- Queued marketing Leads convert into the correct owned Account; new follow-ups use the current Account owner while existing Contact ownership and first-touch fields remain intact.
+- Exact company-and-domain matching distinguishes shared-domain business units; uncertain matches stay visible through review tasks.
+- Trusted CRM enrichment resumes a held request using the same task. A lost-response replay reuses the original records; the Worker retries transient failures once.
+- Seeded five fictional Accounts; live submissions produced four Contacts, two converted marketing Leads, and five tasks. An additional queued Lead is ready for your manual demo. Routing decisions are recorded in Salesforce and task descriptions.
 
 ## Try It
 
-Open the public site and choose **Request a demo**. All fields except phone are required.
+Use the ready-to-type names, emails, companies, and native Salesforce links in [the routing walkthrough](docs/hollis-routing-scenarios.md).
 
-Inspect the actual browser submission: [Maya Thompson](https://orgfarm-a011ff9b54-dev-ed.develop.my.salesforce.com/003g500000gi7GyAAI), [company](https://orgfarm-a011ff9b54-dev-ed.develop.my.salesforce.com/001g500000gkQPLAA2), and [follow-up task](https://orgfarm-a011ff9b54-dev-ed.develop.my.salesforce.com/00Tg500002TAh5BEAT). These are clearly labeled fictional verification records in the development org.
+Start with Priya Shah at `priya@harbor-routing.example`, company `Hollis Lab - Harbor Cloud`. The Contact stays with Alex; the new task goes to Jordan.
 
-Deployment and matching rules: `docs/hollis-consulting.md`.
+Repeat the automated walkthrough with `node scripts/hollis-routing-scenarios.mjs verify`. It reuses saved request IDs in ignored `.runtime/hollis-routing-scenarios.json` and reads native records back. `seed` is repeatable and does not reset converted Leads.
 
 ## Checks
 
-- Current refresh: CSS syntax, local asset/anchor references, duplicate-ID checks, and unchanged form control/validation attributes passed. Worker and form JavaScript match the prior release exactly.
-- Worker dry run and deployment passed. Live home page, stylesheet, photograph, privacy page, and form JavaScript return 200 and match local files byte for byte; old staircase URL returns 404. Diff checks passed.
-- Cloudflare version: `d2fc3e06-ef71-443c-af00-a694883da0b0`.
-- Prior functional release: 101 application tests and 17 Apex tests passed; seven live requests produced seven tasks, including ambiguity review. Native identity matching, replay, conversion, and concurrency records were read back in `.runtime/hollis-live-proof.json`. Those tests were not rerun for this static refresh. Notification device delivery remains untested.
+- 22 Salesforce Apex tests passed; deployment `0Afg500000EfNjlCAF` succeeded.
+- 20 focused application tests passed, including lost-response recovery, retry exhaustion, and conflict/throttle handling. TypeScript and focused ESLint passed.
+- Worker build and deployment passed: `42d73461-8d61-4b90-8a56-25343175a935`.
+- Live public endpoint checks verified queue conversion, account-owner precedence, preserved marketing fields, exact business-unit matching, ambiguity review, late-enrichment recovery, and request/task reuse. Native read-back confirmed five Accounts, four Contacts, and two converted Leads.
+- Public HTML, CSS, form JavaScript, and form contract are unchanged. Diff and secret checks passed.
 
 ## Decisions
 
-- Applied recurring Reddit critiques selectively; common design patterns are not proof of AI authorship. Sources and rationale are in `docs/decisions.md`.
-- The photograph illustrates the work; it does not depict Hollis staff or a client engagement.
-- Existing identity, ownership, and ambiguity-review behavior stays unchanged. Unverified company metadata remains unset.
+- Account ownership supplies trusted routing context; form fields do not guess tier, region, or an AE. Alex remains SMB/West and Jordan Enterprise/East.
+- Marketing imports and enrichment are simulated with labeled fictional Salesforce data; no new marketing vendor connection or native Campaign membership is claimed.
+- Preserve identity and first-touch fields. Conflicting evidence requires review rather than automatic merging.
 
 ## Remaining
 
-- Temporary Salesforce contention can require a form retry; the same request ID prevents duplicates.
-- AE territory/tier assignment is future work, since the requested form supplies neither value.
+- Long outages still require a retry; there is no durable background delivery queue. Enrichment recovery is explicitly replayed, not driven by a vendor subscription.
+- Native Campaign creation is unavailable to the connected user. Salesforce accepted owner notifications; device receipt was not tested.
 
 ## Review First
 
-- The live home page, `hollis/site/index.html`, and `hollis/site/style.css`.
-- `hollis/ASSETS.md` and the design rationale in `docs/decisions.md`.
-- `docs/hollis-consulting.md` and the native Salesforce links above.
+- `docs/hollis-routing-scenarios.md` and its native Salesforce examples.
+- `salesforce/force-app/main/default/classes/GTMDemoIntake.cls` and `hollis/worker.ts`.
+- `scripts/hollis-routing-scenarios.mjs` and ignored live receipts in `.runtime/hollis-routing-scenarios.json`.

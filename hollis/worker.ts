@@ -83,12 +83,22 @@ async function intake(request: Request, env: HollisEnv): Promise<Response> {
   }
   try {
     const send = async () => fetch(`${env.SALESFORCE_INSTANCE_URL}/services/apexrest/gtm/demo-intake`, {
-      method: 'POST', redirect: 'manual', signal: AbortSignal.timeout(25000),
+      // Leave room for a recovery attempt inside the unchanged form's 45s timeout.
+      method: 'POST', redirect: 'manual', signal: AbortSignal.timeout(15000),
       headers: { Authorization: `Bearer ${await salesforceToken(env)}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...input, createContact: true }),
     });
-    let response = await send();
-    if (response.status === 401) { session = undefined; response = await send(); }
+    const sendWithRenewal = async () => {
+      let response = await send();
+      if (response.status === 401) { session = undefined; response = await send(); }
+      return response;
+    };
+    // The same immutable payload and request ID reconcile a lost response or
+    // transient Salesforce transaction failure. Never retry a validation conflict.
+    let first: Response | undefined;
+    try { first = await sendWithRenewal(); }
+    catch { /* A missing response is reconciled once using the same request ID. */ }
+    const response = !first || [502, 503, 504].includes(first.status) ? await sendWithRenewal() : first;
     if (response.status === 409) return json(409, { error: 'These details changed after the request was sent. Edit a field and submit again.' });
     if (!response.ok) throw new Error(`Intake returned ${response.status}`);
     const rawReceipt: unknown = await response.json();
