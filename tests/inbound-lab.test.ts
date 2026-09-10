@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createInboundLab, defaultLabSettings, labMetrics, labScenarios, retryInbound, runSyntheticBatch, submitInbound, syntheticInboundBatch, toWpFormsPayload } from '../lib/inbound-lab';
+import { createInboundLab, defaultLabSettings, labMetrics, labScenarios, retryInbound, runSyntheticBatch, restoreInboundLab, submitInbound, syntheticInboundBatch, toWpFormsPayload } from '../lib/inbound-lab';
 
 const preset = (id: string) => structuredClone(labScenarios.find(item => item.id === id)!);
 const latest = (state: ReturnType<typeof createInboundLab>) => state.runs.at(-1)!;
@@ -53,7 +53,7 @@ describe('inbound routing practice', () => {
     expect(latest(state)).toMatchObject({ status: 'routed', ownerId: 'rep-sam' });
   });
 
-  it('reuses a contact across separate requests without repeating assignment or notification', () => {
+  it('reuses a person and assignment while creating fresh activity for a new submission', () => {
     const row = preset('existing');
     const first = submitInbound(createInboundLab(), row.input, row.context);
     const second = submitInbound(first, { ...row.input, email: row.input.email.toUpperCase() }, { ...row.context, source: 'webinar' });
@@ -61,7 +61,9 @@ describe('inbound routing practice', () => {
     expect(second.leads).toHaveLength(1);
     expect(second.leads[0].source).toBe('paid-search');
     expect(second.reps).toEqual(first.reps);
-    expect(labMetrics(second).notifications).toBe(1);
+    expect(labMetrics(second).notifications).toBe(2);
+    expect(second.tasks).toHaveLength(2);
+    expect(second.tasks[0].id).not.toBe(second.tasks[1].id);
     expect(retryInbound(second, latest(second).id)).toEqual(second);
   });
 
@@ -78,7 +80,9 @@ describe('inbound routing practice', () => {
     expect(latest(state).status).toBe('routed');
     expect(latest(state).attempts).toHaveLength(2);
     expect(state.leads).toHaveLength(1);
-    expect(state.leads[0]).toMatchObject({ ownerId: 'rep-ava', notified: true });
+    expect(state.leads[0]).toMatchObject({ ownerId: 'rep-ava' });
+    expect(latest(state).notified).toBe(true);
+    expect(state.tasks).toHaveLength(1);
     expect(state.reps[0].assigned).toBe(initial.reps[0].assigned + 1);
   });
 
@@ -88,7 +92,9 @@ describe('inbound routing practice', () => {
     initial.settings.notificationFault = true;
     let state = submitInbound(initial, row.input, row.context);
     expect(latest(state)).toMatchObject({ status: 'failed', ownerId: 'rep-ava' });
-    expect(state.leads[0]).toMatchObject({ ownerId: 'rep-ava', notified: false });
+    expect(state.leads[0]).toMatchObject({ ownerId: 'rep-ava' });
+    expect(latest(state).notified).toBe(false);
+    const firstTaskId = state.tasks[0].id;
     const repsAfterAssignment = structuredClone(state.reps);
     state.settings.notificationFault = false;
     state = retryInbound(state, latest(state).id);
@@ -96,6 +102,8 @@ describe('inbound routing practice', () => {
     expect(state.reps).toEqual(repsAfterAssignment);
     expect(state.leads).toHaveLength(1);
     expect(labMetrics(state).notifications).toBe(1);
+    expect(state.tasks).toHaveLength(1);
+    expect(state.tasks[0].id).toBe(firstTaskId);
   });
 
   it('diagnoses a broken mapping and retains original inputs when enrichment is corrected', () => {
@@ -133,11 +141,32 @@ describe('inbound routing practice', () => {
     expect(batch.every(row => row.input.email.endsWith('.example'))).toBe(true);
     expect(batch.every(row => /555-01\d{2}$/.test(row.input.phone))).toBe(true);
     const first = runSyntheticBatch(createInboundLab());
-    expect(labMetrics(first)).toEqual({ requests: 32, routed: 28, held: 4, failed: 0, leads: 27, notifications: 27 });
+    expect(labMetrics(first)).toEqual({ requests: 32, routed: 28, held: 4, failed: 0, leads: 27, tasks: 28, notifications: 28 });
     const second = runSyntheticBatch(first);
     expect(second.runs).toHaveLength(64);
     expect(second.leads).toEqual(first.leads);
     expect(second.reps).toEqual(first.reps);
+    expect(second.tasks).toHaveLength(56);
+    expect(labMetrics(second).notifications).toBe(56);
     expect(runSyntheticBatch(createInboundLab())).toEqual(first);
   });
+  it('restores earlier practice history without fabricating task records', () => {
+    const row = preset('existing');
+    const old = submitInbound(createInboundLab(), row.input, row.context) as unknown as Record<string, unknown>;
+    old.version = 1;
+    delete old.tasks;
+    const run = (old.runs as Record<string, unknown>[])[0];
+    delete run.taskId;
+    delete run.notified;
+    const restored = restoreInboundLab(old)!;
+    expect(restored.version).toBe(2);
+    expect(restored.tasks).toEqual([]);
+    expect(restored.runs[0].notified).toBe(true);
+    expect(restored.runs[0].taskId).toBeNull();
+    const next = submitInbound(restored, row.input, row.context);
+    expect(next.leads).toHaveLength(1);
+    expect(next.tasks).toHaveLength(1);
+    expect(labMetrics(next).notifications).toBe(2);
+  });
+
 });

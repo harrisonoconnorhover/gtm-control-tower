@@ -6,15 +6,16 @@ export type LeadContext = { source: string; campaign: string; region: Region | '
 export type LabSettings = { emailMapping: 'correct' | 'broken'; crmFault: 'none' | 'before-write' | 'after-write'; notificationFault: boolean };
 export type LabRep = { id: string; name: string; region: Region; segment: Segment; active: boolean; capacity: number; assigned: number };
 export type LabAccount = { id: string; name: string; domain: string; ownerId: string; region: Region; monthlySpend: number };
-export type LabLead = FormInput & { id: string; accountId: string | null; ownerId: string | null; source: string; campaign: string; notified: boolean };
+export type LabLead = FormInput & { id: string; accountId: string | null; ownerId: string | null; source: string; campaign: string; lastDemoRequestedAt: string | null };
+export type LabTask = { id: string; requestId: string; leadId: string; ownerId: string; subject: string; createdAt: string };
 export type TraceStep = { stage: string; status: 'passed' | 'held' | 'failed'; detail: string };
 export type LabAttempt = { at: string; payload: Record<string, string>; context: LeadContext; steps: TraceStep[] };
-export type LabRun = { id: string; label: string; input: FormInput; context: LeadContext; payload: Record<string, string>; status: 'routed' | 'held' | 'failed'; reason: string; leadId: string | null; ownerId: string | null; accountId: string | null; attempts: LabAttempt[] };
-export type InboundLabState = { version: 1; reps: LabRep[]; accounts: LabAccount[]; leads: LabLead[]; runs: LabRun[]; settings: LabSettings };
+export type LabRun = { id: string; label: string; input: FormInput; context: LeadContext; payload: Record<string, string>; status: 'routed' | 'held' | 'failed'; reason: string; leadId: string | null; ownerId: string | null; accountId: string | null; notified: boolean; taskId: string | null; attempts: LabAttempt[] };
+export type InboundLabState = { version: 2; reps: LabRep[]; accounts: LabAccount[]; leads: LabLead[]; tasks: LabTask[]; runs: LabRun[]; settings: LabSettings };
 export type LabScenario = { id: string; label: string; description: string; input: FormInput; context: LeadContext };
 
 export const defaultLabSettings: LabSettings = { emailMapping: 'correct', crmFault: 'none', notificationFault: false };
-export const traceStages = ['Receive', 'Map & validate', 'Match account', 'Choose owner', 'CRM upsert', 'Assign', 'Notify'];
+export const traceStages = ['Receive', 'Map & validate', 'Match account', 'Choose owner', 'CRM upsert', 'Assign', 'Create task', 'Notify'];
 
 const seedReps: LabRep[] = [
   { id: 'rep-ava', name: 'Ava Chen', region: 'East', segment: 'Growth', active: true, capacity: 12, assigned: 3 },
@@ -49,11 +50,11 @@ export const labScenarios: LabScenario[] = [
   scenario('conflict', 'Conflicting identity', 'The email belongs to Cedar & Loom, but the company names another account.', 'Elena', 'Foster', 'elena.foster@cedarloom.example', 'Trailwell Outdoors', 'East', 18000),
   scenario('missing', 'Missing enrichment', 'The five form fields look fine. No region is available for routing.', 'Isabel', 'Cruz', 'isabel@willowwellness.example', 'Willow Wellness', '', 16000),
   scenario('invalid', 'Bad source email', 'A malformed address arrives from an upstream import; validation must hold it.', 'Devon', 'Lee', 'devon@@brightline.example', 'Brightline Kitchens', 'Central', 30000, 'partner'),
-  scenario('repeat', 'Repeat submission', 'The same contact requests a demo twice. Reuse its record and assignment.', 'Elena', 'Foster', 'elena.foster@cedarloom.example', 'Cedar & Loom', 'East', 18000),
+  scenario('repeat', 'Repeat submission', 'The same contact requests a demo twice. Reuse its record and assignment, and create a fresh follow-up activity.', 'Elena', 'Foster', 'elena.foster@cedarloom.example', 'Cedar & Loom', 'East', 18000),
 ];
 
 export function createInboundLab(): InboundLabState {
-  return { version: 1, reps: seedReps.map(r => ({ ...r })), accounts: seedAccounts.map(a => ({ ...a })), leads: [], runs: [], settings: { ...defaultLabSettings } };
+  return { version: 2, reps: seedReps.map(r => ({ ...r })), accounts: seedAccounts.map(a => ({ ...a })), leads: [], tasks: [], runs: [], settings: { ...defaultLabSettings } };
 }
 
 /** The five numeric keys are observed WPForms fields; enrichment is separate. */
@@ -124,7 +125,7 @@ function execute(state: InboundLabState, run: LabRun, at: string): void {
   if (state.settings.crmFault === 'before-write') return stop('CRM upsert', 'failed', 'Simulated CRM outage before the write. No record was created. Restore CRM responses and retry.');
   let lead = existing;
   if (!lead) {
-    lead = { ...input, id: `lead-${String(state.leads.length + 1).padStart(3, '0')}`, accountId: account?.id ?? null, ownerId: null, source: run.context.source, campaign: run.context.campaign, notified: false };
+    lead = { ...input, id: `lead-${String(state.leads.length + 1).padStart(3, '0')}`, accountId: account?.id ?? null, ownerId: null, source: run.context.source, campaign: run.context.campaign, lastDemoRequestedAt: null };
     state.leads.push(lead);
   }
   run.leadId = lead.id;
@@ -136,9 +137,17 @@ function execute(state: InboundLabState, run: LabRun, at: string): void {
     add('Assign', `Assigned ${lead.id} to ${owner.name}. Capacity increased once.`);
   } else add('Assign', `Kept ${owner.name}; no extra capacity was consumed.`);
   run.ownerId = lead.ownerId;
-  if (state.settings.notificationFault && !lead.notified) return stop('Notify', 'failed', 'Simulated rep-notification failure. CRM assignment succeeded. Restore notifications and retry only the unfinished work.');
-  add('Notify', lead.notified ? 'Rep already notified. Suppressed the duplicate notification.' : `Created one simulated handoff notification for ${owner.name}.`);
-  lead.notified = true;
+  let task = state.tasks.find(item => item.requestId === run.id);
+  if (!task) {
+    task = { id: `task-${run.id}`, requestId: run.id, leadId: lead.id, ownerId: owner.id, subject: `Demo requested - ${input.firstName} ${input.lastName}`, createdAt: at };
+    state.tasks.push(task);
+    add('Create task', `Created ${task.id} for ${owner.name}. This new submission gets its own follow-up activity.`);
+  } else add('Create task', `Reused ${task.id}. A technical retry does not create another task.`);
+  run.taskId = task.id;
+  if (!lead.lastDemoRequestedAt || lead.lastDemoRequestedAt < task.createdAt) lead.lastDemoRequestedAt = task.createdAt;
+  if (state.settings.notificationFault && !run.notified) return stop('Notify', 'failed', 'Simulated rep-notification failure. CRM assignment succeeded. Restore notifications and retry only the unfinished work.');
+  add('Notify', run.notified ? 'This request already notified its owner. Suppressed a technical retry.' : `Created one simulated handoff notification for ${owner.name} for this request.`);
+  run.notified = true;
   run.status = 'routed';
   run.reason = `${lead.id} is assigned to ${owner.name}; the handoff is complete.`;
   run.attempts.push({ at, payload: { ...run.payload }, context: { ...run.context }, steps });
@@ -146,7 +155,7 @@ function execute(state: InboundLabState, run: LabRun, at: string): void {
 
 export function submitInbound(state: InboundLabState, input: FormInput, context: LeadContext, label = 'Manual request', at = new Date().toISOString()): InboundLabState {
   const next = structuredClone(state);
-  const run: LabRun = { id: `req-${String(next.runs.length + 1).padStart(3, '0')}`, label, input: { ...input }, context: { ...context }, payload: toWpFormsPayload(input), status: 'held', reason: '', leadId: null, ownerId: null, accountId: null, attempts: [] };
+  const run: LabRun = { id: `req-${String(next.runs.length + 1).padStart(3, '0')}`, label, input: { ...input }, context: { ...context }, payload: toWpFormsPayload(input), status: 'held', reason: '', leadId: null, ownerId: null, accountId: null, notified: false, taskId: null, attempts: [] };
   next.runs.push(run);
   execute(next, run, at);
   return next;
@@ -191,5 +200,24 @@ export function runSyntheticBatch(state: InboundLabState): InboundLabState {
 }
 
 export function labMetrics(state: InboundLabState) {
-  return { requests: state.runs.length, routed: state.runs.filter(r => r.status === 'routed').length, held: state.runs.filter(r => r.status === 'held').length, failed: state.runs.filter(r => r.status === 'failed').length, leads: state.leads.length, notifications: state.leads.filter(l => l.notified).length };
+  return { requests: state.runs.length, routed: state.runs.filter(r => r.status === 'routed').length, held: state.runs.filter(r => r.status === 'held').length, failed: state.runs.filter(r => r.status === 'failed').length, leads: state.leads.length, tasks: state.tasks.length, notifications: state.runs.filter(run => run.notified).length };
+}
+
+/** Retain old practice traces without inventing historical task records. */
+export function restoreInboundLab(value: unknown): InboundLabState | null {
+  if (!value || typeof value !== 'object') return null;
+  const row = value as InboundLabState & { version: number };
+  if (![1, 2].includes(row.version) || !Array.isArray(row.runs) || !Array.isArray(row.leads) || !Array.isArray(row.reps) || !Array.isArray(row.accounts) || !row.settings) return null;
+  const next = structuredClone(row);
+  next.version = 2;
+  next.tasks ??= [];
+  for (const run of next.runs) {
+    run.taskId ??= null;
+    run.notified ??= run.attempts.some(attempt => attempt.steps.some(step => step.stage === 'Notify' && step.detail.startsWith('Created one simulated')));
+  }
+  for (const lead of next.leads) {
+    lead.lastDemoRequestedAt ??= null;
+    delete (lead as LabLead & { notified?: boolean }).notified;
+  }
+  return next;
 }

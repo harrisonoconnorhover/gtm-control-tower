@@ -1,7 +1,8 @@
 'use client';
 
+import { SalesforceDemoIntake } from '@/components/salesforce-demo-intake';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { createInboundLab, defaultLabSettings, labMetrics, labScenarios, retryInbound, runSyntheticBatch, submitInbound, traceStages, type FormInput, type InboundLabState, type LabRun, type LeadContext, type Region } from '@/lib/inbound-lab';
+import { createInboundLab, defaultLabSettings, labMetrics, labScenarios, retryInbound, restoreInboundLab, runSyntheticBatch, submitInbound, traceStages, type FormInput, type InboundLabState, type LabRun, type LeadContext, type Region } from '@/lib/inbound-lab';
 
 const storageKey = 'gtm-inbound-practice-v1';
 const fieldLabels: [keyof FormInput, string, string][] = [['firstName', 'First name', 'text'], ['lastName', 'Last name', 'text'], ['email', 'Business email', 'email'], ['phone', 'Phone number', 'tel'], ['company', 'Company name', 'text']];
@@ -15,6 +16,8 @@ export function InboundLeadLab({ homeHref = '#top' }: { homeHref?: string }) {
   const [scenarioId, setScenarioId] = useState('new');
   const [input, setInput] = useState<FormInput>({ ...labScenarios[1].input });
   const [context, setContext] = useState<LeadContext>({ ...labScenarios[1].context });
+  const [salesforceMode, setSalesforceMode] = useState(false);
+  const [salesforceAvailable, setSalesforceAvailable] = useState(false);
   const [filter, setFilter] = useState('all');
   const [notice, setNotice] = useState('32 fictional requests are ready to inspect.');
   const [saveError, setSaveError] = useState('');
@@ -30,8 +33,8 @@ export function InboundLeadLab({ homeHref = '#top' }: { homeHref?: string }) {
       try {
         const saved = window.localStorage.getItem(storageKey);
         if (saved) {
-          const parsed = JSON.parse(saved) as InboundLabState;
-          if (parsed.version === 1 && Array.isArray(parsed.runs) && Array.isArray(parsed.leads) && Array.isArray(parsed.reps) && Array.isArray(parsed.accounts) && parsed.settings) {
+          const parsed = restoreInboundLab(JSON.parse(saved));
+          if (parsed) {
             setState(parsed);
             setSelectedId(parsed.runs.at(-1)?.id ?? '');
             setNotice('Restored your practice session from this browser.');
@@ -51,6 +54,16 @@ export function InboundLeadLab({ homeHref = '#top' }: { homeHref?: string }) {
     }, 0);
     return () => window.clearTimeout(timer);
   }, [state, hydrated]);
+
+  useEffect(() => {
+    let active = true;
+    void fetch('/api/control-tower/demo-intake', { cache: 'no-store' }).then(async response => {
+      if (response.status === 401) { if (active) setSalesforceAvailable(true); return; }
+      const result = await response.json() as { ready?: boolean };
+      if (active && typeof result.ready === 'boolean') setSalesforceAvailable(true);
+    }).catch(() => { /* The static showroom has no connected intake endpoint. */ });
+    return () => { active = false; };
+  }, []);
 
   const metrics = labMetrics(state);
   const selected = state.runs.find(run => run.id === selectedId) ?? state.runs.at(-1);
@@ -90,12 +103,14 @@ export function InboundLeadLab({ homeHref = '#top' }: { homeHref?: string }) {
     setNotice('Practice session exported, including original payloads and every attempt.');
   }
 
+  if (salesforceMode) return <SalesforceDemoIntake homeHref={homeHref} onBack={() => setSalesforceMode(false)} />;
+
   return (
     <main className="min-h-screen bg-[#06100d] text-base text-[#edf8f2] selection:bg-[#d8ff67] selection:text-[#06100d]">
       <div className="mx-auto max-w-[1540px] px-4 pb-12 sm:px-7 lg:px-10">
         <header className="flex flex-wrap items-center justify-between gap-4 border-b border-white/15 py-5">
           <a href={homeHref} className="flex items-center gap-3 text-sm font-semibold"><span className="grid h-10 w-10 place-items-center rounded-xl bg-[#d8ff67] font-mono font-bold text-[#06100d]">GT</span>GTM Control Tower <span className="text-[#819c8e]">/ Inbound lab</span></a>
-          <div className="flex flex-wrap items-center gap-2"><span className="rounded-full border border-[#d8ff67]/30 px-3 py-2 text-sm text-[#d8ff67]">Synthetic data · local sandbox</span><button type="button" className={buttonStyle} onClick={download}>Export session</button></div>
+          <div className="flex flex-wrap items-center gap-2"><span className="rounded-full border border-[#d8ff67]/30 px-3 py-2 text-sm text-[#d8ff67]">Synthetic data · local sandbox</span>{salesforceAvailable && <button type="button" className={`${buttonStyle} !border-[#83bcff]/40 !text-[#83bcff]`} onClick={() => setSalesforceMode(true)}>Use Salesforce</button>}<button type="button" className={buttonStyle} onClick={download}>Export session</button></div>
         </header>
 
         <div className="flex flex-wrap items-end justify-between gap-4 py-7">
@@ -103,8 +118,8 @@ export function InboundLeadLab({ homeHref = '#top' }: { homeHref?: string }) {
           <button className={buttonStyle} onClick={() => { const next = runSyntheticBatch(state); finish(next, next.runs.at(-1)!.id); }}>Add 32 sample requests</button>
         </div>
 
-        <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-6">
-          {([['Requests', metrics.requests], ['Routed', metrics.routed], ['Held for review', metrics.held], ['Failed handoffs', metrics.failed], ['CRM contacts', metrics.leads], ['Notifications', metrics.notifications]] as const).map(([label, value]) => <div key={label} className="rounded-xl border border-white/15 bg-[#0c1d15] p-4"><p className="text-sm text-[#adc3b5]">{label}</p><p className={`mt-1 text-3xl font-semibold tabular-nums ${label === 'Held for review' ? 'text-[#f5bc67]' : label === 'Failed handoffs' ? 'text-[#ffad9f]' : 'text-[#edf8f2]'}`}>{value}</p></div>)}
+        <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-7">
+          {([['Requests', metrics.requests], ['Routed', metrics.routed], ['Held for review', metrics.held], ['Failed handoffs', metrics.failed], ['CRM contacts', metrics.leads], ['Follow-up tasks', metrics.tasks], ['Notifications', metrics.notifications]] as const).map(([label, value]) => <div key={label} className="rounded-xl border border-white/15 bg-[#0c1d15] p-4"><p className="text-sm text-[#adc3b5]">{label}</p><p className={`mt-1 text-3xl font-semibold tabular-nums ${label === 'Held for review' ? 'text-[#f5bc67]' : label === 'Failed handoffs' ? 'text-[#ffad9f]' : 'text-[#edf8f2]'}`}>{value}</p></div>)}
         </div>
 
         <p role="status" aria-live="polite" className="mb-5 rounded-xl border border-white/15 bg-white/[0.03] px-4 py-3 text-sm leading-6 text-[#c3d6c9]">{notice}</p>
@@ -134,11 +149,11 @@ export function InboundLeadLab({ homeHref = '#top' }: { homeHref?: string }) {
               <ol className="my-5 space-y-2">
                 {traceStages.map((stage, index) => {
                   const step = attempt?.steps.find(item => item.stage === stage);
-                  return <li key={stage} className={`flex gap-3 rounded-xl border p-3 ${step?.status === 'failed' ? 'border-[#ff8c7b]/40 bg-[#ff8c7b]/5' : step?.status === 'held' ? 'border-[#f5bc67]/40 bg-[#f5bc67]/5' : 'border-white/10'}`}><span className={`mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-full font-mono text-sm ${step?.status === 'passed' ? 'bg-[#d8ff67]/15 text-[#d8ff67]' : step ? 'bg-[#f5bc67]/15 text-[#f5bc67]' : 'bg-white/5 text-[#819c8e]'}`}>{step?.status === 'passed' ? '✓' : step ? '!' : index + 1}</span><div className="min-w-0"><p className="font-semibold">{stage}<span className="ml-2 text-sm font-normal text-[#a1b7aa]">{step?.status ?? 'not reached'}</span></p><p className="mt-1 text-sm leading-6 text-[#b0c7b8]">{step?.detail ?? 'Waiting for the earlier steps to complete.'}</p></div></li>;
+                  return <li key={stage} className={`flex gap-3 rounded-xl border p-3 ${step?.status === 'failed' ? 'border-[#ff8c7b]/40 bg-[#ff8c7b]/5' : step?.status === 'held' ? 'border-[#f5bc67]/40 bg-[#f5bc67]/5' : 'border-white/10'}`}><span className={`mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-full font-mono text-sm ${step?.status === 'passed' ? 'bg-[#d8ff67]/15 text-[#d8ff67]' : step ? 'bg-[#f5bc67]/15 text-[#f5bc67]' : 'bg-white/5 text-[#819c8e]'}`}>{step?.status === 'passed' ? '✓' : step ? '!' : index + 1}</span><div className="min-w-0"><p className="font-semibold">{stage}<span className="ml-2 text-sm font-normal text-[#a1b7aa]">{step?.status ?? 'not reached'}</span></p><p className="mt-1 text-sm leading-6 text-[#b0c7b8]">{step?.detail ?? (selected.status === 'routed' ? 'This earlier practice session did not record this step.' : 'Waiting for the earlier steps to complete.')}</p></div></li>;
                 })}
               </ol>
               <div className="flex flex-wrap gap-2"><button className={buttonStyle} disabled={selected.status === 'routed'} onClick={() => finish(retryInbound(state, selected.id), selected.id)}>Retry selected request</button><button className={buttonStyle} disabled={selected.status === 'routed'} onClick={() => editRequest(selected)}>Correct source fields</button><span className="self-center text-sm text-[#a1b7aa]">{selected.attempts.length} {selected.attempts.length === 1 ? 'attempt' : 'attempts'}</span></div>
-              <div className="mt-5 grid gap-3 sm:grid-cols-2"><details className="min-w-0 rounded-xl border border-white/15 p-3"><summary className="cursor-pointer text-sm font-semibold">Captured payload</summary><pre className="mt-3 max-h-64 overflow-auto whitespace-pre-wrap break-all text-sm leading-6 text-[#b0c7b8]">{JSON.stringify(selected.payload, null, 2)}</pre></details><details className="min-w-0 rounded-xl border border-white/15 p-3"><summary className="cursor-pointer text-sm font-semibold">Simulated CRM record</summary><pre className="mt-3 max-h-64 overflow-auto whitespace-pre-wrap break-all text-sm leading-6 text-[#b0c7b8]">{selectedLead ? JSON.stringify({ ...selectedLead, owner: state.reps.find(rep => rep.id === selectedLead.ownerId)?.name ?? 'Unassigned' }, null, 2) : 'No CRM record has been created for this request.'}</pre></details></div>
+              <div className="mt-5 grid gap-3 sm:grid-cols-2"><details className="min-w-0 rounded-xl border border-white/15 p-3"><summary className="cursor-pointer text-sm font-semibold">Captured payload</summary><pre className="mt-3 max-h-64 overflow-auto whitespace-pre-wrap break-all text-sm leading-6 text-[#b0c7b8]">{JSON.stringify(selected.payload, null, 2)}</pre></details><details className="min-w-0 rounded-xl border border-white/15 p-3"><summary className="cursor-pointer text-sm font-semibold">Simulated CRM record</summary><pre className="mt-3 max-h-64 overflow-auto whitespace-pre-wrap break-all text-sm leading-6 text-[#b0c7b8]">{selectedLead ? JSON.stringify({ ...selectedLead, owner: state.reps.find(rep => rep.id === selectedLead.ownerId)?.name ?? 'Unassigned', activities: state.tasks.filter(task => task.leadId === selectedLead.id) }, null, 2) : 'No CRM record has been created for this request.'}</pre></details></div>
               {selected.attempts.length > 1 && <details className="mt-3 rounded-xl border border-white/15 p-3"><summary className="cursor-pointer text-sm font-semibold">Previous attempts</summary>{selected.attempts.slice(0, -1).map((item, index) => <div key={index} className="mt-3 border-t border-white/10 pt-3 text-sm"><p>Attempt {index + 1} · {new Date(item.at).toLocaleString()}</p><p className="mt-1 text-[#f5bc67]">{item.steps.at(-1)?.detail}</p><pre className="mt-2 overflow-auto whitespace-pre-wrap break-all text-[#a1b7aa]">{JSON.stringify(item.payload, null, 2)}</pre></div>)}</details>}
             </> : <p className="mt-6 text-[#a1b7aa]">Submit a test request or load the sample batch to start.</p>}
           </section>

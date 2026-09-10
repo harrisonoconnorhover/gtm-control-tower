@@ -19,7 +19,9 @@ the repository.
 - Includes an [Inbound Routing Lab](docs/inbound-routing-lab.md): a working demo
   request form, 32 fictional requests, account matching, rep assignment, and
   deliberately broken handoffs with replay. Open `/#inbound-lab` in the showroom
-  or `/app/inbound` when self-hosted; CRM writes and notifications are simulated.
+  or `/app/inbound` when self-hosted. Practice mode simulates CRM actions;
+  [connected Salesforce intake](docs/salesforce-demo-intake.md) reuses existing
+  people and creates a task and owner notification for each genuine submission.
 - Previews any CSV, lets the operator map arbitrary headers, saves reusable
   mapping presets, and diagnoses duplicate
   identity, missing fields, bad email, owner gaps, and lifecycle regression.

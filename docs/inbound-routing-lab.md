@@ -1,8 +1,8 @@
 # Inbound Routing Lab
 
-A working, browser-local practice flow for demo requests and lead routing. Every
-CRM record, account, rep, notification, and routing rule in this lab is simulated.
-The lab uses fictional details and keeps the practice session in the browser.
+A working, browser-local practice flow for demo requests and lead routing. Practice mode uses fictional records and simulated CRM actions in this browser.
+Connected Salesforce mode sends submissions through the server to the configured
+Salesforce org. See [Salesforce intake setup](salesforce-demo-intake.md).
 
 ## Open and practice
 
@@ -11,7 +11,7 @@ The self-hosted application also exposes `/app/inbound`. The showroom navigation
 links to the same component. No account or credential is required.
 
 The initial session contains 32 fictional requests: 28 routed, four held,
-27 unique CRM contacts, and 27 simulated notifications. The deliberate repeat
+27 unique CRM contacts, 28 follow-up tasks, and 28 simulated notifications. The deliberate repeat
 explains why successful requests exceed contacts. Reserved `.example` addresses
 and 555-01xx phone numbers avoid usable contact destinations. Company budgets
 and regions are consistent within the generated batch.
@@ -55,7 +55,7 @@ context. The lab's routing decisions and recovery behavior use this context.
 
 ## Lab policy and scope
 
-`Capture → map → match → choose owner → CRM upsert → assign → notify`
+`Capture → map → match → choose owner → CRM upsert → assign → create task → notify`
 
 - The numeric field mapping follows the practice schema above. Region, monthly media
   budget, source, and campaign are separate synthetic context added by this lab.
@@ -67,8 +67,8 @@ context. The lab's routing decisions and recovery behavior use this context.
   smaller budgets select Growth. Among active reps with capacity, choose the
   lowest assigned/capacity ratio and break ties by rep ID.
 - A retry reconciles a partially created record by email. Assignment consumes
-  capacity once; successful notification is recorded once per contact. This
-  deliberately simple policy suppresses repeated demo notifications indefinitely.
+  capacity once. Each genuine submission creates its own task and notification.
+  Retrying that same request reuses the task and suppresses duplicate notifications.
 - Contact source attribution is kept from its first successful creation. Each
   request still retains its own source and campaign. Existing contact fields
   are not silently overwritten.
@@ -76,10 +76,10 @@ context. The lab's routing decisions and recovery behavior use this context.
   exists, changing its email through correction is refused to prevent creating a
   second identity during recovery.
 
-These rules belong to the practice lab. Real integration work would replace the
-local CRM and notification steps with provider reads/writes, documented identity and notification policies, and durable request
-storage. Those are outside this slice. No deliverability or vendor API behavior
-has been demonstrated here.
+These pool and enrichment rules belong to practice mode. Connected intake uses
+Salesforce person matching and ownership, and stores real request and task records.
+Older practice sessions retain their original traces; the upgrade does not invent
+historical tasks. New requests use the current activity policy.
 
 ## Verification
 

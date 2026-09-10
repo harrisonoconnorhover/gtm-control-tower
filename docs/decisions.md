@@ -210,14 +210,37 @@ plan's repeated rollback control.
 
 The inbound lab uses a generic five-field demo request with WPForms-style payload
 keys and separate fictional enrichment. Product copy and documentation stay
-company-neutral. CRM behavior, ownership rules, and notifications are explicitly
-simulated. The same client component serves `/#inbound-lab` in the static
+company-neutral. In practice mode, CRM behavior, ownership rules, and notifications
+are explicitly simulated. The same client component serves `/#inbound-lab` in the static
 showroom and `/app/inbound` in the self-hosted app. Browser storage keeps the
 practice session useful without credentials or new infrastructure.
 
-Normalized email provides contact identity for retries; assignment and notification
-each complete once per contact. Existing owners take precedence over pool
+Normalized email provides person identity. Assignment consumes capacity once per
+person; tasks and notifications complete once per genuine submission. Technical
+retries reuse the original request. Existing owners take precedence over pool
 capacity. The lab retains attempt payload/context snapshots, including after
 correction. This is a synchronous practice model, not proof of provider semantics
 or a concurrent production queue. See `docs/inbound-routing-lab.md` for the
 schema, policies, limits, and walkthrough.
+
+## Salesforce owns demo activity and identity matching
+
+Connected intake sends one immutable request ID and form payload from the server
+to a Salesforce Apex REST service. The service creates a Demo Request record,
+searches both Contacts and unconverted Leads, preserves existing ownership, and
+creates a Task and owner notification. Each genuine submission gets fresh
+activity. Technical retries reuse the same request and task; changed payloads
+cannot reuse an old key.
+
+Apex is used here instead of a chain of Flow steps because the person lookup,
+creation, and task write need a transaction and an email-specific row lock.
+A unique identity row serializes requests with different IDs for the same email.
+A first-insert collision rolls back and returns a retryable response. This
+prevents competing submissions through this intake from both creating a Lead;
+Salesforce duplicate rules still govern writes from other integrations.
+
+Existing queue or inactive ownership is held for review. New Leads initially
+belong to the connected integration user; this pilot does not silently apply the
+practice rep pools to Salesforce. Production operator access uses the existing
+Control Tower key boundary. Salesforce credentials remain server-side. Public
+static hosting continues to provide practice mode only.
