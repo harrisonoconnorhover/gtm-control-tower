@@ -29,6 +29,8 @@ it('creates only the server-selected Account/Contact flow and returns a private 
   const response = await worker.fetch(request({ ...input, createContact: false, ownerId: 'attacker', instanceUrl: 'https://evil.example', source: 'spoof' }), env);
   expect(response.status).toBe(200);
   expect(await response.json()).toEqual({ accepted: true, requestId: input.requestId });
+  expect(network.mock.calls[0][1].redirect).toBe('manual');
+  expect(network.mock.calls[1][1].redirect).toBe('manual');
   const posted = JSON.parse(network.mock.calls[1][1].body);
   expect(posted).toEqual({ ...input, source: 'hollis-website', campaign: 'request-a-demo', createContact: true });
   expect(response.headers.get('Cache-Control')).toBe('no-store');

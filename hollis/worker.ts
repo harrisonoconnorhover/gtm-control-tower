@@ -20,10 +20,10 @@ async function salesforceToken(env: HollisEnv): Promise<string> {
     const body = new URLSearchParams({ grant_type: 'refresh_token', client_id: env.SALESFORCE_CLIENT_ID, refresh_token: env.SALESFORCE_REFRESH_TOKEN });
     if (env.SALESFORCE_CLIENT_SECRET) body.set('client_secret', env.SALESFORCE_CLIENT_SECRET);
     const response = await fetch(`${env.SALESFORCE_INSTANCE_URL}/services/oauth2/token`, {
-      method: 'POST', body, redirect: 'error', signal: AbortSignal.timeout(12000),
+      method: 'POST', body, redirect: 'manual', signal: AbortSignal.timeout(12000),
     });
     const result = await response.json() as { access_token?: string; instance_url?: string };
-    if (!response.ok || !result.access_token || result.instance_url !== env.SALESFORCE_INSTANCE_URL) throw new Error('Salesforce authorization unavailable');
+    if (!response.ok || !result.access_token || result.instance_url !== env.SALESFORCE_INSTANCE_URL) throw new Error(`Salesforce authorization unavailable (HTTP ${response.status})`);
     session = { token: result.access_token, expires: Date.now() + 20 * 60 * 1000 };
     return session;
   })().finally(() => { renewing = undefined; });
@@ -83,7 +83,7 @@ async function intake(request: Request, env: HollisEnv): Promise<Response> {
   }
   try {
     const send = async () => fetch(`${env.SALESFORCE_INSTANCE_URL}/services/apexrest/gtm/demo-intake`, {
-      method: 'POST', redirect: 'error', signal: AbortSignal.timeout(25000),
+      method: 'POST', redirect: 'manual', signal: AbortSignal.timeout(25000),
       headers: { Authorization: `Bearer ${await salesforceToken(env)}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...input, createContact: true }),
     });
@@ -100,8 +100,8 @@ async function intake(request: Request, env: HollisEnv): Promise<Response> {
     // A held match is safely recorded for review. Never expose CRM identity, ownership,
     // existence, internal IDs, or provider errors to an anonymous website visitor.
     return json(200, { accepted: true, requestId: input.requestId });
-  } catch {
-    console.error('Hollis intake could not confirm request', input.requestId);
+  } catch (error) {
+    console.error('Hollis intake could not confirm request', input.requestId, error instanceof Error ? error.message : 'Unknown provider failure');
     return json(503, { error: 'We could not confirm your request. Please try again; retries will not duplicate it.' });
   }
 }
