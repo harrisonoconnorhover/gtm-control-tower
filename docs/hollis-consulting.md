@@ -48,6 +48,20 @@ The hero uses a licensed photograph of workflow planning. It does not depict Hol
   HTTP 502/503/504, preserving the payload and request ID. Changed-payload conflicts
   and CRM throttling are not retried automatically. A prolonged outage still
   needs a form retry; this is not a durable background delivery queue.
+  Interrupted success-response bodies are recoverable too. Token renewal, both
+  attempts, and receipt reading share a 40-second deadline, shorter than the
+  unchanged browser form's 45-second timeout.
+
+## Salesforce recovery workspace
+
+The **Demo Requests** tab includes **Needs attention** and **All demo requests**
+views. Its record page displays original submission details, routing decisions,
+matched records, owner, notification outcome, and a direct task link. After
+correcting company data or ownership, an authorized operator can choose **Retry
+saved request** without re-entering the form. The native Screen Flow invokes the
+same transactional service and preserves the original request, attribution, and
+task. It refuses changed original payload fields. Completed requests remain
+idempotent; a recovery failure rolls back partial changes.
 
 ## Interview scenarios
 

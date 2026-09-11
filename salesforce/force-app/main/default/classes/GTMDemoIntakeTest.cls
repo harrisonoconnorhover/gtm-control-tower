@@ -432,6 +432,109 @@ private class GTMDemoIntakeTest {
     }
 
     private static User integration() { return [SELECT Id FROM User WHERE Alias = 'demoin' LIMIT 1]; }
+
+    @IsTest
+    static void savedActionResumesPublicHoldAndReusesTask() {
+        Account account = new Account(Name = 'Saved Action Company'); insert account;
+        System.runAs(integration()) {
+            GTMDemoIntake.Receipt held = GTMDemoIntake.process(publicSubmission('saved-action-public01', 'p@saved.example', account.Name));
+            System.assertEquals('Held', held.status);
+            account.Website = 'https://saved.example'; update account;
+            GTMDemoIntake.RetryResult resumed = retry(held.submissionId);
+            System.assertEquals('Routed', resumed.status);
+            System.assertEquals(held.taskId, resumed.taskId);
+            System.assertEquals(held.submissionId, resumed.requestRecordId);
+            System.assertEquals(resumed.taskId, retry(held.submissionId).taskId);
+            System.assertEquals(1, [SELECT COUNT() FROM Contact]);
+            System.assertEquals(0, [SELECT COUNT() FROM Lead]);
+            System.assertEquals(1, [SELECT COUNT() FROM Task]);
+        }
+    }
+
+    @IsTest
+    static void savedActionPreservesLegacyLeadModeAndAttribution() {
+        Id queueId = [SELECT Id FROM Group WHERE DeveloperName = 'Demo_Test_Queue'].Id;
+        Lead person = new Lead(LastName = 'Saved', Email = 'legacy@saved.example', Company = 'Legacy Company', OwnerId = queueId); insert person;
+        System.runAs(integration()) {
+            GTMDemoIntake.Submission input = submission('saved-action-legacy01', person.Email);
+            input.source = 'original-partner'; input.campaign = 'original-webinar';
+            GTMDemoIntake.Receipt held = GTMDemoIntake.process(input);
+            System.assertEquals('Held', held.status);
+            person.OwnerId = UserInfo.getUserId(); update person;
+            System.assertEquals('Routed', retry(held.submissionId).status);
+            System.assertEquals(false, [SELECT IsConverted FROM Lead WHERE Id = :person.Id].IsConverted);
+            System.assertEquals(0, [SELECT COUNT() FROM Account]);
+            GTM_Demo_Request__c saved = [SELECT Source__c, Campaign__c FROM GTM_Demo_Request__c WHERE Id = :held.submissionId];
+            System.assertEquals(input.source, saved.Source__c); System.assertEquals(input.campaign, saved.Campaign__c);
+        }
+    }
+
+    @IsTest
+    static void savedActionRejectsChangedDetailsAndUnauthorizedCallers() {
+        Id requestId;
+        System.runAs(integration()) {
+            GTMDemoIntake.Receipt first = GTMDemoIntake.process(submission('saved-action-altered1', 'altered@saved.example'));
+            requestId = first.submissionId;
+            update new GTM_Demo_Request__c(Id = requestId, Company__c = 'Changed after receipt');
+            GTMDemoIntake.RetryResult result = retry(requestId);
+            System.assertEquals('Error', result.status);
+            System.assert(result.message.contains('saved form details changed'));
+            System.assertEquals(1, [SELECT COUNT() FROM Task]);
+        }
+        User denied = [SELECT Id FROM User WHERE Alias = 'demono' LIMIT 1];
+        System.runAs(denied) {
+            System.assertEquals('Error', retry(requestId).status);
+            System.assertEquals(null, retry(requestId).requestRecordId);
+        }
+    }
+
+    @IsTest
+    static void savedActionRollsBackFailedRecoveryAndCanResume() {
+        Account account = new Account(Name = 'Rollback Saved Company'); insert account;
+        System.runAs(integration()) {
+            GTMDemoIntake.Receipt held = GTMDemoIntake.process(publicSubmission('saved-action-rollback', 'person@rollback-saved.example', account.Name));
+            account.Website = 'https://rollback-saved.example'; update account;
+            GTMDemoIntake.failAfterTask = true;
+            System.assertEquals('Error', retry(held.submissionId).status);
+            System.assertEquals(0, [SELECT COUNT() FROM Contact]);
+            System.assertEquals(null, [SELECT WhoId FROM Task WHERE Id = :held.taskId].WhoId);
+            System.assertEquals('Held', [SELECT Status__c FROM GTM_Demo_Request__c WHERE Id = :held.submissionId].Status__c);
+            GTMDemoIntake.failAfterTask = false;
+            System.assertEquals('Routed', retry(held.submissionId).status);
+            System.assertEquals(1, [SELECT COUNT() FROM Task]);
+        }
+    }
+
+    private static GTMDemoIntake.RetryResult retry(Id recordId) {
+        GTMDemoIntake.RetryInput input = new GTMDemoIntake.RetryInput(); input.recordId = recordId;
+        return GTMDemoIntake.retrySavedRequest(new List<GTMDemoIntake.RetryInput>{input})[0];
+    }
+
+    @IsTest
+    static void importedSpacingCannotHideConflictingCompany() {
+        insert new Account(Name = 'Cedar   Analytics', Website = 'https://actual-cedar.example');
+        System.runAs(integration()) {
+            GTMDemoIntake.Receipt conflict = GTMDemoIntake.process(publicSubmission('import-space-conflict', 'p@different-cedar.example', 'Cedar Analytics'));
+            System.assertEquals('Held', conflict.status);
+            System.assertEquals(1, [SELECT COUNT() FROM Account]);
+            System.assertEquals(0, [SELECT COUNT() FROM Contact]);
+            GTMDemoIntake.Receipt exact = GTMDemoIntake.process(publicSubmission('import-space-matched1', 'p@actual-cedar.example', 'Cedar Analytics'));
+            System.assertEquals('Routed', exact.status);
+            System.assertEquals(1, [SELECT COUNT() FROM Account]);
+        }
+    }
+
+    @IsTest
+    static void wildcardCharactersInCompanyNameStayLiteral() {
+        insert new Account(Name = '100% Data_Works', Website = 'https://literal.example');
+        insert new Account(Name = '100x DataXWorks', Website = 'https://unrelated.example');
+        System.runAs(integration()) {
+            GTMDemoIntake.Receipt conflict = GTMDemoIntake.process(publicSubmission('import-literal-00001', 'p@different.example', '100% Data_Works'));
+            System.assertEquals('Held', conflict.status);
+            System.assertEquals(2, [SELECT COUNT() FROM Account]);
+            System.assertEquals(0, [SELECT COUNT() FROM Contact]);
+        }
+    }
     private static GTMDemoIntake.Submission submission(String key, String email) {
         GTMDemoIntake.Submission input = new GTMDemoIntake.Submission();
         input.requestId = key;

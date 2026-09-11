@@ -6,5 +6,9 @@
     <types><members>GTM_Demo_Request</members><name>CustomNotificationType</name></types>
     <types><members>GTM_Submit_Demo_Requests</members><name>CustomPermission</name></types>
     <types><members>GTM_Demo_Intake_Integration</members><name>PermissionSet</name></types>
+    <types><members>GTM_Retry_Demo_Request</members><name>Flow</name></types>
+    <types><members>GTM_Demo_Request__c.Retry_Saved_Request</members><name>QuickAction</name></types>
+    <types><members>GTM_Demo_Request__c-Demo Request Layout</members><name>Layout</name></types>
+    <types><members>GTM_Demo_Request__c</members><name>CustomTab</name></types>
     <version>67.0</version>
 </Package>

@@ -5,7 +5,7 @@ import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 
 const mode = process.argv[2];
-if (!['seed', 'verify'].includes(mode)) throw new Error('Use: node scripts/hollis-routing-scenarios.mjs seed|verify');
+if (!['seed', 'verify', 'recover', 'prepare-recovery'].includes(mode)) throw new Error('Use: node scripts/hollis-routing-scenarios.mjs seed|verify|recover|prepare-recovery');
 const org = process.env.SF_TARGET_ORG || 'gtm-control-tower-salesforce';
 const origin = 'https://hollis-consulting.harrisonoconnorhoover.workers.dev';
 const expectedOrg = 'https://orgfarm-a011ff9b54-dev-ed.develop.my.salesforce.com';
@@ -17,20 +17,11 @@ async function authorize() {
   const data = JSON.parse(execFileSync('sf', ['org', 'display', '--target-org', org, '--json'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
   assert.equal(data.status, 0, 'Salesforce connection required');
   assert.equal(data.result.instanceUrl, expectedOrg, 'These fixtures are scoped to the connected development org');
-  // CLI display masks its access token. Renew the already-authorized connection
-  // in memory, without writing tokens or expanding its permissions.
-  const saved = JSON.parse(execFileSync('sf', ['org', 'auth', 'show-sfdx-auth-url', '--target-org', org, '--json'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })).result;
-  const parts = saved.sfdxAuthUrl.replace(/^force:\/\//, '').split('@')[0].split(':');
-  const body = new URLSearchParams({ grant_type: 'refresh_token',
-    client_id: parts.length === 3 ? parts[0] : data.result.clientId,
-    refresh_token: parts.length === 3 ? parts[2] : parts[0] });
-  if (parts.length === 3 && parts[1]) body.set('client_secret', parts[1]);
-  const response = await fetch(expectedOrg + '/services/oauth2/token', { method: 'POST', body, signal: AbortSignal.timeout(15000) });
-  if (!response.ok) throw new Error(`Salesforce authorization unavailable (${response.status})`);
-  const session = await response.json();
-  assert.equal(session.instance_url, expectedOrg);
-  assert(session.access_token, 'Salesforce session unavailable');
-  return { token: session.access_token, url: expectedOrg };
+  // Use the CLI's existing connection in memory; ordinary org display masks its token.
+  const session = JSON.parse(execFileSync('sf', ['org', 'auth', 'show-access-token', '--target-org', org, '--json'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
+  assert.equal(session.status, 0, 'Salesforce session unavailable');
+  assert(session.result.accessToken && !session.result.accessToken.startsWith('*'), 'Salesforce session unavailable');
+  return { token: session.result.accessToken, url: expectedOrg };
 }
 const quote = value => "'" + value.replaceAll('\\', '\\\\').replaceAll("'", "\\'") + "'";
 const save = () => writeFileSync(statePath, JSON.stringify(state, null, 2) + '\n');
@@ -113,6 +104,9 @@ async function seed() {
 }
 async function submit(key) {
   const body = state.cases[key]; assert(body, 'Run seed first');
+  return submitBody(body, key);
+}
+async function submitBody(body, key) {
   // Retry the same request on the public rate limit or transient failure. No new identity is minted.
   for (let attempt = 0; attempt < 3; attempt++) {
     const response = spawnSync('curl', ['--silent', '--show-error', '--max-time', '70', '--write-out', '\n%{http_code}',
@@ -128,13 +122,13 @@ async function submit(key) {
     }
     assert.equal(code, 200, response.stdout);
     assert.deepEqual(JSON.parse(response.stdout.slice(0, split)), { accepted: true, requestId: body.requestId });
-    return readRequest(key);
+    return readRequest(body.requestId);
   }
 }
-async function readRequest(key) {
+async function readRequest(requestId) {
   const rows = await query(`SELECT Id, Request_Key__c, Status__c, Account__c, Contact__c, Task_Id__c, Follow_Up_Owner__c,
     Source__c, Campaign__c, Routing_Detail__c, Reason__c, Notification_Status__c FROM GTM_Demo_Request__c
-    WHERE Request_Key__c = '${state.cases[key].requestId}'`);
+    WHERE Request_Key__c = ${quote(requestId)}`);
   assert.equal(rows.length, 1); return rows[0];
 }
 function check(name, details) {
@@ -195,4 +189,54 @@ async function verify() {
   state.verifiedAt = new Date().toISOString(); save();
   console.log('Verified all scenarios against native Salesforce records: ' + statePath);
 }
-await (mode === 'seed' ? seed() : verify());
+async function recover() {
+  assert(state.ids.jordan, 'Run seed first');
+  state.recoveryInput ||= { requestId: randomUUID(), firstName: 'Elena', lastName: 'Reed',
+    email: 'elena@willow-routing.example', phone: '', company: 'Hollis Lab - Willow Systems' };
+  save();
+  const body = state.recoveryInput;
+  const accountId = await ensure('Account', 'Name = ' + quote(body.company), {
+    Name: body.company, OwnerId: state.ids.jordan, Type: 'Prospect',
+    Description: 'Fictional Hollis recovery fixture. Website starts missing so the inquiry needs review; trusted enrichment supplies it before the saved-request action resumes.',
+  });
+  const first = await submitBody(body, 'saved-request recovery');
+  state.recoveryBefore ||= first; save();
+  const account = (await query(`SELECT Website FROM Account WHERE Id = '${accountId}'`))[0];
+  if (!account.Website) {
+    assert.equal(first.Status__c, 'Held'); assert.equal(first.Contact__c, null);
+    await api('/sobjects/Account/' + accountId, 'PATCH', { Website: 'https://willow-routing.example' });
+  } else assert.equal(account.Website, 'https://willow-routing.example', 'Fixture website was changed outside the walkthrough');
+  const action = await api('/actions/custom/apex/GTMDemoIntake', 'POST', { inputs: [{ recordId: first.Id }] });
+  assert.equal(action[0].isSuccess, true, JSON.stringify(action[0].errors));
+  assert.equal(action[0].outputValues.status, 'Routed', action[0].outputValues.message);
+  const after = await readRequest(body.requestId);
+  assert.equal(after.Task_Id__c, first.Task_Id__c); assert.equal(after.Account__c, accountId);
+  assert.equal(after.Follow_Up_Owner__c, state.ids.jordan);
+  const original = (await query(`SELECT Source__c, Campaign__c, Received_At__c FROM GTM_Demo_Request__c WHERE Id = '${first.Id}'`))[0];
+  assert.equal(original.Source__c, 'hollis-website'); assert.equal(original.Campaign__c, 'request-a-demo');
+  const again = await api('/actions/custom/apex/GTMDemoIntake', 'POST', { inputs: [{ recordId: first.Id }] });
+  assert.equal(again[0].outputValues.taskId, first.Task_Id__c);
+  assert.equal((await query('SELECT Id FROM Contact WHERE Email = ' + quote(body.email))).length, 1);
+  const tasks = await query(`SELECT Id, OwnerId, WhoId, WhatId FROM Task WHERE WhoId = '${after.Contact__c}'`);
+  assert.equal(tasks.length, 1); assert.equal(tasks[0].Id, first.Task_Id__c);
+  assert.equal(tasks[0].OwnerId, state.ids.jordan); assert.equal(tasks[0].WhatId, accountId);
+  state.recoveryAfter = after; state.recoveryAction = action[0]; save();
+  check('Native saved-request action recovered the inquiry without re-entering form details or duplicating activity', { receipt: after });
+}
+async function prepareRecovery() {
+  assert(state.ids.alex, 'Run seed first');
+  state.readyRecoveryInput ||= { requestId: randomUUID(), firstName: 'Mason', lastName: 'Turner',
+    email: 'mason@bluebird-routing.example', phone: '', company: 'Hollis Lab - Bluebird Data' };
+  save();
+  const body = state.readyRecoveryInput;
+  state.ids.bluebird = await ensure('Account', 'Name = ' + quote(body.company), {
+    Name: body.company, OwnerId: state.ids.alex, Type: 'Prospect',
+    Description: 'Fictional manual recovery exercise. Set Website to https://bluebird-routing.example, then retry the saved Demo Request. No real company or vendor enrichment is represented.',
+  });
+  state.readyRecovery = await submitBody(body, 'manual recovery fixture'); save();
+  assert(['Held', 'Routed'].includes(state.readyRecovery.Status__c));
+  console.log(state.readyRecovery.Status__c === 'Held'
+    ? 'Ready: Mason is held for review. Set the Bluebird Account website, then use Retry saved request in Salesforce.'
+    : 'The manual recovery exercise was already completed; its records were preserved.');
+}
+await ({ seed, verify, recover, 'prepare-recovery': prepareRecovery }[mode])();

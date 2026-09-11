@@ -301,3 +301,18 @@ payload and request ID. It does not retry conflicts or throttling, and does not
 claim durable delivery during a long outage. Repeatable fictional fixtures and
 the boundaries of the marketing/enrichment simulation are documented in
 `docs/hollis-routing-scenarios.md`.
+
+## Recover saved inquiries where operators already work
+
+A native Salesforce Screen Flow and request-page action retry one saved inquiry
+after a trusted CRM correction. The action uses the existing permission and
+transactional intake service; it reconstructs the original mode from its payload
+fingerprint so historical Lead-only requests remain compatible. Original form
+fields and attribution stay unchanged. A Needs attention view and task hyperlink
+make unresolved work accessible without adding a private console to the public site.
+
+Response-body failures belong inside the Worker's recovery attempt because a
+successful HTTP header does not prove a complete receipt. One shared 40-second
+deadline bounds authentication and delivery within the unchanged form timeout.
+The local interruption drill uses real Salesforce writes with stable IDs and
+explicitly labels its simulated transport/authentication boundary.

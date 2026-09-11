@@ -30,6 +30,16 @@ async function salesforceToken(env: HollisEnv): Promise<string> {
   return (await renewing).token;
 }
 
+/** Stop waiting for a shared token renewal when this form request times out. */
+function withinDeadline<T>(pending: Promise<T>, signal: AbortSignal): Promise<T> {
+  return new Promise((resolve, reject) => {
+    if (signal.aborted) { reject(signal.reason); return; }
+    const abort = () => reject(signal.reason);
+    signal.addEventListener('abort', abort, { once: true });
+    pending.then(resolve, reject).finally(() => signal.removeEventListener('abort', abort));
+  });
+}
+
 const securityHeaders = {
   'X-Content-Type-Options': 'nosniff',
   'Referrer-Policy': 'strict-origin-when-cross-origin',
@@ -82,12 +92,23 @@ async function intake(request: Request, env: HollisEnv): Promise<Response> {
     return json(503, { error: 'The form is temporarily unavailable. Please try again shortly.' });
   }
   try {
-    const send = async () => fetch(`${env.SALESFORCE_INSTANCE_URL}/services/apexrest/gtm/demo-intake`, {
-      // Leave room for a recovery attempt inside the unchanged form's 45s timeout.
-      method: 'POST', redirect: 'manual', signal: AbortSignal.timeout(15000),
-      headers: { Authorization: `Bearer ${await salesforceToken(env)}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...input, createContact: true }),
-    });
+    // Authentication, both attempts, and reading the receipt share one deadline
+    // shorter than the unchanged browser form's 45-second timeout.
+    const deadline = AbortSignal.timeout(40000);
+    const send = async () => {
+      deadline.throwIfAborted();
+      const token = await withinDeadline(salesforceToken(env), deadline);
+      const response = await fetch(`${env.SALESFORCE_INSTANCE_URL}/services/apexrest/gtm/demo-intake`, {
+        method: 'POST', redirect: 'manual', signal: AbortSignal.any([deadline, AbortSignal.timeout(15000)]),
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...input, createContact: true }),
+      });
+      // A connection can fail after headers arrive. Consume the receipt inside
+      // the recoverable attempt so a truncated body reuses the original ID too.
+      const rawReceipt: unknown = response.ok ? await response.json() : undefined;
+      if (!response.ok) await response.body?.cancel();
+      return { status: response.status, ok: response.ok, rawReceipt };
+    };
     const sendWithRenewal = async () => {
       let response = await send();
       if (response.status === 401) { session = undefined; response = await send(); }
@@ -95,13 +116,13 @@ async function intake(request: Request, env: HollisEnv): Promise<Response> {
     };
     // The same immutable payload and request ID reconcile a lost response or
     // transient Salesforce transaction failure. Never retry a validation conflict.
-    let first: Response | undefined;
+    let first: Awaited<ReturnType<typeof send>> | undefined;
     try { first = await sendWithRenewal(); }
     catch { /* A missing response is reconciled once using the same request ID. */ }
     const response = !first || [502, 503, 504].includes(first.status) ? await sendWithRenewal() : first;
     if (response.status === 409) return json(409, { error: 'These details changed after the request was sent. Edit a field and submit again.' });
     if (!response.ok) throw new Error(`Intake returned ${response.status}`);
-    const rawReceipt: unknown = await response.json();
+    const rawReceipt = response.rawReceipt;
     const receipt = parseDemoReceipt(rawReceipt, input.requestId, env.SALESFORCE_INSTANCE_URL);
     const accountId = (rawReceipt as { accountId?: string }).accountId;
     if (receipt.status !== 'Held' && (receipt.personType !== 'Contact' || !accountId || !/^[a-zA-Z0-9]{18}$/.test(accountId))) {

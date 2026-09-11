@@ -1,4 +1,4 @@
-import { beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { HollisEnv } from '../hollis/worker';
 
 const origin = 'https://hollis-consulting.harrisonoconnorhoover.workers.dev';
@@ -24,6 +24,7 @@ beforeEach(async () => {
   network = vi.fn(async (url: string) => url.endsWith('/token') ? Response.json({ access_token: 'private-test-session', instance_url: sf }) : Response.json(nativeReceipt));
   vi.stubGlobal('fetch', network);
 });
+afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers(); });
 
 it('creates only the server-selected Account/Contact flow and returns a private public receipt', async () => {
   const response = await worker.fetch(request({ ...input, createContact: false, ownerId: 'attacker', instanceUrl: 'https://evil.example', source: 'spoof' }), env);
@@ -102,6 +103,33 @@ it('retries a temporary CRM failure once and preserves a clear failure after exh
   network.mockRejectedValue(new TypeError('CRM unreachable'));
   expect((await worker.fetch(request(), env)).status).toBe(503);
   expect(network).toHaveBeenCalledTimes(2);
+});
+
+it('reconciles a receipt body interrupted after successful response headers', async () => {
+  network.mockResolvedValueOnce(Response.json({ access_token: 'token', instance_url: sf }));
+  const partial = new Response(new ReadableStream({ start(controller) {
+    controller.enqueue(new TextEncoder().encode('{"requestId":'));
+    controller.error(new TypeError('Connection reset while reading receipt'));
+  } }));
+  network.mockResolvedValueOnce(partial);
+  network.mockResolvedValueOnce(Response.json({ ...nativeReceipt, reusedRequest: true }));
+  expect((await worker.fetch(request(), env)).status).toBe(200);
+  expect(network).toHaveBeenCalledTimes(3);
+  expect(network.mock.calls[1][1].body).toBe(network.mock.calls[2][1].body);
+});
+
+it('finishes before the browser deadline even when shared authorization never resolves', async () => {
+  vi.useFakeTimers();
+  vi.spyOn(AbortSignal, 'timeout').mockImplementation(milliseconds => {
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(new DOMException('Timed out', 'TimeoutError')), milliseconds);
+    return controller.signal;
+  });
+  network.mockImplementation(() => new Promise(() => {}));
+  const result = worker.fetch(request(), env);
+  await vi.advanceTimersByTimeAsync(40000);
+  expect((await result).status).toBe(503);
+  expect(network).toHaveBeenCalledTimes(1);
 });
 
 it('does not retry changed-payload conflicts or CRM throttling', async () => {

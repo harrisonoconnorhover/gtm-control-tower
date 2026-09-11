@@ -80,12 +80,7 @@ global with sharing class GTMDemoIntake {
         ];
         if (identities.isEmpty()) insert as user new GTM_Demo_Identity__c(Email_Key__c = emailKey);
 
-        List<String> hashFields = new List<String>{
-            input.firstName, input.lastName, input.email, input.phone, input.company, input.source, input.campaign
-        };
-        // Keep existing operator request hashes valid after this compatible extension.
-        if (input.createContact == true) hashFields.add('account-contact-v1');
-        String payloadHash = digest(JSON.serialize(hashFields));
+        String payloadHash = submissionHash(input);
         List<GTM_Demo_Request__c> requests = [
             SELECT Id, Request_Key__c, Payload_Hash__c, Status__c, Reason__c, Lead__c, Contact__c,
                 Person_Type__c, New_Person__c, Account__c, Task_Id__c, Notification_Status__c, Follow_Up_Owner__c,
@@ -244,6 +239,67 @@ global with sharing class GTMDemoIntake {
 
     private class AccountMatch { Account account; String reason; String detail; }
 
+    public class RetryInput {
+        @InvocableVariable(label='Demo Request record' required=true)
+        public Id recordId;
+    }
+    public class RetryResult {
+        @InvocableVariable public String status;
+        @InvocableVariable public String message;
+        @InvocableVariable public Id requestRecordId;
+        @InvocableVariable public String taskId;
+    }
+
+    @InvocableMethod(label='Retry Saved Demo Request'
+        description='Retry one saved demo request after correcting CRM matching or ownership. Original form details, request ID, and attribution are reused.')
+    public static List<RetryResult> retrySavedRequest(List<RetryInput> inputs) {
+        RetryResult result = new RetryResult();
+        Savepoint beforeRetry = Database.setSavepoint();
+        try {
+            if (!FeatureManagement.checkPermission('GTM_Submit_Demo_Requests')) {
+                throw new MissingPermissionException('The integration needs Submit Demo Requests permission.');
+            }
+            if (inputs == null || inputs.size() != 1 || inputs[0] == null || inputs[0].recordId == null ||
+                inputs[0].recordId.getSObjectType() != GTM_Demo_Request__c.SObjectType) {
+                throw new InvalidSubmissionException('Choose one saved Demo Request to retry.');
+            }
+            Id recordId = inputs[0].recordId;
+            List<GTM_Demo_Request__c> saved = [SELECT Id, Request_Key__c, Payload_Hash__c, First_Name__c,
+                Last_Name__c, Email__c, Phone__c, Company__c, Source__c, Campaign__c
+                FROM GTM_Demo_Request__c WHERE Id = :recordId WITH USER_MODE LIMIT 1];
+            if (saved.isEmpty()) throw new InvalidSubmissionException('The Demo Request is unavailable to this user.');
+            GTM_Demo_Request__c request = saved[0];
+            Submission input = new Submission();
+            input.requestId = request.Request_Key__c; input.firstName = request.First_Name__c;
+            input.lastName = request.Last_Name__c; input.email = request.Email__c; input.phone = request.Phone__c;
+            input.company = request.Company__c; input.source = request.Source__c; input.campaign = request.Campaign__c;
+            normalizeAndValidate(input);
+            // Recover the original intake mode from its immutable fingerprint,
+            // including older requests that predate this action. Do not infer it from source labels.
+            input.createContact = true;
+            if (submissionHash(input) != request.Payload_Hash__c) input.createContact = false;
+            if (submissionHash(input) != request.Payload_Hash__c) {
+                throw new ConflictingRequestException('The saved form details changed. Restore the original values before retrying; this action will not invent a new submission.');
+            }
+            Receipt receipt = process(input);
+            result.status = receipt.status; result.message = receipt.reason;
+            result.requestRecordId = receipt.submissionId; result.taskId = receipt.taskId;
+        } catch (Exception error) {
+            Database.rollback(beforeRetry);
+            result.status = 'Error';
+            result.message = error instanceof InvalidSubmissionException || error instanceof ConflictingRequestException || error instanceof MissingPermissionException
+                ? error.getMessage() : 'Salesforce could not finish the retry. No partial changes were saved. Retry this same Demo Request.';
+        }
+        return new List<RetryResult>{result};
+    }
+
+    private static String submissionHash(Submission input) {
+        List<String> fields = new List<String>{input.firstName, input.lastName, input.email, input.phone,
+            input.company, input.source, input.campaign};
+        if (input.createContact == true) fields.add('account-contact-v1');
+        return digest(JSON.serialize(fields));
+    }
+
     private static AccountMatch companyAccount(Submission input, Id newAccountOwner) {
         AccountMatch result = new AccountMatch();
         String domain = input.email.substringAfter('@');
@@ -258,8 +314,11 @@ global with sharing class GTMDemoIntake {
         List<GTM_Demo_Identity__c> locks = [SELECT Id FROM GTM_Demo_Identity__c WHERE Email_Key__c = :domainKey WITH USER_MODE LIMIT 1 FOR UPDATE];
         if (locks.isEmpty()) insert as user new GTM_Demo_Identity__c(Email_Key__c = domainKey);
         String websitePattern = '%' + domain + '%';
+        // Imports often leave doubled spaces or tabs in Account names. Use a
+        // broad bounded lookup, then require the exact normalized name below.
+        String companyPattern = clean(input.company).replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_').replaceAll('\\s+', '%');
         List<Account> candidates = [SELECT Id, Name, Website, OwnerId, GTM_Intake_Domain__c FROM Account
-            WHERE GTM_Intake_Domain__c = :domain OR Website LIKE :websitePattern OR Name = :input.company
+            WHERE GTM_Intake_Domain__c = :domain OR Website LIKE :websitePattern OR Name LIKE :companyPattern
             WITH USER_MODE LIMIT 100];
         List<Account> matches = new List<Account>();
         Boolean conflict = false;

@@ -98,6 +98,18 @@ successful task as **Notification pending**; retry attempts only the unfinished
 notification. The web app does not automatically generate a new ID after an
 unknown response.
 
+The **Demo Requests** tab now exposes **Needs attention** and **All demo requests**
+views. Its record layout includes the original submission, routing outcome,
+matched records, notification state, and a task hyperlink. **Retry saved request**
+launches `GTM_Retry_Demo_Request`, a Screen Flow that calls the service's invocable
+action with the current record ID. It requires the existing intake permission and
+record access, preserves the saved payload and attribution, and recovers the
+original public Account/Contact or private Lead-only mode from its fingerprint.
+This is a single-record action, not a bulk retry job. Correct CRM matching or
+ownership first; edited original request details cause a controlled refusal.
+Salesforce passes the current record ID to the Flow's `recordId` input through
+the [Flow quick action](https://help.salesforce.com/s/articleView?id=platform.flow_distribute_internal_action.htm&language=en_US&type=5).
+
 ## Verification
 
 - `npx vitest run tests/demo-intake.test.ts tests/inbound-lab.test.ts` checks the
