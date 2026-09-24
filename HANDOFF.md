@@ -2,39 +2,36 @@
 
 ## Finished
 
-- Deployed Salesforce's **Retry saved request** action, **Needs attention** view, expanded request page, and direct task links.
-- Corrected CRM data can resume an inquiry without re-entering form details, changing original attribution, or duplicating its task. Older Lead-only requests retain their original mode.
-- Worker recovery now handles an interrupted response body after Salesforce saves, with a 40-second total deadline inside the existing form timeout.
-- Imported company names with repeated spaces no longer hide conflicting company matches and cause duplicates.
-- Left Mason Turner held at fictional Bluebird Data for your manual recovery demo; Elena's completed recovery and Leo's interrupted-response drill are verified examples.
+- Added Hot Potato and Pomade as sister-project cards and footer links on the public Control Tower page, with concrete descriptions and development/access limits.
+- Fixed initial section-link scrolling, including the resume's Salesforce proof destination.
+- Published release `797ec39` to Cloudflare Pages; deployment `bf51048d-d493-4fd1-bb0f-303decbca5c5`. Applied the same patch to this checkout as `62b4028`.
+- Reviewed all three projects' presentation and selected implementation paths; findings and prioritized improvements are in [the credibility review](docs/portfolio-credibility-review.md).
 
 ## Try It
 
-Follow [the routing walkthrough](docs/hollis-routing-scenarios.md), including its native Salesforce links. For Mason: add `https://bluebird-routing.example` to Bluebird's Website, then choose **Retry saved request** on his inquiry. Refresh to see Alex's follow-up using the same task.
-
-Run `node scripts/hollis-routing-scenarios.mjs verify` for the five original cases; `recover` verifies Elena's native retry. Run `node scripts/verify-hollis-interrupted-receipt.mjs` for a local connection-failure drill using real Salesforce. Keep ignored `.runtime/` receipts so reruns reuse the same IDs.
+Open [Sister projects](https://gtm-control-tower.pages.dev/#sister-projects), then follow either source link. Run the 64-row cleanup or choose **Try the safe sample** in the CSV audit. The page performs these operations locally in the browser.
 
 ## Checks
 
-- 28 Salesforce Apex tests passed; deployment `0Afg500000EfWFBCA3` succeeded. Task-link metadata deployment `0Afg500000EfWNFCA3` succeeded.
-- 22 focused application tests, TypeScript, Node syntax, and focused ESLint passed. Worker build/deploy passed: `5cca7354-4967-4f9a-b276-47ff7242bf4d`.
-- All five original scenarios passed through the deployed public endpoint. Native retry recovered Elena with one task. The locally interrupted real-Salesforce response recovered with identical record IDs and one task.
-- Salesforce APIs confirmed the action, layout, task hyperlink, and Mason's ready held state. Browser interaction/visual rendering was not tested.
-- Public HTML, CSS, and form JavaScript are unchanged. Diff and secret checks passed; no credentials are committed.
+- 126 focused tests passed: Control Tower 30, Hot Potato 48, Pomade 48. Exact commands and evidence limits are in the review.
+- Changed-component ESLint, public production build, and diff whitespace checks passed.
+- Browser checks passed for desktop, 390px mobile without horizontal overflow, keyboard links, initial section anchors, cleanup receipt, and sample audit. Production page readback and visual inspection confirmed both cards and footer links.
+- Hot Potato marketing was exercised and inspected. Pomade source/tests and a saved screenshot were reviewed; its private hosted workflow and live provider connections were not tested.
 
 ## Decisions
 
-- Account ownership supplies routing context. Alex remains SMB/West and Jordan Enterprise/East; form fields do not guess tier or territory.
-- Recovery belongs in native Salesforce and reuses the existing transaction. Original submission details remain protected by their fingerprint.
-- Marketing/enrichment fixtures and the connection failure are simulated; Salesforce writes and read-back are real. No new vendor integration is claimed.
+- Link to application source while Hot Potato's marketing claims need cleanup and Pomade's hosted access remains private.
+- Release from the previous public base, `d7e63a6`, in sibling worktree `gtm-control-tower-portfolio`; do not incidentally publish newer inbound-routing changes.
+- Keep the review evidence-based: synthetic checks and historical receipts do not establish live service availability or customer outcomes.
 
 ## Remaining
 
-- Long outages still require a retry; there is no durable background queue or automatic vendor enrichment subscription.
-- Native Campaign creation remains unavailable. Notification device delivery was not tested.
+- Correct Hot Potato's simulated/live labels, product links, license presentation, pricing and unsupported availability claims.
+- Show one sanitized Pomade workflow and clarify source-linked versus human-reviewed research status.
+- Simplify and date Control Tower's distinct proof examples; later record a qualified Hot Potato booking flow.
+- Existing Hollis work is unchanged. Its prior handoff is preserved at Git commit `e6af3c1`; scenario guidance remains in `docs/hollis-routing-scenarios.md`.
 
 ## Review First
 
-- The routing walkthrough and Mason's saved Salesforce inquiry.
-- `GTMDemoIntake.retrySavedRequest`, its Screen Flow, and `hollis/worker.ts`.
-- The interrupted-receipt script and ignored native receipts under `.runtime/`.
+- [Live sister-project cards](https://gtm-control-tower.pages.dev/#sister-projects) and `components/public-demo.tsx`.
+- [Portfolio credibility review](docs/portfolio-credibility-review.md), especially Hot Potato's marketing gaps and Pomade's research-status distinction.

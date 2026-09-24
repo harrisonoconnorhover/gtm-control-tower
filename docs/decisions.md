@@ -316,3 +316,17 @@ successful HTTP header does not prove a complete receipt. One shared 40-second
 deadline bounds authentication and delivery within the unchanged form timeout.
 The local interruption drill uses real Salesforce writes with stable IDs and
 explicitly labels its simulated transport/authentication boundary.
+
+## Sister projects expose concrete work and current availability
+
+On September 24, 2026, the public page gained Hot Potato and Pomade cards after
+Salesforce proof, with matching footer links. They link to the actual public
+application repositories. Hot Potato's marketing claims need correction before
+that site becomes the primary destination; Pomade's hosted access remains private.
+The cards imply neither shared accounts nor a runtime integration.
+
+The narrow Pages release was built from previously deployed `d7e63a6` plus
+`797ec39`, and that patch was also applied to the current development checkout as
+`62b4028`. This avoids publishing unrelated inbound-routing work with a portfolio
+link change. The evidence and next improvements are in
+`docs/portfolio-credibility-review.md`.
