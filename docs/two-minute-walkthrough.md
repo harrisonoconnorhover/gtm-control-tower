@@ -1,4 +1,8 @@
-# Two-minute portfolio walkthrough
+# Archived two-minute portfolio walkthrough
+
+Removed from the public page on September 24, 2026. The MP4 and captions are
+preserved in `docs/archive/` and are not included in public-site builds. The
+interactive browser demo and written CRM sandbox results remain on the page.
 
 ## Narration
 
@@ -36,7 +40,7 @@ state come out.
 
 ## Recording notes
 
-- The checked-in MP4 is generated from the public synthetic demo only.
+- The archived MP4 was generated from the public synthetic demo only.
 - The WebVTT captions match this narration and remain available independently.
-- Regenerate on macOS with a local app server by running
+- To regenerate the archived file on macOS with a local app server, run
   `npm run generate:walkthrough -- http://localhost:3001`.

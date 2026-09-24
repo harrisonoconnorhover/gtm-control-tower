@@ -4,7 +4,7 @@ set -euo pipefail
 project_dir="$(cd "$(dirname "$0")/.." && pwd)"
 base_url="${1:-http://localhost:3000}"
 chrome_bin="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
-output="$project_dir/public/gtm-control-tower-walkthrough.mp4"
+output="$project_dir/docs/archive/gtm-control-tower-walkthrough.mp4"
 work_dir="$(mktemp -d /tmp/gtm-walkthrough.XXXXXX)"
 trap 'mv "$work_dir" "$HOME/.Trash/$(basename "$work_dir")" 2>/dev/null || true' EXIT
 
