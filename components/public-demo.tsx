@@ -82,7 +82,6 @@ export function PublicDemo() {
             <a href="#audit" className="rounded-full bg-[#83bcff]/10 px-4 py-2 font-semibold text-[#83bcff]">Audit your CSV</a>
             <a href="#demo" className="rounded-full bg-white/[0.06] px-4 py-2 text-[#dce9e2]">Two-minute demo</a>
             <a href="#salesforce-proof" className="rounded-full border border-[#83bcff]/20 px-4 py-2 font-semibold text-[#83bcff]">Apex proof</a>
-            <a href="#walkthrough" className="rounded-full border border-white/10 px-4 py-2 text-[#9fb2a8]">Watch proof</a>
             <a href="https://github.com/harrisonoconnorhover/gtm-control-tower#quick-start-one-command-no-accounts-required" className="rounded-full border border-white/10 px-4 py-2 text-[#9fb2a8] transition hover:border-white/25 hover:text-white">Self-host setup</a>
             <a href="https://github.com/harrisonoconnorhover/gtm-control-tower" target="_blank" rel="noreferrer" className="rounded-full border border-[#d8ff67]/25 px-4 py-2 font-semibold text-[#d8ff67] transition hover:bg-[#d8ff67]/10">GitHub ↗</a>
           </nav>
@@ -281,29 +280,21 @@ export function PublicDemo() {
           </div>
         </section>
 
-        <section id="walkthrough" className="scroll-mt-6 py-8" aria-label="Live sandbox acceptance and walkthrough">
-          <div className="overflow-hidden rounded-[34px] border border-[#83bcff]/20 bg-[#0a1b17]">
-            <div className="grid gap-0 xl:grid-cols-[0.82fr_1.18fr]">
-              <div className="p-6 sm:p-8 lg:p-10">
-                <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#83bcff]">Live development-system acceptance</p>
-                <h2 className="mt-3 text-4xl font-semibold leading-tight tracking-[-0.05em]">The receipt caught what the local validator missed.</h2>
-                <p className="mt-5 text-sm leading-6 text-[#8ca096]">A separate 72-row privacy-safe batch ran through the real operator flow and both CRM sandboxes. Eight duplicates were merged, six malformed emails stayed out, and an internationalized-domain mismatch surfaced as six honest HubSpot failures. IDNA normalization fixed the provider boundary; the retry completed without duplicating prior successes.</p>
-                <div className="mt-6 grid grid-cols-2 gap-3">
-                  <ProofStat value="72" label="messy input rows" />
-                  <ProofStat value="58" label="governed CRM identities" />
-                  <ProofStat value="0" label="duplicate Salesforce emails" />
-                  <ProofStat value="58/58" label="final HubSpot receipt" />
-                </div>
-                <p className="mt-5 font-mono text-[9px] leading-5 text-[#657d72]">REPEAT PROOF · SALESFORCE 0 CREATED / 58 UPDATED · HUBSPOT 52 UPDATED / 6 CORRECTED CREATED</p>
+        <section id="walkthrough" className="scroll-mt-6 py-8" aria-label="CRM sandbox results">
+          <div className="grid gap-8 rounded-[34px] border border-[#83bcff]/20 bg-[#0a1b17] p-6 sm:p-8 lg:grid-cols-[1.2fr_1fr] lg:items-center lg:p-10">
+            <div>
+              <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#83bcff]">Live development-system acceptance</p>
+              <h2 className="mt-3 text-4xl font-semibold leading-tight tracking-[-0.05em]">The receipt caught what the local validator missed.</h2>
+              <p className="mt-5 text-sm leading-6 text-[#8ca096]">A separate 72-row privacy-safe batch ran through the real operator flow and both CRM sandboxes. Eight duplicates were merged, six malformed emails stayed out, and an internationalized-domain mismatch surfaced as six honest HubSpot failures. IDNA normalization fixed the provider boundary; the retry completed without duplicating prior successes.</p>
+            </div>
+            <div>
+              <div className="grid grid-cols-2 gap-3">
+                <ProofStat value="72" label="messy input rows" />
+                <ProofStat value="58" label="governed CRM identities" />
+                <ProofStat value="0" label="duplicate Salesforce emails" />
+                <ProofStat value="58/58" label="final HubSpot receipt" />
               </div>
-              <div className="border-t border-white/10 bg-[#06100d] p-4 xl:border-l xl:border-t-0 sm:p-5">
-                <div className="mb-3 flex items-center justify-between gap-3"><div><p className="text-sm font-semibold">Two-minute product walkthrough</p><p className="mt-1 text-[10px] text-[#71877c]">Synthetic data only · captions and full script included</p></div><a href="/gtm-control-tower-walkthrough.mp4" download className="rounded-full border border-white/10 px-3 py-2 text-[10px] text-[#a8bbb1]">Download MP4</a></div>
-                <video controls preload="metadata" poster="/og.png" className="aspect-video w-full rounded-2xl border border-white/10 bg-black" aria-label="Two-minute GTM Control Tower walkthrough">
-                  <source src="/gtm-control-tower-walkthrough.mp4" type="video/mp4" />
-                  <track kind="captions" src="/gtm-control-tower-walkthrough.vtt" srcLang="en" label="English" default />
-                  Your browser does not support the walkthrough video.
-                </video>
-              </div>
+              <p className="mt-5 font-mono text-[9px] leading-5 text-[#657d72]">REPEAT PROOF · SALESFORCE 0 CREATED / 58 UPDATED · HUBSPOT 52 UPDATED / 6 CORRECTED CREATED</p>
             </div>
           </div>
         </section>

@@ -93,8 +93,8 @@ The Cloudflare Pages site is a static, browser-only showroom. Visitors can run
 the deterministic 64-row cleanup or audit a local CSV without transmitting the
 file; the audit produces aggregate counts and a downloadable Markdown report.
 The site does not store workspaces, run connectors, or expose the operator
-application. It also embeds the checked-in, captioned two-minute walkthrough
-and the verified 72-row development-system receipt. The working product remains
+application. It also shows the verified 72-row development-system receipt.
+The working product remains
 the Docker self-host below.
 
 The public site cannot open `/app`, read a CRM, save a review decision, or call
@@ -227,7 +227,6 @@ npm test
 npm run lint
 npm run build
 npm run build:public
-npm run generate:walkthrough -- http://localhost:3001
 npm run smoke:fresh-install
 ```
 
