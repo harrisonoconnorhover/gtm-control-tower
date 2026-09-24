@@ -4,6 +4,8 @@ Reviewed September 24, 2026. Scope: public presentation, selected implementation
 
 **Follow-up completed September 24:** Hot Potato's marketing corrections below have now been published at [its public site](https://hot-potato-32c.pages.dev/), source commit `752c38c`. Pricing/support promises and the integration logo wall were removed; the walkthrough is explicitly simulated, the rule sketch is pseudocode, and product/license links point to the application. The original findings below describe the page at review time. A real provider-workflow demonstration is still separate follow-up work.
 
+**Video follow-up completed September 24:** The narrated slideshow and its download/navigation links were removed from Control Tower. Written sandbox results now occupy the full section; the original media is archived outside public assets. Release: `ee2618a`.
+
 ## Assessment
 
 All three projects contain substantive software. Their public proof is uneven. The most convincing portfolio story is a small, useful operation a visitor can inspect: input, decision, result, and an honest limit. More integrations, animation, or enterprise terminology would not improve that story by itself.
@@ -32,7 +34,7 @@ Recommended small changes:
 - Date the Salesforce and CRM sandbox evidence beside its claims. Explain that the 64-row browser fixture, 72-row historical CRM run, three-lead routing run, and 200-lead bulk contract are separate exercises.
 - Lead the Apex section with the business result: preserve valid ownership, stop stale changes, explain unresolved records. Keep terms such as Queueable and Transaction Finalizer in the technical explanation.
 
-Suggested 90-second proof: choose the safe sample, inspect one duplicate and one hold, download its audit, then run the bundled 64-row cleanup and compare the result. The public upload tool diagnoses other CSVs; repairing those files requires the operator workspace. State explicitly that this browser demonstration does not write to a CRM. Use the existing sandbox recording as a separate, dated example.
+Suggested 90-second proof: choose the safe sample, inspect one duplicate and one hold, download its audit, then run the bundled 64-row cleanup and compare the result. The public upload tool diagnoses other CSVs; repairing those files requires the operator workspace. State explicitly that this browser demonstration does not write to a CRM. Any future recording of a sandbox workflow should be a separate, dated example.
 
 ## Hot Potato: the application is real; the marketing needs correction
 
