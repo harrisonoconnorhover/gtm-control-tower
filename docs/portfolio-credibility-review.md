@@ -2,6 +2,8 @@
 
 Reviewed September 24, 2026. Scope: public presentation, selected implementation paths, and focused local checks. This is not a production-readiness certification or a fresh qualification of every integration.
 
+**Follow-up completed September 24:** Hot Potato's marketing corrections below have now been published at [its public site](https://hot-potato-32c.pages.dev/), source commit `752c38c`. Pricing/support promises and the integration logo wall were removed; the walkthrough is explicitly simulated, the rule sketch is pseudocode, and product/license links point to the application. The original findings below describe the page at review time. A real provider-workflow demonstration is still separate follow-up work.
+
 ## Assessment
 
 All three projects contain substantive software. Their public proof is uneven. The most convincing portfolio story is a small, useful operation a visitor can inspect: input, decision, result, and an honest limit. More integrations, animation, or enterprise terminology would not improve that story by itself.
