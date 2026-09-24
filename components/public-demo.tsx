@@ -27,6 +27,11 @@ export function PublicDemo() {
   const complete = stage === steps.length - 1 && !running;
 
   useEffect(() => {
+    const sectionId = window.location.hash.slice(1);
+    if (sectionId) document.getElementById(sectionId)?.scrollIntoView();
+  }, []);
+
+  useEffect(() => {
     const captureParameter = new URLSearchParams(window.location.search).get('capture');
     const requestedStage = captureParameter === null ? null : Number(captureParameter);
     if (requestedStage !== null && Number.isInteger(requestedStage) && requestedStage >= 0 && requestedStage < steps.length) {
@@ -252,6 +257,30 @@ export function PublicDemo() {
           </div>
         </section>
 
+        <section id="sister-projects" className="scroll-mt-6 py-8" aria-labelledby="sister-projects-heading">
+          <div className="mb-6 max-w-2xl">
+            <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#9fb2a8]">Sister projects</p>
+            <h2 id="sister-projects-heading" className="mt-3 text-3xl font-semibold tracking-[-0.04em] sm:text-4xl">More tools for the work around your CRM.</h2>
+            <p className="mt-4 text-sm leading-6 text-[#9fb2a8]">Independent software projects by Harrison O&apos;Connor-Hoover. Each has its own codebase, setup, and development status.</p>
+          </div>
+          <div className="grid gap-5 md:grid-cols-2">
+            <article className="flex flex-col rounded-2xl border border-white/15 bg-[#0b1b16] p-6 sm:p-8">
+              <p className="font-mono text-xs text-[#ffb49d]">LEAD ASSIGNMENT</p>
+              <h3 className="mt-3 text-2xl font-semibold">Hot Potato</h3>
+              <p className="mt-4 text-sm leading-6 text-[#b1c2b9]">Route an inbound lead to an eligible rep, preserve a valid existing owner, and record why that rep was chosen. The routing engine uses readable rules and weighted round robin.</p>
+              <p className="mb-6 mt-4 text-xs leading-5 text-[#9fb2a8]">Open-source application in active development. Real calendar and CRM actions require your own provider connections.</p>
+              <a href="https://github.com/harrisonoconnorhover/hot-potato" target="_blank" rel="noopener noreferrer" className="mt-auto w-fit rounded-lg border border-[#ffb49d]/35 px-4 py-3 text-sm font-semibold text-[#ffb49d] transition hover:bg-[#ffb49d]/10 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#ffb49d]">Explore Hot Potato source ↗</a>
+            </article>
+            <article className="flex flex-col rounded-2xl border border-white/15 bg-[#0b1b16] p-6 sm:p-8">
+              <p className="font-mono text-xs text-[#bfb5ff]">RESEARCH WORKBOOKS</p>
+              <h3 className="mt-3 text-2xl font-semibold">Pomade</h3>
+              <p className="mt-4 text-sm leading-6 text-[#b1c2b9]">Import account data, apply reusable formulas and research recipes, and inspect the sources and run history behind the results. Keep review and CRM updates as deliberate steps.</p>
+              <p className="mb-6 mt-4 text-xs leading-5 text-[#9fb2a8]">In active development. Hosted access is private; the public repository documents the available workflows and limits.</p>
+              <a href="https://github.com/harrisonoconnorhover/pomade" target="_blank" rel="noopener noreferrer" className="mt-auto w-fit rounded-lg border border-[#bfb5ff]/35 px-4 py-3 text-sm font-semibold text-[#bfb5ff] transition hover:bg-[#bfb5ff]/10 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#bfb5ff]">Explore Pomade source ↗</a>
+            </article>
+          </div>
+        </section>
+
         <section id="walkthrough" className="scroll-mt-6 py-8" aria-label="Live sandbox acceptance and walkthrough">
           <div className="overflow-hidden rounded-[34px] border border-[#83bcff]/20 bg-[#0a1b17]">
             <div className="grid gap-0 xl:grid-cols-[0.82fr_1.18fr]">
@@ -302,6 +331,11 @@ export function PublicDemo() {
 
         <footer className="flex flex-wrap items-center justify-between gap-4 border-t border-white/10 py-8 text-xs text-[#667c71]">
           <p>Browser-only audit · no uploads · open-source self-hosted workspace</p>
+          <nav aria-label="Sister projects" className="flex flex-wrap items-center gap-x-5 gap-y-3 text-[#9fb2a8]">
+            <span>Sister projects</span>
+            <a href="https://github.com/harrisonoconnorhover/hot-potato" target="_blank" rel="noopener noreferrer" className="rounded underline underline-offset-4 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-4">Hot Potato ↗</a>
+            <a href="https://github.com/harrisonoconnorhover/pomade" target="_blank" rel="noopener noreferrer" className="rounded underline underline-offset-4 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-4">Pomade ↗</a>
+          </nav>
           <p className="font-mono">BUILT FOR GTM ENGINEERING, REVOPS, AND REVENUE SYSTEMS</p>
         </footer>
       </div>
