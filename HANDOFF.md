@@ -2,37 +2,35 @@
 
 ## Finished
 
-- Deployed the human-approved Screen Flow, bulk Apex planner/Queueable, policies, queues, permission set, and durable receipt objects.
-- Verified idempotency, user-mode security, row locking, stale protection, partial DML, and Transaction Finalizer handling with six focused tests.
-- Ran a live synthetic batch: two Leads routed, one held, zero failed/stale, async job completed with zero errors.
-- Corrected run semantics so expected policy holds remain visible without being mislabeled as system errors.
-- Added an obvious local portfolio proof section, reviewer guide, source links, and development-org evidence.
+- Fixed CSV imports that accepted malformed supplied `normalized_email` values as destination-ready; supplied and raw addresses now share the existing validation and IDNA normalization.
+- Added regressions for invalid supplied values and valid internationalized domains; pinned the existing sample result at 64 input rows, 56 canonical rows, 44 ready, and 12 held.
+- Replaced the vague Quality label with Destination-ready and visible row fractions.
+- Clarified the synthetic browser run, fixed overflow rule, supplied expected lifecycle stage, and the steps for trying the existing demo.
+- Dated and separated the historical CRM and Salesforce examples, linked the original CRM run notes, and mirrored the focused patch into the development checkout.
 
 ## Try It
 
-Open the local public preview at `#salesforce-proof`, then follow `docs/salesforce-apex-routing.md` through the Flow, Apex, test, and live-proof evidence.
+In `gtm-control-tower-portfolio`, run `npm run preview:public -- --port 4195 --strictPort` and open `http://127.0.0.1:4195/`. Choose **Run the 64-row cleanup**. Use **Try safe sample** in the CSV audit to inspect and download an aggregate report.
 
 ## Checks
 
-- Full Salesforce deployment succeeded: 40/40 metadata components.
-- Final Apex validation passed: 6/6 tests; planner 85.4% and Queueable 81.6% coverage.
-- Live Queueable job completed with zero errors; durable run recorded 2 succeeded, 1 held, 0 failed, 0 stale.
-- Local repository tests, lint, XML/source validation, and public/full production builds passed.
+- Both checkouts: 44 focused tests passed across CSV import, browser audit/demo, identity resolution, public-company fixture, CRM workflow, HubSpot, and Salesforce contracts.
+- Both checkouts: changed-file ESLint and `npm run build:public` passed.
+- Public-demo test with exact row-count assertions passed; `git diff --check` passed and the diff was reviewed.
+- No native CRM calls, deployments, or provider requalification were performed. Browser QA and publishing are handled by the coordinating task.
 
 ## Decisions
 
-- Agentforce stays read-only; only the separate Screen Flow can request mutation.
-- Admin-editable policy lives in Custom Metadata; Apex owns concurrency, security, and receipts.
-- The app permission set does not grant broad `Transfer Leads`; org administrators retain that business-access decision.
+- Reuse existing email validation; retain valid supplied identities and preserve raw input.
+- Keep historical sandbox metrics as dated records, separate from browser computation and customer outcomes.
+- Release from the portfolio checkout; the development checkout retains unrelated inbound-routing work.
 
 ## Remaining
 
-- Publish the portfolio update only with explicit public-deployment approval.
-- Create an Einstein Agent User only if explicitly approved; the activated agent still lacks that dedicated runtime identity.
-- Do not describe this development-org proof as production/customer deployment or years of Apex ownership.
+- Complete browser QA, then publish only the reviewed public release through the coordinating task.
+- Existing published Agentforce preview still requires its dedicated execution user; this change does not qualify it.
 
 ## Review First
 
-- `salesforce/force-app/main/default/classes/GTMLeadRoutingService.cls`
-- `salesforce/force-app/main/default/classes/GTMLeadRoutingQueueable.cls`
-- `docs/salesforce-apex-routing.md`
+- `lib/csv-control-tower.ts` and `tests/csv-control-tower.test.ts`.
+- `components/public-demo.tsx` and `tests/messy-lead-demo.test.ts`.

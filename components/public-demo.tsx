@@ -10,12 +10,12 @@ import type { LiveContactState } from '@/lib/live-control-tower';
 import { InstantCrmAudit } from '@/components/instant-crm-audit';
 
 const steps = [
-  { label: 'Ingest', system: 'CSV / Sheets', detail: 'Accept the source exactly as it arrives.' },
+  { label: 'Ingest', system: 'Sample CSV', detail: 'Read 64 fictional leads in your browser.' },
   { label: 'Normalize', system: 'Control Tower', detail: 'Standardize identity, stages, and routing inputs.' },
   { label: 'Merge', system: 'Identity rules', detail: 'Keep one canonical contact without deleting evidence.' },
-  { label: 'Reroute', system: 'Capacity rules', detail: 'Move overloaded Northeast enterprise leads safely.' },
-  { label: 'Replay', system: 'Lifecycle guardrail', detail: 'Restore impossible stage regressions.' },
-  { label: 'Receipt', system: 'Destination gate', detail: 'Write clean rows and hold everything unresolved.' },
+  { label: 'Reroute', system: 'Example policy', detail: 'Assign Northeast enterprise leads to the overflow owner.' },
+  { label: 'Replay', system: 'Expected stage', detail: 'Restore the later stage supplied in the sample file.' },
+  { label: 'Receipt', system: 'Readiness check', detail: 'Count ready and held rows; CRM writes require the operator workspace.' },
 ];
 
 const preview = previewMessyLeadDemo();
@@ -91,13 +91,13 @@ export function PublicDemo() {
           <div>
             <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-[#d8ff67]/20 bg-[#d8ff67]/[0.06] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.18em] text-[#d8ff67]">
               <span className="h-1.5 w-1.5 rounded-full bg-[#d8ff67]" />
-              Deterministic · inspectable · self-hosted
+              Browser demo · synthetic data · open source
             </div>
             <h1 className="max-w-[850px] text-5xl font-semibold leading-[0.93] tracking-[-0.065em] sm:text-7xl lg:text-[86px]">
               Bad CRM data in. Defensible action out.
             </h1>
             <p className="mt-7 max-w-2xl text-base leading-7 text-[#96aaa0] sm:text-lg">
-              GTM Control Tower maps messy lead files, contains unsafe records, executes merge and routing repairs, and leaves a receipt a revenue team can actually audit.
+              Inspect duplicate leads, incorrect owner assignments, and lifecycle mismatches. Run the sample cleanup to see which records pass the readiness checks and which still need review.
             </p>
             <div className="mt-8 flex flex-wrap items-center gap-3">
               <a href="#audit" className="rounded-full bg-[#83bcff] px-6 py-3.5 text-sm font-black text-[#06100d] shadow-[0_14px_50px_rgba(131,188,255,0.16)] transition hover:-translate-y-0.5 hover:bg-[#acd5ff]">
@@ -160,6 +160,7 @@ export function PublicDemo() {
             <div>
               <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#d8ff67]">The two-minute proof</p>
               <h2 className="mt-2 text-3xl font-semibold tracking-[-0.04em] sm:text-4xl">Six controls. One auditable batch.</h2>
+              <p className="mt-3 max-w-3xl text-sm leading-6 text-[#9fb2a8]">Choose <strong>Run the 64-row cleanup</strong>, compare the source rows above with the receipt below, and inspect a held record. To try an audit first, use <a href="#audit" className="underline underline-offset-4">Try safe sample</a> and download its aggregate report.</p>
             </div>
             <p aria-live="polite" className="font-mono text-[10px] uppercase tracking-[0.15em] text-[#71877c]">
               {stage < 0 ? 'Ready to run' : running ? `Step ${stage + 1} of ${steps.length}` : 'Run complete'}
@@ -182,6 +183,7 @@ export function PublicDemo() {
               );
             })}
           </div>
+          <p className="mt-4 max-w-4xl text-xs leading-6 text-[#9fb2a8]">This run uses fictional records and computes the result locally in your browser. The example policy sends Northeast enterprise leads to <code>CE-ENT-OVERFLOW</code>; it does not measure rep capacity. Stage replay uses the file&apos;s <code>expected_lifecycle_stage</code>, so it depends on a supplied source of truth. This page makes no CRM changes.</p>
         </section>
 
         <section className="grid gap-5 py-8 lg:grid-cols-[0.9fr_1.1fr]">
@@ -189,7 +191,7 @@ export function PublicDemo() {
             <p className="font-mono text-[9px] uppercase tracking-[0.2em] text-[#ff9c82]">Before</p>
             <h2 className="mt-2 text-2xl font-semibold tracking-tight">The CRM looks populated. It is not trustworthy.</h2>
             <div className="mt-6 grid grid-cols-2 gap-3">
-              <OutcomeMetric label="Destination-ready" value={`${preview.beforeQuality.toFixed(0)}%`} tone="warning" />
+              <OutcomeMetric label="Destination-ready" value={`${preview.beforeQuality.toFixed(0)}%`} detail={`${Math.round(preview.rawRows * preview.beforeQuality / 100)} / ${preview.rawRows} input rows`} tone="warning" />
               <OutcomeMetric label="Flagged rows" value={String(preview.initiallyFlagged)} tone="warning" />
               <OutcomeMetric label="Duplicate rows" value={String(preview.duplicateRows)} tone="warning" />
               <OutcomeMetric label="Stage reversals" value={String(preview.lifecycleRegressions)} tone="warning" />
@@ -205,7 +207,7 @@ export function PublicDemo() {
               <span className="rounded-full border border-[#d8ff67]/20 px-3 py-1.5 font-mono text-[9px] text-[#d8ff67]">PREVIEW → EXECUTE → RECEIPT</span>
             </div>
             <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
-              <OutcomeMetric label="Quality" value={complete && result ? `${result.afterQuality.toFixed(0)}%` : '—'} />
+              <OutcomeMetric label="Destination-ready" value={complete && result ? `${result.afterQuality.toFixed(0)}%` : '—'} detail={complete && result ? `${result.readyRows} / ${result.activeRows} canonical rows` : 'After cleanup'} />
               <OutcomeMetric label="Merged" value={complete && result ? String(result.mergedRows) : '—'} />
               <OutcomeMetric label="Rerouted" value={complete && result ? String(result.reroutedRows) : '—'} />
               <OutcomeMetric label="Held safely" value={complete && result ? String(result.heldRows) : '—'} />
@@ -213,8 +215,8 @@ export function PublicDemo() {
             <div className="mt-5 rounded-2xl border border-white/10 bg-[#06100d]/55 p-4 font-mono text-[10px] leading-6 text-[#89a095]">
               {complete && result ? (
                 <>
-                  <p className="text-[#d8ff67]">RECEIPT · DEMO-LAB-64 · EXECUTED</p>
-                  <p>{result.activeRows} canonical rows · {result.readyRows} ready for CRM · {result.heldRows} held for review</p>
+                  <p className="text-[#d8ff67]">BROWSER RECEIPT · DEMO-LAB-64 · LOCAL CLEANUP COMPLETE</p>
+                  <p>{result.activeRows} canonical rows · {result.readyRows} pass readiness checks · {result.heldRows} held for review</p>
                   <p>{result.mergedRows} merges · {result.reroutedRows} reroutes · {result.replayedRows} lifecycle replays</p>
                 </>
               ) : <p>Run the batch to produce the deterministic execution receipt.</p>}
@@ -226,12 +228,12 @@ export function PublicDemo() {
           <div className="overflow-hidden rounded-[34px] border border-[#83bcff]/25 bg-[#081814]">
             <div className="grid gap-0 xl:grid-cols-[0.78fr_1.22fr]">
               <div className="border-b border-white/10 p-6 sm:p-8 lg:p-10 xl:border-b-0 xl:border-r">
-                <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#83bcff]">Salesforce-native execution plane</p>
-                <h2 className="mt-3 text-4xl font-semibold leading-tight tracking-[-0.05em]">Apex that protects the business operation, not just a trigger demo.</h2>
+                <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#83bcff]">Separate Salesforce development-org exercise</p>
+                <h2 className="mt-3 text-4xl font-semibold leading-tight tracking-[-0.05em]">Route approved leads and preserve newer changes.</h2>
                 <p className="mt-5 text-sm leading-6 text-[#8ca096]">Agentforce and the triage Flow stay read-only. Ownership changes cross a separate Screen Flow approval boundary, then one Queueable Apex job locks the selected Leads, rejects stale data, applies deployable Custom Metadata policies, and writes a durable receipt for every record.</p>
-                <p className="mt-4 rounded-2xl border border-[#d8ff67]/20 bg-[#d8ff67]/[0.06] px-4 py-3 font-mono text-[10px] leading-5 text-[#b9d978]">DEVELOPMENT-ORG VERIFIED · 6/6 ROUTING TESTS PASSED · LIVE 3-LEAD RUN: 2 ROUTED, 1 HELD, 0 FAILED · IDEMPOTENT REPLAY RETURNED THE SAME RUN</p>
+                <p className="mt-4 rounded-2xl border border-[#d8ff67]/20 bg-[#d8ff67]/[0.06] px-4 py-3 font-mono text-[10px] leading-5 text-[#b9d978]">SEPTEMBER 2, 2026 · 6/6 ROUTING TESTS PASSED · SEPARATE LIVE 3-LEAD RUN: 2 ROUTED, 1 HELD, 0 FAILED · REPEATED APPROVAL RETURNED THE SAME RUN</p>
                 <div className="mt-6 grid grid-cols-2 gap-3">
-                  <ProofStat value="200" label="Leads per approved run" />
+                  <ProofStat value="200" label="Leads in the bulk test" />
                   <ProofStat value="1" label="Queueable job per run" />
                   <ProofStat value="0" label="duplicate jobs per token" />
                   <ProofStat value="5" label="durable receipt states" />
@@ -283,9 +285,10 @@ export function PublicDemo() {
         <section id="walkthrough" className="scroll-mt-6 py-8" aria-label="CRM sandbox results">
           <div className="grid gap-8 rounded-[34px] border border-[#83bcff]/20 bg-[#0a1b17] p-6 sm:p-8 lg:grid-cols-[1.2fr_1fr] lg:items-center lg:p-10">
             <div>
-              <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#83bcff]">Live development-system acceptance</p>
+              <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#83bcff]">Historical CRM sandbox run · documented August 26, 2026</p>
               <h2 className="mt-3 text-4xl font-semibold leading-tight tracking-[-0.05em]">The receipt caught what the local validator missed.</h2>
-              <p className="mt-5 text-sm leading-6 text-[#8ca096]">A separate 72-row privacy-safe batch ran through the real operator flow and both CRM sandboxes. Eight duplicates were merged, six malformed emails stayed out, and an internationalized-domain mismatch surfaced as six honest HubSpot failures. IDNA normalization fixed the provider boundary; the retry completed without duplicating prior successes.</p>
+              <p className="mt-5 text-sm leading-6 text-[#8ca096]">A separate 72-row batch with synthetic people ran through the operator flow and both CRM sandboxes. Eight duplicate rows were consolidated locally, six malformed emails stayed out, and an internationalized-domain mismatch surfaced as six HubSpot failures. IDNA normalization fixed the provider boundary; the retry completed without duplicating prior successes.</p>
+              <p className="mt-4 text-xs leading-6 text-[#9fb2a8]">These recorded results come from a different batch than the 64-row browser demo. They describe development systems, not customer outcomes or a live connection from this page. <a href="https://github.com/harrisonoconnorhover/gtm-control-tower/blob/d81b57e/README.md#verified-integration-behavior" target="_blank" rel="noreferrer" className="underline underline-offset-4">Read the historical run notes ↗</a></p>
             </div>
             <div>
               <div className="grid grid-cols-2 gap-3">
@@ -355,8 +358,8 @@ function HeroStat({ value, label, warning = false }: { value: string; label: str
   return <div className="bg-[#0b1b16] p-4"><p className={`text-2xl font-semibold ${warning ? 'text-[#ff9c82]' : 'text-[#edf8f2]'}`}>{value}</p><p className="mt-1 text-[10px] leading-4 text-[#71877c]">{label}</p></div>;
 }
 
-function OutcomeMetric({ label, value, tone = 'good' }: { label: string; value: string; tone?: 'good' | 'warning' }) {
-  return <div className="rounded-2xl border border-white/10 bg-[#06100d]/45 p-4"><p className="text-xs text-[#7f958a]">{label}</p><p className={`mt-2 text-2xl font-semibold ${tone === 'warning' ? 'text-[#ff9c82]' : 'text-[#d8ff67]'}`}>{value}</p></div>;
+function OutcomeMetric({ label, value, detail, tone = 'good' }: { label: string; value: string; detail?: string; tone?: 'good' | 'warning' }) {
+  return <div className="rounded-2xl border border-white/10 bg-[#06100d]/45 p-4"><p className="text-xs text-[#7f958a]">{label}</p><p className={`mt-2 text-2xl font-semibold ${tone === 'warning' ? 'text-[#ff9c82]' : 'text-[#d8ff67]'}`}>{value}</p>{detail && <p className="mt-1 text-[10px] leading-4 text-[#9fb2a8]">{detail}</p>}</div>;
 }
 
 function ProofStat({ value, label }: { value: string; label: string }) {

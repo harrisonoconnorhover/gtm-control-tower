@@ -17,6 +17,15 @@ describe('64-row messy lead demonstration', () => {
   it('executes merge, reroute, and replay while holding unresolved rows', () => {
     const result = runMessyLeadDemo();
 
+    expect(result).toMatchObject({
+      rawRows: 64,
+      mergedRows: 8,
+      reroutedRows: 11,
+      replayedRows: 8,
+      activeRows: 56,
+      readyRows: 44,
+      heldRows: 12,
+    });
     expect(result.mergedRows).toBe(result.duplicateRows);
     expect(result.reroutedRows).toBeGreaterThan(0);
     expect(result.replayedRows).toBe(result.lifecycleRegressions);
