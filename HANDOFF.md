@@ -17,7 +17,8 @@ In `gtm-control-tower-portfolio`, run `npm run preview:public -- --port 4195 --s
 - Both checkouts: 44 focused tests passed across CSV import, browser audit/demo, identity resolution, public-company fixture, CRM workflow, HubSpot, and Salesforce contracts.
 - Both checkouts: changed-file ESLint and `npm run build:public` passed.
 - Public-demo test with exact row-count assertions passed; `git diff --check` passed and the diff was reviewed.
-- No native CRM calls, deployments, or provider requalification were performed. Browser QA and publishing are handled by the coordinating task.
+- Browser QA passed at desktop and 390px: cleanup reached 44 ready / 12 held, sample audit reached 32 ready / 32 held, and the mobile page had no horizontal overflow.
+- No native CRM calls or provider requalification were performed.
 
 ## Decisions
 
@@ -27,7 +28,7 @@ In `gtm-control-tower-portfolio`, run `npm run preview:public -- --port 4195 --s
 
 ## Remaining
 
-- Complete browser QA, then publish only the reviewed public release through the coordinating task.
+- Publish and verify the reviewed static release; merge preserves the existing main-branch n8n smoke cleanup.
 - Existing published Agentforce preview still requires its dedicated execution user; this change does not qualify it.
 
 ## Review First
