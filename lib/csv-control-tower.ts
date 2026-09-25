@@ -140,9 +140,7 @@ export function importContactsCsv(csv: string, mapping: CsvColumnMapping = {}): 
     const fullName = readField('fullName') || [firstName, lastName].filter(Boolean).join(' ') || contactId;
     const rawEmail = readField('rawEmail');
     const suppliedNormalizedEmail = readField('normalizedEmail');
-    const normalizedEmail = suppliedNormalizedEmail
-      ? suppliedNormalizedEmail.trim().toLowerCase()
-      : normalizeEmail(rawEmail);
+    const normalizedEmail = normalizeEmail(suppliedNormalizedEmail || rawEmail);
     const company = nullable(readField('company'));
     const region = readField('region') || 'Unassigned';
     const segment = readField('segment') || 'Unassigned';

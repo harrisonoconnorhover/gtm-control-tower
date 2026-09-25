@@ -2,35 +2,35 @@
 
 ## Finished
 
-- Removed the narrated video player, MP4 download link, and **Watch proof** navigation item from the public page.
-- Rebalanced the written sandbox results into text and a two-by-two metrics grid that stacks on mobile.
-- Moved the original MP4 and captions to `docs/archive/`, outside public builds. The optional generator now writes to that archive.
-- Published release `ee2618a` from the existing public branch: [deployment](https://8e42d548.gtm-control-tower.pages.dev/). Applied the patch to this development checkout as `1dfad05`.
+- Fixed CSV imports that accepted malformed supplied `normalized_email` values as destination-ready; supplied and raw addresses now share the existing validation and IDNA normalization.
+- Added regressions for invalid supplied values and valid internationalized domains; pinned the existing sample result at 64 input rows, 56 canonical rows, 44 ready, and 12 held.
+- Replaced the vague Quality label with Destination-ready and visible row fractions.
+- Clarified the synthetic browser run, fixed overflow rule, supplied expected lifecycle stage, and the steps for trying the existing demo.
+- Dated and separated the historical CRM and Salesforce examples, linked the original CRM run notes, and mirrored the focused patch into the development checkout.
 
 ## Try It
 
-Open [the public page](https://gtm-control-tower.pages.dev/#walkthrough) to see the written results without the video. The old section anchor still works. Choose **Run the 64-row cleanup** to use the interactive demo.
+In `gtm-control-tower-portfolio`, run `npm run preview:public -- --port 4195 --strictPort` and open `http://127.0.0.1:4195/`. Choose **Run the 64-row cleanup**. Use **Try safe sample** in the CSV audit to inspect and download an aggregate report.
 
 ## Checks
 
-- Changed-component ESLint, `bash -n scripts/generate-walkthrough-video.sh`, `git diff --check`, and `npm run build:public` passed.
-- Built files contain no walkthrough media assets, player source, download link, or **Watch proof** label.
-- Desktop and 390px mobile visual checks passed with no horizontal overflow or broken section links. The interactive cleanup produced its completed receipt; browser error logs were empty.
-- The canonical public page was read back and visually inspected: zero video elements, zero MP4/VTT links, no **Watch proof** navigation item.
+- Both checkouts: 44 focused tests passed across CSV import, browser audit/demo, identity resolution, public-company fixture, CRM workflow, HubSpot, and Salesforce contracts.
+- Both checkouts: changed-file ESLint and `npm run build:public` passed.
+- Public-demo test with exact row-count assertions passed; `git diff --check` passed and the diff was reviewed.
+- No native CRM calls, deployments, or provider requalification were performed. Browser QA and publishing are handled by the coordinating task.
 
 ## Decisions
 
-- Keep the interactive demo and written sandbox evidence; preserve the retired video as a source archive.
-- Retain `#walkthrough` for existing section links, while labeling it **CRM sandbox results** for accessibility.
-- Publish only the narrow change from the existing public release, without unrelated inbound-routing work.
+- Reuse existing email validation; retain valid supplied identities and preserve raw input.
+- Keep historical sandbox metrics as dated records, separate from browser computation and customer outcomes.
+- Release from the portfolio checkout; the development checkout retains unrelated inbound-routing work.
 
 ## Remaining
 
-- Simplify technical language and date the separate proof examples as recommended in the portfolio review.
-- A future video should show an actual workflow with personal narration or concise captions.
-- Hot Potato's marketing cleanup is complete. Pomade's public workflow demonstration remains separate follow-up work.
+- Complete browser QA, then publish only the reviewed public release through the coordinating task.
+- Existing published Agentforce preview still requires its dedicated execution user; this change does not qualify it.
 
 ## Review First
 
-- [Published sandbox results](https://gtm-control-tower.pages.dev/#walkthrough) and `components/public-demo.tsx`.
-- `docs/two-minute-walkthrough.md` for the archived video and captions.
+- `lib/csv-control-tower.ts` and `tests/csv-control-tower.test.ts`.
+- `components/public-demo.tsx` and `tests/messy-lead-demo.test.ts`.

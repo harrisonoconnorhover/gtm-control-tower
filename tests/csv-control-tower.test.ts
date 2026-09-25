@@ -46,6 +46,29 @@ describe('CSV control tower', () => {
     expect(replayed.contacts[3]).toMatchObject({ lifecycleStage: 'sql', lastAction: 'lifecycle_replayed' });
   });
 
+  it('holds malformed supplied normalized emails even when the raw address is valid', () => {
+    const csv = `full_name,email,normalized_email,company,owner_id
+Alex Chen,not an email,also-not-an-email,Northstar,rep-1
+Mia Santos,mia@example.com,not an email,Northstar,rep-1`;
+    const contacts = importContactsCsv(csv).contacts;
+
+    for (const contact of contacts) {
+      expect(contact.normalizedEmail).toBeNull();
+      expect(contact.qualityFlags).toContain('invalid_email');
+      expect(isDestinationReadyContact(contact)).toBe(false);
+    }
+  });
+
+  it('validates supplied normalized emails with the same case and IDNA rules as raw emails', () => {
+    const csv = `full_name,email,normalized_email,company,owner_id
+Alex Chen,original@example.com,SIGNAL@MAÑANA.EXAMPLE,Northstar,rep-1`;
+    const [contact] = importContactsCsv(csv).contacts;
+
+    expect(contact.rawEmail).toBe('original@example.com');
+    expect(contact.normalizedEmail).toBe('signal@xn--maana-pta.example');
+    expect(isDestinationReadyContact(contact)).toBe(true);
+  });
+
   it('holds unresolved active contacts out of generic destinations', () => {
     const imported = importContactsCsv(funkyCsv).contacts;
     expect(imported.filter(isDestinationReadyContact)).toHaveLength(0);
