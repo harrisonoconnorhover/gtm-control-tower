@@ -24,6 +24,13 @@ changes eligibility. This page describes the fresh exact-email write preview.
 | Matched fields already agree | Unchanged; no write | Unchanged; no write |
 | Failed, malformed, or incomplete lookup | Stop comparison | Stop comparison |
 
+Across batches in the current workspace session, the destination summary retains
+each row's latest result: created, updated, unchanged, held or failed. Completed
+rows stay out of subsequent batches; held and failed rows remain pending. A new
+import, local correction, repair, undo or reset clears this progress so the changed
+input is compared again. Reload also requires a fresh comparison; saved run
+receipts remain available under `/runs`.
+
 Local eligibility checks still apply. The comparison shows matched native IDs,
 field differences, and reasons for holds. It does not use fuzzy names or company
 similarity to join different, unlinked emails. HubSpot's
@@ -104,3 +111,21 @@ behavior, converted Leads and additional-email cases remain unqualified by that
 run. Historical Salesforce receipts elsewhere describe a separate workflow;
 neither those receipts nor these development reads establish behavior under
 your account's permissions or duplicate rules.
+
+## Repeat the batch-progress browser check
+
+With a disposable local app running and an installed Chrome/Chromium browser:
+
+```bash
+CONTROL_TOWER_BROWSER_BASE_URL=http://127.0.0.1:3000 \
+CHROMIUM_PATH="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
+npm run test:crm-batches
+```
+
+This regression imports 105 fictional contacts and supplies simulated CRM
+receipts for both providers. It checks that completed rows stay completed across
+batches, a successful retry replaces a failure, unchanged rows are not reported
+as updates, held rows remain pending, and a replacement import clears progress.
+Only local workspace and run-history storage reach the app; private CRM responses
+are intercepted and external requests are blocked. This is browser regression
+evidence, not native CRM write qualification.

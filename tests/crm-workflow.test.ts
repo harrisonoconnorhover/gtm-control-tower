@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildCrmWritePlan, planStillMatches, rollbackFromPlan, rollbackRecordAlreadyRestored, rollbackRecordStillMatches, type NativeCrmRecord, type PortableCrmContact } from '../lib/crm-workflow';
+import { buildCrmWritePlan, combineCrmWritebackProgress, isSuccessfulCrmWritebackRecord, planStillMatches, rollbackFromPlan, rollbackRecordAlreadyRestored, rollbackRecordStillMatches, type CrmWritebackReceipt, type NativeCrmRecord, type PortableCrmContact } from '../lib/crm-workflow';
 import { sourceContactsToCsv } from '../lib/crm-source';
 import { importContactsCsv } from '../lib/csv-control-tower';
 
@@ -81,5 +81,46 @@ describe('CRM import matching evidence', () => {
     expect(oldPlan.held).toBe(1);
     expect(newPlan.held).toBe(1);
     expect(planStillMatches(oldPlan, newPlan)).toBe(false);
+  });
+});
+
+describe('direct CRM writeback progress', () => {
+  it.each(['hubspot', 'salesforce'] as const)('retains %s batches, actual outcomes, and the latest retry result', (connectorId) => {
+    const row = (id: number, status: CrmWritebackReceipt['records'][number]['status']) => ({
+      contactId: String(id), email: `person${id}@example.com`, nativeId: status === 'failed' || status === 'held' ? null : `crm-${id}`,
+      status, error: status === 'failed' ? 'Temporary provider error' : status === 'held' ? 'Existing Contact requires review' : null,
+    });
+    const receipt = (records: CrmWritebackReceipt['records'], runId: string): CrmWritebackReceipt => ({
+      accepted: true, connectorId, runId, planId: `plan-${runId}`, status: 'partial',
+      requested: records.length,
+      created: records.filter((record) => record.status === 'created').length,
+      updated: records.filter((record) => record.status === 'updated').length,
+      unchanged: records.filter((record) => record.status === 'unchanged').length,
+      held: records.filter((record) => record.status === 'held').length,
+      failed: records.filter((record) => record.status === 'failed').length,
+      completedAt: '2026-09-27T21:00:00.000Z', records, rollback: null,
+    });
+    const first = receipt(Array.from({ length: 100 }, (_, index) => row(index + 1,
+      index === 0 ? 'created' : index === 1 ? 'updated' : index === 99 ? 'failed' : 'unchanged')), 'first');
+    const firstProgress = combineCrmWritebackProgress(null, first);
+    const pending = (progress: typeof firstProgress) => {
+      const complete = new Set(progress.records.filter(isSuccessfulCrmWritebackRecord).map((record) => record.contactId));
+      return Array.from({ length: 105 }, (_, index) => String(index + 1)).filter((id) => !complete.has(id));
+    };
+    expect(pending(firstProgress)).toEqual(['100', '101', '102', '103', '104', '105']);
+
+    const second = receipt([row(100, 'unchanged'), row(101, 'created'), row(102, 'created'), row(103, 'created'), row(104, 'created'), row(105, 'held')], 'second');
+    const combined = combineCrmWritebackProgress(firstProgress, second);
+    expect(combined).toMatchObject({ requested: 105, created: 5, updated: 1, unchanged: 98, held: 1, failed: 0 });
+    expect(pending(combined)).toEqual(['105']);
+    expect(combined.records.find((record) => record.contactId === '105')).toEqual(second.records[5]);
+    expect(combined.records.find((record) => record.contactId === '100')).toEqual(second.records[0]);
+    expect(firstProgress.records[99]).toEqual(first.records[99]);
+    expect(firstProgress.failed).toBe(1);
+
+    const resolved = combineCrmWritebackProgress(combined, receipt([row(105, 'unchanged')], 'third'));
+    expect(resolved).toMatchObject({ requested: 105, created: 5, updated: 1, unchanged: 99, held: 0, failed: 0 });
+    expect(pending(resolved)).toEqual([]);
+    expect(isSuccessfulCrmWritebackRecord(row(105, 'rolled_back'))).toBe(false);
   });
 });

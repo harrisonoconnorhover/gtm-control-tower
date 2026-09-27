@@ -2,37 +2,35 @@
 
 ## Finished
 
-- Fixed an operator-key state mismatch: entering a valid key in setup now authorizes CRM scans, matching, source reads and exact-email preview immediately.
-- Fixed CRM reads in the local Cloudflare runtime by using supported manual redirects and rejecting non-success responses.
-- Verified the complete browser-to-CRM workflow: CSV import, native snapshot, displayed suggestions, JSON export and exact-email preview for HubSpot and Salesforce.
-- Added a credential-free browser regression and updated the dated native-check report and redacted results. No CRM records were created or changed.
-- Published runtime fixes as `43cb268`; mirrored them locally to development as `7371881`, preserving private navigation. The personal site already links the updated report.
+- Fixed direct HubSpot/Salesforce batch progress: a second batch no longer forgets the first batch's completed contacts.
+- Preserved actual created, updated, unchanged, held and failed outcomes in both destination summaries and row labels. A successful retry replaces its earlier failure.
+- Added a repeatable credential-free browser regression using 105 fictional rows for each provider; updated the existing comparison guide.
+- Kept individual saved run receipts and rollback metadata intact. No CRM API or matching-rule changes; no live CRM reads or writes in this pass.
 
 ## Try It
 
-1. Read `docs/import-matching-native-check.md` for observed cases and limits.
-2. In a configured self-hosted `/app/lab`, enter the operator key, import a fictional CSV, find possible CRM matches, then inspect **Compare N with CRM**. Preview does not execute changes.
-3. Against a disposable local app, run `CONTROL_TOWER_BROWSER_BASE_URL=http://127.0.0.1:3000 npm run test:operator-key`; see `docs/duplicate-audit.md` for the installed-browser option.
+1. Start a disposable local self-hosted app with persistence enabled.
+2. Run `CONTROL_TOWER_BROWSER_BASE_URL=http://127.0.0.1:3000 npm run test:crm-batches`. Set `CHROMIUM_PATH` if needed; see `docs/import-crm-comparison.md`.
+3. For a configured CRM, compare and process successive eligible batches. Completed rows stay out; held/failed rows remain pending. Changing the import or reloading requires a fresh comparison.
 
 ## Checks
 
-- September 27, 2026, 20:09 UTC native browser run: 17 HubSpot Contacts and 130 Salesforce Leads/Contacts; complete scans, expected fixture suggestions, exported results, exact-email preview and Salesforce Contact hold passed.
-- One populated Salesforce state-name/code case, operator-key updates/clearing/reload/rejection, desktop and 390px layouts passed. No browser exceptions or horizontal overflow.
-- 213 tests across 23 suites, lint, TypeScript, operator/public builds and secret scan passed. Credential-free browser regression passed for both providers: 21 intercepted private requests; zero native CRM requests.
-- [Release CI](https://github.com/harrisonoconnorhover/gtm-control-tower/actions/runs/36347351343) passed, including fresh-install smoke, dependency audit and builds. Published report/results matched reviewed bytes; the canonical personal-site link was verified. Temporary credentials and CRM snapshots were removed.
+- Before the fix, the browser regression failed for both providers: after batches of 100 and 6 it offered **Compare 100 with CRM** instead of **Compare 1 with CRM**.
+- After the fix, both providers passed: 5 created, 1 updated, 98 unchanged, 1 held, 0 failed; exactly 1 pending. Replacement imports cleared progress. CRM responses were simulated; local CSV/workspace persistence ran normally.
+- 215 tests across 23 suites, lint, TypeScript and both builds passed. Development mirror passed 8 focused workflow tests and TypeScript.
+- Browser checks found no page exceptions or 390px horizontal overflow; both mobile receipt summaries were visually checked.
 
 ## Decisions
 
-- Share existing dashboard key state; retain tab-only storage and existing authorization.
-- Manual redirects preserve rejection while supporting the observed local worker runtime.
-- Scores out of 100 remain uncalibrated review signals. Publish counts and case outcomes without credentials, account/native IDs or personal values.
+- Keep a session progress summary separate from individual execution receipts and legacy delegated sync results.
+- Count only created, updated and unchanged rows as completed. Reuse existing import/correction/repair/undo/reset invalidation.
 
 ## Remaining
 
-- Native HubSpot populated state/additional-email cases, continuation cursors, converted Leads, writes, duplicate-rule execution and rollback remain outside these checks. No measured precision/recall claim.
+- Native CRM write execution, duplicate rules and rollback remain unqualified. Earlier native read evidence remains in `docs/import-matching-native-check.md`; this simulated check does not extend it.
 
 ## Review First
 
-- `components/self-host-console.tsx` and `scripts/check-operator-key.mjs`.
-- `lib/crm-source.ts`, `lib/crm-existing-salesforce.ts` and focused redirect tests.
-- `docs/import-matching-native-check.md` and its redacted JSON evidence.
+- `components/control-tower-dashboard.tsx` receipt handling and pending counts.
+- `lib/crm-workflow.ts` and `tests/crm-workflow.test.ts`.
+- `scripts/check-crm-batches.mjs` and `docs/import-crm-comparison.md`.

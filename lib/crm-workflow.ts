@@ -98,6 +98,33 @@ export type CrmWritebackReceipt = {
   rollback: CrmRollbackPlan | null;
 };
 
+// A workspace summary, not a synthetic execution receipt: run IDs and rollback
+// plans belong to the individual native receipts recorded in run history.
+export type CrmWritebackProgress = Pick<CrmWritebackReceipt,
+  'records' | 'requested' | 'created' | 'updated' | 'unchanged' | 'held' | 'failed'>;
+
+export function combineCrmWritebackProgress(
+  previous: CrmWritebackProgress | null,
+  receipt: CrmWritebackReceipt,
+): CrmWritebackProgress {
+  const byContact = new Map(previous?.records.map((record) => [record.contactId, record]));
+  for (const record of receipt.records) byContact.set(record.contactId, record);
+  const records = [...byContact.values()];
+  return {
+    records,
+    requested: records.length,
+    created: records.filter((record) => record.status === 'created').length,
+    updated: records.filter((record) => record.status === 'updated').length,
+    unchanged: records.filter((record) => record.status === 'unchanged').length,
+    held: records.filter((record) => record.status === 'held').length,
+    failed: records.filter((record) => record.status === 'failed').length,
+  };
+}
+
+export function isSuccessfulCrmWritebackRecord(record: CrmWritebackReceipt['records'][number]): boolean {
+  return record.status === 'created' || record.status === 'updated' || record.status === 'unchanged';
+}
+
 export function buildCrmWritePlan(
   connectorId: CrmWritePlan['connectorId'],
   sourceFile: string,
