@@ -133,7 +133,7 @@ export function PublicDemo() {
               >
                 {running ? `Running ${steps[Math.max(stage, 0)].label.toLowerCase()}…` : result ? 'Replay the 64-row cleanup' : 'Run the 64-row cleanup'}
               </button>
-              <a href="https://github.com/harrisonoconnorhover/gtm-control-tower#quick-start-one-command-no-accounts-required" className="rounded-full border border-white/15 bg-white/[0.035] px-6 py-3.5 text-sm font-semibold text-[#c8d7d0] transition hover:border-white/30 hover:bg-white/[0.07]">Self-host the workspace</a>
+              <a href="/enterprise-import-walkthrough.html" className="rounded-full border border-white/15 bg-white/[0.035] px-6 py-3.5 text-sm font-semibold text-[#c8d7d0] transition hover:border-white/30 hover:bg-white/[0.07]">Follow a real CRM import</a>
             </div>
             <div className="mt-9 grid max-w-2xl grid-cols-2 gap-px overflow-hidden rounded-2xl border border-white/10 bg-white/10 sm:grid-cols-4">
               <HeroStat value="64" label="deliberately messy rows" />

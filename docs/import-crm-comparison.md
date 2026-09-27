@@ -1,5 +1,11 @@
 # Compare an imported file with your CRM
 
+**Later native evidence:** the [enterprise import case](enterprise-import-native-check.md)
+verified creates, updates, unchanged records, an existing Salesforce Contact hold,
+repeat imports, and update rollback in development accounts on September 27, 2026.
+Approximate suggestions still require manual review. Earlier read-only results below
+retain their original scope.
+
 In the self-hosted `/app/lab`, **Compare N with CRM** reads current records for
 the eligible imported rows before proposing writes. It requires a direct
 HubSpot or Salesforce connection. The public static demo performs no CRM reads

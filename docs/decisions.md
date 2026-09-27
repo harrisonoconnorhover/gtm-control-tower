@@ -388,3 +388,20 @@ work. One synchronous in-flight ref rejects duplicate starts before React update
 the screen. Release it in finally, not in review invalidation. Keep provider APIs,
 matching rules and saved receipt formats unchanged; add no cancellation framework
 or new approval step.
+
+## September 27, 2026 — Demonstrate a realistic fictional CRM import
+
+Use recognizable company names and public websites with invented people, roles,
+555-01xx phones, and company subdomains of IANA-reserved example.com. HubSpot
+rejected the reserved .example suffix; example.com subdomains passed native
+validation. Keep native IDs, account details, browser state, and full receipts
+in ignored private output. Retain screenshots with IDs masked and a small
+public result summary.
+
+Use a prepared approved CSV to make the operator's exclusion of two approximate
+matches explicit; suggestions do not enforce holds. Preserve Salesforce's native
+duplicate-rule behavior on application writes. A single acknowledged rule alert
+was necessary to seed the second fictional Jordan Lee; the seeder's opt-in applies
+only to that named fixture and does not change the account rules. Native testing
+also exposed a vague Salesforce failure message, so receipts retain its error code
+alongside its text. No matching policy or new product feature is introduced.

@@ -5,6 +5,7 @@
 
 **[Try the synthetic cleanup](https://gtm-control-tower.pages.dev/#decisions)** ·
 **[Audit a CSV privately](https://gtm-control-tower.pages.dev/#audit)** ·
+**[Follow a real CRM import](https://gtm-control-tower.pages.dev/enterprise-import-walkthrough.html)** ·
 **[Self-host the operator workspace](#quick-start-one-command-no-accounts-required)**
 
 A self-hosted revenue-systems lab that turns deliberately messy CRM data into
@@ -23,7 +24,7 @@ the repository.
 4. Inspect the [possible CRM match walkthrough](docs/approximate-import-matches.md): choose imported fields, compare a dated snapshot, and examine ranked suggestions and conflicts. The scores are review signals, not identity probabilities or permission to sync.
 5. For the separate Salesforce development work, read the [approval, stale-write, and partial-success test contract](docs/salesforce-apex-routing.md). Its dated native results are historical evidence, separate from the browser demonstration and the current CI run.
 
-These are independent development workflows using synthetic records. The browser example performs no CRM writes; the operator workspace requires your own configuration for connected operations. A [dated native read check](docs/import-matching-native-check.md) verifies import-match suggestions and exact-email preview proposals against existing fictional HubSpot and Salesforce records; no proposed CRM changes were executed.
+These are independent development workflows using fictional records. The public cleanup runs locally in the browser. The [enterprise import walkthrough](https://gtm-control-tower.pages.dev/enterprise-import-walkthrough.html) shows a separate, verified HubSpot/Salesforce development run: review seven attendees, manually exclude two unresolved identities, write five approved rows, repeat without new writes, and restore the two updates. Inspect the [native results and limitations](docs/enterprise-import-native-check.md) or [download the case files](docs/enterprise-import-fixtures.md). Connected operations require your own configured operator workspace.
 
 ## What it does
 
@@ -255,8 +256,9 @@ slice is documented in [Flow, Apex, and Agentforce proof](docs/salesforce-agentf
 
 This repository is a self-hosted reference implementation, not a managed
 multi-tenant service. Put any hosted instance behind authentication and HTTPS.
-The imported-file CRM comparison is covered by mocked responses and synthetic
-records; the dated Salesforce-native receipts above do not verify that new path.
+The imported-file CRM comparison has both focused simulated tests and a
+[dated native development check](docs/enterprise-import-native-check.md). Its
+fictional cases do not establish behavior under every account configuration.
 
 ## Development
 
