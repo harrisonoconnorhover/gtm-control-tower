@@ -12,7 +12,7 @@ const companies = ['Northstar AI', 'Copper Finch', 'Atlas Works', 'Juniper Labs'
 const domains = ['northstar.example', 'copperfinch.example', 'atlasworks.example', 'juniperlabs.example', 'signalharbor.example', 'brightline.example', 'acme.example', 'paperkite.example'];
 const titles = ['VP Sales', 'Revenue Operations Manager', 'Founder', 'Demand Generation Lead', 'Sales Director', 'GTM Systems Manager', 'COO', 'Growth Lead'];
 const headers = [
-  'contact_id', 'full_name', 'email', 'normalized_email', 'company', 'phone', 'job_title',
+  'contact_id', 'full_name', 'email', 'company', 'phone', 'job_title',
   'website', 'region', 'segment', 'lifecycle_stage', 'expected_lifecycle_stage', 'owner_id',
 ];
 
@@ -30,6 +30,8 @@ export type DemoPipelineResult = {
   heldRows: number;
   beforeQuality: number;
   afterQuality: number;
+  initialContacts: LiveContactState[];
+  repairedContacts: LiveContactState[];
   sample: LiveContactState[];
   repairedSample: LiveContactState[];
 };
@@ -80,6 +82,8 @@ export function runMessyLeadDemo(): DemoPipelineResult {
     heldRows: active.length - ready.length,
     beforeQuality: qualityRate(initial),
     afterQuality: qualityRate(active),
+    initialContacts: initial,
+    repairedContacts: replayed.contacts,
     sample: sampleContacts(initial),
     repairedSample: sampleContacts(replayed.contacts),
   };
@@ -93,15 +97,17 @@ function buildRow(rowNumber: number): string[] {
   const canonicalEmail = `lead${duplicateOf}@${domain}`;
   const invalidEmail = [14, 30, 46, 62].includes(rowNumber);
   const unicodeDomain = rowNumber === 42;
+  const corporatePlusAddress = rowNumber === 8;
   const duplicate = duplicateOf !== rowNumber;
   const rawEmail = invalidEmail
     ? `lead${rowNumber} at broken.test`
     : unicodeDomain
       ? 'signal@mañana.example'
-      : duplicate
+      : corporatePlusAddress
         ? `LEAD${duplicateOf}+ROADSHOW@${domain.toUpperCase()}`
-        : canonicalEmail;
-  const normalizedEmail = duplicate ? canonicalEmail : unicodeDomain ? 'signal@manana.example' : '';
+        : duplicate
+          ? canonicalEmail.toUpperCase()
+          : canonicalEmail;
   const region = rowNumber % 6 === 0 || rowNumber % 7 === 0 ? 'Northeast' : ['West', 'Central', 'Southeast'][rowNumber % 3];
   const segment = region === 'Northeast' && rowNumber % 2 === 0 ? 'Enterprise' : ['SMB', 'Mid-Market', 'Enterprise'][rowNumber % 3];
   const regressed = rowNumber % 7 === 3 && !duplicate;
@@ -115,7 +121,6 @@ function buildRow(rowNumber: number): string[] {
     `LAB-${String(rowNumber).padStart(3, '0')}`,
     fullName,
     rawEmail,
-    normalizedEmail,
     company,
     rowNumber % 10 === 5 ? '' : `+1412555${String(1000 + rowNumber).slice(-4)}`,
     titles[index % titles.length],
