@@ -94,7 +94,11 @@ and create conflicts:
 npm test -- tests/crm-import-comparison.test.ts tests/crm-existing-hubspot.test.ts tests/crm-existing-salesforce.test.ts
 ```
 
-Live-provider qualification is pending; this is not native CRM verification.
-Historical Salesforce development receipts
-elsewhere in this repository describe a separate workflow and do not verify
-this comparison path against your account's permissions or duplicate rules.
+A separate [September 27 native read check](import-matching-native-check.md)
+verified exact-email preview proposals against existing fictional HubSpot and
+Salesforce records: unchanged/update/create proposals, and a held Salesforce
+Contact. No proposed change was executed. Live write execution, duplicate-rule
+behavior, converted Leads and additional-email cases remain unqualified by that
+run. Historical Salesforce receipts elsewhere describe a separate workflow;
+neither those receipts nor these development reads establish behavior under
+your account's permissions or duplicate rules.
