@@ -740,12 +740,195 @@
     "completedAt": "2026-09-27T19:28:07.102Z"
   },
   "sourceCommit": "d7fc0f000c1e83dcd876d831acb058b05580f21a",
-  "method": "Invoked actual application route handlers under Node with a disposable SQLite database; external requests reached native CRM read endpoints. No live-provider browser run.",
+  "method": "Initial check invoked actual application route handlers under Node with a disposable SQLite database and native CRM read endpoints. The later complete browser qualification is recorded under browserFollowup.",
   "limitations": [
     "Scores are not calibrated probabilities.",
-    "No populated state or additional HubSpot email on selected fixtures.",
+    "No populated additional HubSpot email on selected fixtures; a later browser check verified Salesforce state name/code equivalence on an existing accessible record.",
     "Provider results fit one page per object; continuation cursors were not exercised.",
     "No CRM write, merge, conversion, duplicate-rule execution, or rollback was performed.",
     "No empirical precision or recall measurement."
-  ]
+  ],
+  "browserFollowup": {
+    "startedAt": "2026-09-27T20:09:10.161Z",
+    "reproducedBeforeFix": {
+      "reproduced": true,
+      "topKeyEntered": true,
+      "scanStatus": 401
+    },
+    "checks": [
+      "Key entered at top authorizes matching and exact preview without reload",
+      "Destination key edits update top field",
+      "Clearing either key clears shared state and tab storage",
+      "Invalid key rejected; valid key recovers",
+      "Reload retains tab key",
+      "Reverse-direction key entry authorizes source read",
+      "Actual browser \u2192 local D1 \u2192 native HubSpot/Salesforce \u2192 displayed/exported review",
+      "Exact preview operations rendered; no execution requested",
+      "Desktop and 390px no overflow or page errors"
+    ],
+    "providers": {
+      "hubspot": {
+        "records": 17,
+        "sourceComplete": true,
+        "fixtureRecords": 12,
+        "rows": [
+          {
+            "case": "EXACT",
+            "scores": [
+              100,
+              47
+            ],
+            "objectTypes": [
+              "contact",
+              "contact"
+            ]
+          },
+          {
+            "case": "CHANGED",
+            "scores": [
+              47,
+              47
+            ],
+            "objectTypes": [
+              "contact",
+              "contact"
+            ]
+          },
+          {
+            "case": "NAME",
+            "scores": [
+              32,
+              32
+            ],
+            "objectTypes": [
+              "contact",
+              "contact"
+            ]
+          },
+          {
+            "case": "NEW",
+            "scores": [],
+            "objectTypes": []
+          },
+          {
+            "case": "PHONE",
+            "scores": [],
+            "objectTypes": []
+          }
+        ],
+        "preview": [
+          {
+            "case": "EXACT",
+            "operation": "unchanged",
+            "matchTypes": [
+              "contact"
+            ]
+          },
+          {
+            "case": "CHANGED",
+            "operation": "create",
+            "matchTypes": []
+          },
+          {
+            "case": "NEW",
+            "operation": "create",
+            "matchTypes": []
+          }
+        ]
+      },
+      "salesforce": {
+        "records": 130,
+        "sourceComplete": true,
+        "fixtureRecords": 7,
+        "rows": [
+          {
+            "case": "EXACT",
+            "scores": [
+              100,
+              47
+            ],
+            "objectTypes": [
+              "lead",
+              "contact"
+            ]
+          },
+          {
+            "case": "CHANGED",
+            "scores": [
+              47,
+              47
+            ],
+            "objectTypes": [
+              "contact",
+              "lead"
+            ]
+          },
+          {
+            "case": "NAME",
+            "scores": [
+              32,
+              32
+            ],
+            "objectTypes": [
+              "lead",
+              "lead"
+            ]
+          },
+          {
+            "case": "NEW",
+            "scores": [],
+            "objectTypes": []
+          },
+          {
+            "case": "CONTACT",
+            "scores": [
+              100
+            ],
+            "objectTypes": [
+              "contact"
+            ]
+          }
+        ],
+        "preview": [
+          {
+            "case": "EXACT",
+            "operation": "unchanged",
+            "matchTypes": [
+              "lead"
+            ]
+          },
+          {
+            "case": "CHANGED",
+            "operation": "create",
+            "matchTypes": []
+          },
+          {
+            "case": "NEW",
+            "operation": "create",
+            "matchTypes": []
+          },
+          {
+            "case": "CONTACT",
+            "operation": "hold",
+            "matchTypes": [
+              "contact"
+            ]
+          }
+        ]
+      }
+    },
+    "crmWrites": 0,
+    "nativeState": {
+      "provider": "salesforce",
+      "passed": true,
+      "source": "existing accessible CRM record",
+      "normalization": "state name/code equivalence",
+      "personalValuesPublished": false
+    },
+    "authorizationRequests": {
+      "checkedPrivateRequests": 21,
+      "operatorKeyRequests": 19
+    },
+    "completedAt": "2026-09-27T20:09:17.108Z"
+  }
 }

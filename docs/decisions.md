@@ -344,3 +344,23 @@ preview proposals using existing labeled fixtures. Record the dated results in
 browser checks labeled separately. Do not turn successful reads into a claim
 about write execution, native duplicate rules or measured matching accuracy.
 No runtime code or CRM records changed during this qualification pass.
+
+## September 27, 2026 — Share the current operator key across the workspace
+
+The setup console and destination panels must use the same current operator key.
+Separate React state initialized once from session storage left matching and
+preview unauthorized after a valid key was entered at the top. Make the setup
+console a controlled consumer of the dashboard's existing key and change handler.
+Keep tab-only storage and server authorization unchanged; add no new context,
+authentication mechanism or persistence field.
+
+## September 27, 2026 — Reject redirects in both supported runtimes
+
+The native browser check exposed a local Cloudflare runtime incompatibility:
+`fetch` rejected `redirect: 'error'` before sending a CRM request, although the
+earlier Node handler check passed. Use `redirect: 'manual'` in the scan readers
+and exact Salesforce reader, then reject non-success status codes. This retains
+the no-follow behavior using the documented
+[manual redirect mode](https://developers.cloudflare.com/workers/runtime-apis/request/#properties).
+Check Salesforce response status before parsing JSON so an empty redirect body
+produces the intended status error. No new redirect helper or fallback is needed.

@@ -23,6 +23,7 @@
     "preview:public": "vite --config vite.public.config.ts --host 127.0.0.1",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern dist-public --ignore-pattern .next",
     "test": "vitest run",
+    "test:operator-key": "node scripts/check-operator-key.mjs",
     "setup": "node scripts/setup.mjs",
     "doctor": "node scripts/doctor.mjs",
     "db:generate": "drizzle-kit generate",

@@ -34,12 +34,12 @@ export async function readSalesforceExisting(
       visitedUrls.add(nextUrl);
       const response = await fetch(nextUrl, {
         cache: 'no-store',
-        redirect: 'error',
+        redirect: 'manual',
         headers,
         signal: AbortSignal.timeout(30_000),
       });
-      const payload: unknown = await response.json();
       if (!response.ok) throw new Error(`Salesforce query returned ${response.status}`);
+      const payload: unknown = await response.json();
       if (!isRecord(payload) || !Array.isArray(payload.records) || typeof payload.done !== 'boolean') {
         throw new Error('Salesforce query returned malformed records or pagination metadata');
       }

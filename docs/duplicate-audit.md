@@ -199,3 +199,21 @@ SQLite, exported review JSON, or a URL.
 Production refuses private CRM operations when no key is configured. This
 shared key is a second local control, not multi-user authentication. Put any
 internet-accessible self-host behind authentication and HTTPS.
+
+### Check shared-key behavior without CRM credentials
+
+With a disposable local app already running and persistence enabled, run:
+
+```bash
+CONTROL_TOWER_BROWSER_BASE_URL=http://127.0.0.1:3000 \
+CHROMIUM_PATH="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
+npm run test:operator-key
+```
+
+Set `CHROMIUM_PATH` to an installed Chrome or Chromium executable on your system;
+the check does not install a browser. It imports one fictional row into a new
+local workspace and checks shared key entry, scan/match/exact-preview headers,
+destination-to-source changes, clearing, and reload for both CRMs. All private
+CRM responses are browser stubs; unhandled private endpoints and external
+requests are blocked. Only local workspace operations reach the app. This tests
+browser key propagation, not live CRM behavior.

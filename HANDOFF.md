@@ -2,41 +2,36 @@
 
 ## Finished
 
-- Verified actual CRM reads through the application's scan, storage and import-matching handlers: 17 HubSpot Contacts; 94 Salesforce unconverted Leads and 36 Contacts. Both scans completed.
-- Existing fictional fixtures produced expected exact-email, changed-email, same-name, shared-phone and unrelated-person suggestions. Salesforce secondary mobile-phone matching also worked.
-- Verified exact-email preview proposals: HubSpot unchanged/update/create; Salesforce Contact hold, Lead unchanged and create. Existing native IDs matched the stored fixtures.
-- Published the dated report and redacted results in source `7c0496f`; updated both walkthroughs and the portfolio site (`66310dd`) with verified native-read evidence.
-- Made no CRM writes, new features or runtime-code changes.
+- Fixed an operator-key state mismatch: entering a valid key in setup now authorizes CRM scans, matching, source reads and exact-email preview immediately.
+- Fixed CRM reads in the local Cloudflare runtime by using supported manual redirects and rejecting non-success responses.
+- Verified the complete browser-to-CRM workflow: CSV import, native snapshot, displayed suggestions, JSON export and exact-email preview for HubSpot and Salesforce.
+- Added a credential-free browser regression and updated the dated native-check report and redacted results. No CRM records were created or changed.
 
 ## Try It
 
-1. Read `docs/import-matching-native-check.md` for observed cases, request statuses and remaining limits.
-2. In a configured self-hosted `/app/lab`, import a fictional CSV and use **Find possible CRM matches** against a fresh snapshot.
-3. Use the separate **Compare N with CRM** preview to inspect exact-email proposals. Review does not execute them.
+1. Read `docs/import-matching-native-check.md` for observed cases and limits.
+2. In a configured self-hosted `/app/lab`, enter the operator key, import a fictional CSV, find possible CRM matches, then inspect **Compare N with CRM**. Preview does not execute changes.
+3. Against a disposable local app, run `CONTROL_TOWER_BROWSER_BASE_URL=http://127.0.0.1:3000 npm run test:operator-key`; see `docs/duplicate-audit.md` for the installed-browser option.
 
 ## Checks
 
-- Native run on September 27, 2026 at 19:26–19:28 UTC: three scan reads and four identity reads; expected scores, fixture membership, missing-field handling and preview operations passed assertions.
-- HubSpot's mixed batch read returned 207; an individual 404 confirmed the missing fictional email. Salesforce Developer Edition and existing CLI session were verified.
-- Prior runtime release passed 210 tests, lint, TypeScript, both builds, simulated/local browser checks and fresh-install CI. This pass changes documentation/evidence only; Markdown links/fences, redacted JSON, credential/contact-detail exclusion and diff checks passed.
-
-- Published report/results returned HTTP 200 and matched reviewed bytes. Site Pages deployment passed; canonical HTML matched reviewed bytes, with live desktop/390px link, copy, overflow and page-error checks passing. Temporary native snapshot data was removed.
-
-- The automatically started [documentation-release CI](https://github.com/harrisonoconnorhover/gtm-control-tower/actions/runs/36344710900) passed. No additional manual runtime test run was needed for this documentation-only change.
+- September 27, 2026, 20:09 UTC native browser run: 17 HubSpot Contacts and 130 Salesforce Leads/Contacts; complete scans, expected fixture suggestions, exported results, exact-email preview and Salesforce Contact hold passed.
+- One populated Salesforce state-name/code case, operator-key updates/clearing/reload/rejection, desktop and 390px layouts passed. No browser exceptions or horizontal overflow.
+- 213 tests across 23 suites, lint, TypeScript, operator/public builds and secret scan passed. Credential-free browser regression passed for both providers: 21 intercepted private requests; zero native CRM requests.
 
 ## Decisions
 
-- Retain scores out of 100 as uncalibrated review signals; 100/100 does not mean certainty.
-- Publish counts and fictional case outcomes; keep account IDs, native record IDs, credentials and contact details out of the evidence artifact.
-- Native reads and preview proposals do not qualify writes or replace the earlier browser-test boundary.
+- Share existing dashboard key state; retain tab-only storage and existing authorization.
+- Manual redirects preserve rejection while supporting the observed local worker runtime.
+- Scores out of 100 remain uncalibrated review signals. Publish counts and case outcomes without credentials, account/native IDs or personal values.
 
 ## Remaining
 
-- Development documentation mirror `d352940` remains local; private development differences are preserved.
-- Native populated state/additional-email cases, continuation cursors, converted Leads, write execution, duplicate rules and rollback remain outside this run. No measured precision/recall claim.
+- Release publication and CI confirmation are pending.
+- Native HubSpot populated state/additional-email cases, continuation cursors, converted Leads, writes, duplicate-rule execution and rollback remain outside these checks. No measured precision/recall claim.
 
 ## Review First
 
+- `components/self-host-console.tsx` and `scripts/check-operator-key.mjs`.
+- `lib/crm-source.ts`, `lib/crm-existing-salesforce.ts` and focused redirect tests.
 - `docs/import-matching-native-check.md` and its redacted JSON evidence.
-- `docs/approximate-import-matches.md` and `docs/import-crm-comparison.md` verification sections.
-- The existing **Compare with CRM** paragraph on the personal site.

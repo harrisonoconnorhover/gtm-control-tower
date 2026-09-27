@@ -929,6 +929,8 @@ export function ControlTowerDashboard() {
           workspaceRevision={workspaceRevision}
           persistenceStatus={persistenceStatus}
           lastReceipt={connectorReceipts[0] ?? null}
+          operatorKey={hubSpotSyncKey}
+          onOperatorKeyChange={rememberOperatorKey}
           onMappedImport={(csv, fileName, mapping, source) => loadCsvWorkspace(csv, fileName, mapping, source)}
           onSourceChange={changeSourceType}
           onDestinationChange={changeDestinationType}

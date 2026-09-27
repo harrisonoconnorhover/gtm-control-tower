@@ -24,7 +24,7 @@ describe('CRM identity scan pagination', () => {
     });
     const url = fetchMock.mock.calls[0][0] as URL;
     expect(url.searchParams.get('properties')?.split(',')).toEqual(expect.arrayContaining(['state', 'hs_additional_emails']));
-    expect(fetchMock.mock.calls[0][1]).toMatchObject({ redirect: 'error' });
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({ redirect: 'manual' });
   });
 
   it('follows Salesforce queryMore and then advances from Leads to Contacts', async () => {
@@ -55,8 +55,20 @@ describe('CRM identity scan pagination', () => {
     expect((fetchMock.mock.calls[0][0] as URL).searchParams.get('q')).toContain('State, CreatedDate');
     expect((fetchMock.mock.calls[0][0] as URL).searchParams.get('q')).toContain('WHERE IsConverted = FALSE');
     expect((fetchMock.mock.calls[2][0] as URL).searchParams.get('q')).toContain('MailingState, CreatedDate');
-    expect(fetchMock.mock.calls[1][1]).toMatchObject({ redirect: 'error' });
+    expect(fetchMock.mock.calls[1][1]).toMatchObject({ redirect: 'manual' });
     expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it.each(['hubspot', 'salesforce'] as const)('rejects a %s redirect without following or retrying it', async (provider) => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, {
+      status: 302, headers: { location: 'https://elsewhere.example/contacts' },
+    }));
+    const read = provider === 'hubspot'
+      ? readHubSpotIdentityPage('secret')
+      : readSalesforceIdentityPage('https://example.my.salesforce.com', 'secret', '67.0');
+    await expect(read).rejects.toThrow(/returned 302/);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({ redirect: 'manual' });
   });
 
   it('retries a rate-limited HubSpot page without losing its cursor', async () => {
