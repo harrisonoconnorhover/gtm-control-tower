@@ -2,39 +2,38 @@
 
 ## Finished
 
-- CSV import rejects repeated final contact IDs, including generated-ID collisions, with row-specific errors. This prevents a duplicate repair from merging unrelated records sharing an ID.
-- Preview and direct import now share normalized-header validation; neither silently overwrites an ambiguous column.
-- Starting a replacement preview clears its predecessor. Invalid, oversized or unreadable input cannot leave an old import action available; loaded contacts remain intact.
-- Fresh Node development now runs `npm run db:migrate:local` before startup. It applies existing SQL migrations to the same local D1 store used by Vite, without a Cloudflare account.
-- The current 64-row example and previous Docker/Sheets documentation corrections remain unchanged.
+- Added **Resolve held records** to the self-hosted CSV workspace: edit email, company, owner or current lifecycle stage, supply a reason, and revalidate.
+- Corrections retain before/after values. Email changes recheck duplicate holds across active records; partial corrections and unknown lifecycle values cannot silently remove unresolved holds.
+- Correction history uses existing saved snapshots, including reload and undo. Failed saves leave the correction unapplied and retain the draft for retry. Older workspaces load with empty history.
+- Changed workspace data clears current CRM previews and sync results, requiring a fresh review through the existing destination rules. Historical connector receipts remain available.
+- Added a reproducible three-row walkthrough. Mirrored the bounded change into development while preserving its separate inbound-routing link.
 
 ## Try It
 
-1. In the CSV workspace, preview a valid file, then choose a malformed or oversized replacement. Its error appears, the draft mapping disappears, and already-loaded rows stay unchanged. Choose a corrected file and validate it normally.
-2. Import a CSV with two source rows sharing a contact ID. The error identifies both rows; correct the IDs before running repairs.
-3. Run `npm test -- tests/csv-control-tower.test.ts tests/messy-lead-demo.test.ts tests/demo-decisions.test.ts tests/crm-audit.test.ts` for the focused importer/demo/audit cases.
+1. Start the self-hosted app using the README, then open `/app/lab`.
+2. Import the fictional CSV in `docs/held-record-review.md`. Change A to B's email to hold both, then give A its distinct address. Fill only C's company to demonstrate a remaining owner hold.
+3. Expand correction history, reload, undo, and export the CSV to inspect the retained values and flags.
 
 ## Checks
 
-- New importer regressions failed before correction. All 32 focused tests, changed-file ESLint, TypeScript and diff checks passed in public and development checkouts.
-- Public operator and static-site builds passed. The same UI correction was mirrored into the identical development component; development ESLint/TypeScript checks passed.
-- Isolated browser reproduced the stale-file import before correction, then verified malformed/oversized replacement rejection, retention of loaded rows and successful recovery with a valid replacement.
-- The fresh Node test exposed the missing local migration step. After all three existing migrations, native UI import saved revision1 and reload restored the row. Rerunning the exact npm command applied nothing and preserved the saved row. No provider calls or real CRM rows were used.
-- [CI for runtime `cb8d6dc`](https://github.com/harrisonoconnorhover/gtm-control-tower/actions/runs/36338078229) passed. Deployment `fc55e20b` HTML/JS/CSS match the reviewed build; its live audit rejects repeated IDs with the expected row references.
+- 58 focused tests across nine suites passed in both public-source and development checkouts, including correction logic, SQLite history/undo, existing demo output and provider eligibility.
+- TypeScript, changed-file ESLint and whitespace checks passed. Operator and static public builds passed.
+- Isolated browser/D1 checks passed: duplicate creation/resolution, partial holds, saved history after reload, undo, simulated save failure and retry, and matching exported CSV values/flags. No page errors.
+- Desktop and 390px screenshots were visually inspected; no page overflow. Only synthetic records and disposable local persistence were used; no provider writes.
 
 ## Decisions
 
-- Reject ambiguous record IDs rather than silently assigning new identities.
-- Preserve imported work while invalidating a failed replacement draft.
-- Keep current local checks separate from historical provider receipts.
+- Keep IDs, expected stages and merged rows immutable; preserve supplied normalized email unless the email changes or the operator explicitly rechecks it.
+- Reuse current snapshots and their twenty-revision/8 MiB limits; add no schema, provider or dependency.
+- This feature belongs to the self-hosted operator workspace. The static public demonstration does not expose it.
 
 ## Remaining
 
-- CSV runtime corrections are published as `cb8d6dc`; local setup correction is `455120e`. Development mirrors remain local. The setup-only addition does not change static assets.
-- No connected-provider requalification or private-host deployment is part of this pass.
+- Implementation is local; public publishing and private deployment have not been performed.
+- Real-provider requalification was outside this feature's scope.
 
 ## Review First
 
-- `lib/csv-control-tower.ts` and `tests/csv-control-tower.test.ts`.
-- `components/self-host-console.tsx`: draft clearing and file-read errors.
-- `docs/decisions.md`: identity and preview-state choices.
+- `components/held-contact-review.tsx` and its dashboard save/error integration.
+- `lib/csv-control-tower.ts` and correction/persistence tests.
+- `docs/held-record-review.md` for the repeatable operator workflow.

@@ -1,4 +1,4 @@
-import type { CsvColumnMapping } from './csv-control-tower';
+import type { CsvColumnMapping, CsvContactCorrection } from './csv-control-tower';
 import type { ConnectorId, ConnectorReceipt } from './connector-contract';
 import type { LiveContactState, RepairRun } from './live-control-tower';
 
@@ -17,6 +17,7 @@ export type WorkspaceState = {
   contacts: LiveContactState[];
   originalContacts: LiveContactState[];
   repairHistory: RepairRun[];
+  correctionHistory: CsvContactCorrection[];
   receipts: ConnectorReceipt[];
   mapping: CsvColumnMapping;
   fileName: string | null;
@@ -40,6 +41,7 @@ export function emptyWorkspaceState(): WorkspaceState {
     contacts: [],
     originalContacts: [],
     repairHistory: [],
+    correctionHistory: [],
     receipts: [],
     mapping: {},
     fileName: null,
@@ -67,6 +69,7 @@ export function validateWorkspaceState(value: unknown): WorkspaceState {
     contacts: state.contacts as LiveContactState[],
     originalContacts: state.originalContacts as LiveContactState[],
     repairHistory: Array.isArray(state.repairHistory) ? state.repairHistory as RepairRun[] : [],
+    correctionHistory: Array.isArray(state.correctionHistory) ? state.correctionHistory as CsvContactCorrection[] : [],
     receipts: Array.isArray(state.receipts) ? state.receipts as ConnectorReceipt[] : [],
     mapping: state.mapping && typeof state.mapping === 'object' ? state.mapping as CsvColumnMapping : {},
     fileName: typeof state.fileName === 'string' ? state.fileName : null,

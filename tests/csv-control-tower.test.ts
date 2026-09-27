@@ -2,13 +2,18 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import {
   countCsvRepairCandidates,
+  correctCsvContact,
   destinationHoldFlags,
   executeCsvRepair,
   exportContactsCsv,
   importContactsCsv,
   isDestinationReadyContact,
   previewContactsCsv,
+  type CsvContactCorrectionInput,
 } from '../lib/csv-control-tower';
+import { isHubSpotEligible } from '../lib/hubspot-sync';
+import { isSalesforceEligible } from '../lib/salesforce-sync';
+import type { LiveContactState } from '../lib/live-control-tower';
 
 const funkyCsv = `contact_id,full_name,email,normalized_email,company,region,segment,lifecycle_stage,expected_lifecycle_stage,owner_id
 C-1,Alex Morgan,alex@example.com,,Example Inc,Northeast,Enterprise,customer,customer,NE-ENT
@@ -181,5 +186,113 @@ Alex Chen,original@example.com,SIGNAL@MAÑANA.EXAMPLE,Northstar,rep-1`;
     expect(countCsvRepairCandidates(contacts, 'duplicate-surge')).toBe(2);
     expect(countCsvRepairCandidates(contacts, 'stage-regression')).toBe(3);
     expect(contacts[0]).toMatchObject({ phone: '+14125550101', jobTitle: 'VP Sales', website: 'https://northstar.ai' });
+  });
+});
+
+function correctionInput(contact: LiveContactState, changes: Partial<CsvContactCorrectionInput> = {}): CsvContactCorrectionInput {
+  return {
+    rawEmail: contact.rawEmail,
+    company: contact.company ?? '',
+    ownerId: contact.ownerId ?? '',
+    lifecycleStage: contact.lifecycleStage,
+    ...changes,
+  };
+}
+
+describe('individual CSV contact corrections', () => {
+  const heldContacts = () => importContactsCsv('contact_id,full_name,email,company,owner_id,lifecycle_stage,expected_lifecycle_stage,quality_flags\nC-1,Ada Lovelace,invalid email,,,mql,customer,source_review').contacts;
+
+  it('records an isolated before/after correction while preserving unresolved holds and immutable fields', () => {
+    const contacts = heldContacts();
+    const original = structuredClone(contacts);
+    const input = { ...correctionInput(contacts[0], { ownerId: ' rep-1 ' }), contactId: 'other', expectedLifecycleStage: 'mql', recordStatus: 'merged' };
+    const result = correctCsvContact(contacts, 'C-1', input, '  Assigned the verified owner.  ');
+
+    expect(contacts).toEqual(original);
+    expect(result.contacts[0]).toMatchObject({ contactId: 'C-1', ownerId: 'rep-1', expectedLifecycleStage: 'customer', recordStatus: 'active', lastAction: 'contact_corrected' });
+    expect(result.contacts[0].qualityFlags).toEqual(['source_review', 'invalid_email', 'missing_company', 'stage_regression']);
+    expect(isDestinationReadyContact(result.contacts[0])).toBe(false);
+    expect(result.correction).toMatchObject({ contactId: 'C-1', reason: 'Assigned the verified owner.', before: original[0], after: result.contacts[0] });
+    expect(result.correction.id).toEqual(expect.any(String));
+    expect(result.correction.reviewedAt).toBe(result.contacts[0].updatedAt);
+    expect(result.correction.before).not.toBe(contacts[0]);
+    expect(result.correction.after).not.toBe(result.contacts[0]);
+    result.correction.after.qualityFlags.push('snapshot_only');
+    expect(result.contacts[0].qualityFlags).not.toContain('snapshot_only');
+  });
+
+  it('normalizes corrected email and returns a ready record through existing CSV export and CRM eligibility', () => {
+    const contacts = heldContacts();
+    const result = correctCsvContact(contacts, 'C-1', {
+      rawEmail: ' ADA+EVENT@MAÑANA.EXAMPLE ', company: ' Acme ', ownerId: ' rep-1 ', lifecycleStage: ' CUSTOMER ',
+    }, 'Confirmed the missing values against the source.');
+    const corrected = result.contacts[0];
+
+    expect(corrected).toMatchObject({ rawEmail: 'ADA+EVENT@MAÑANA.EXAMPLE', normalizedEmail: 'ada+event@xn--maana-pta.example', company: 'Acme', ownerId: 'rep-1', lifecycleStage: 'customer' });
+    expect(corrected.qualityFlags).toEqual(['source_review', 'plus_address_present', 'unicode_domain_present']);
+    expect(isDestinationReadyContact(corrected)).toBe(true);
+    expect(isHubSpotEligible(corrected)).toBe(true);
+    expect(isSalesforceEligible(corrected)).toBe(true);
+    const [reimported] = importContactsCsv(exportContactsCsv(result.contacts)).contacts;
+    expect(reimported).toMatchObject({ contactId: 'C-1', normalizedEmail: corrected.normalizedEmail, company: 'Acme', ownerId: 'rep-1', lifecycleStage: 'customer' });
+    expect(isDestinationReadyContact(reimported)).toBe(true);
+  });
+
+  it('preserves a supplied normalized identity when only another field changes', () => {
+    const contacts = importContactsCsv('contact_id,email,normalized_email,company,owner_id\nC-1,original@example.com,canonical@example.com,Acme,').contacts;
+    const result = correctCsvContact(contacts, 'C-1', correctionInput(contacts[0], { ownerId: 'rep-1' }), 'Confirmed owner.');
+    expect(result.contacts[0]).toMatchObject({ rawEmail: 'original@example.com', normalizedEmail: 'canonical@example.com', ownerId: 'rep-1' });
+    expect(isDestinationReadyContact(result.contacts[0])).toBe(true);
+  });
+
+  it('allows explicit email rechecking to replace an invalid supplied normalized value without changing raw text', () => {
+    const contacts = importContactsCsv('contact_id,email,normalized_email,company,owner_id\nC-1,ada@example.com,invalid supplied value,Acme,rep-1').contacts;
+    expect(() => correctCsvContact(contacts, 'C-1', correctionInput(contacts[0]), 'No actual correction.')).toThrow(/Change a contact field/);
+    const result = correctCsvContact(contacts, 'C-1', correctionInput(contacts[0], { recheckEmail: true }), 'Rechecked identity against the entered email.');
+    expect(result.correction.before.normalizedEmail).toBeNull();
+    expect(result.contacts[0]).toMatchObject({ rawEmail: 'ada@example.com', normalizedEmail: 'ada@example.com', qualityFlags: [] });
+    expect(isDestinationReadyContact(result.contacts[0])).toBe(true);
+  });
+
+  it('keeps invalid replacement email held and refreshes email-specific informational flags', () => {
+    const contacts = importContactsCsv('contact_id,email,company,owner_id\nC-1,ada+event@mañana.example,Acme,').contacts;
+    const result = correctCsvContact(contacts, 'C-1', correctionInput(contacts[0], { rawEmail: 'still invalid' }), 'Source replacement needs further review.');
+    expect(result.contacts[0]).toMatchObject({ normalizedEmail: null });
+    expect(result.contacts[0].qualityFlags).toEqual(['missing_owner', 'invalid_email']);
+    expect(isDestinationReadyContact(result.contacts[0])).toBe(false);
+  });
+
+  it('updates duplicate holds on newly affected peers and clears them when the identity is corrected again', () => {
+    const contacts = importContactsCsv('contact_id,email,company,owner_id,record_status,canonical_contact_id\nC-1,invalid email,Acme,rep-1,active,\nC-2,bob@example.com,Acme,rep-1,active,\nC-3,bob@example.com,Acme,rep-1,merged,C-2').contacts;
+    const original = structuredClone(contacts);
+    const duplicate = correctCsvContact(contacts, 'C-1', correctionInput(contacts[0], { rawEmail: 'BOB@example.com' }), 'First source correction.');
+    expect(countCsvRepairCandidates(duplicate.contacts, 'duplicate-surge')).toBe(1);
+    expect(duplicate.contacts.slice(0, 2).every((contact) => contact.qualityFlags.includes('duplicate_identity'))).toBe(true);
+    expect(duplicate.contacts.slice(0, 2).some(isDestinationReadyContact)).toBe(false);
+    expect(duplicate.contacts[2]).toEqual(original[2]);
+
+    const resolved = correctCsvContact(duplicate.contacts, 'C-1', correctionInput(duplicate.contacts[0], { rawEmail: 'ada@example.com' }), 'Verified a distinct identity.');
+    expect(resolved.contacts.slice(0, 2).every(isDestinationReadyContact)).toBe(true);
+    expect(countCsvRepairCandidates(resolved.contacts, 'duplicate-surge')).toBe(0);
+    expect(resolved.contacts[2]).toEqual(original[2]);
+    expect(duplicate.correction.after.qualityFlags).toContain('duplicate_identity');
+    expect(contacts).toEqual(original);
+  });
+
+  it('retains an existing stage hold when an unknown lifecycle cannot establish a valid correction', () => {
+    const contacts = importContactsCsv('contact_id,email,company,owner_id,lifecycle_stage,expected_lifecycle_stage,quality_flags\nC-1,ada@example.com,Acme,rep-1,mql,unknown,stage_regression').contacts;
+    const result = correctCsvContact(contacts, 'C-1', correctionInput(contacts[0], { lifecycleStage: 'Not recognized' }), 'Source stage is still uncertain.');
+    expect(result.contacts[0]).toMatchObject({ lifecycleStage: 'not_recognized', expectedLifecycleStage: 'unknown', qualityFlags: ['stage_regression'] });
+    expect(isDestinationReadyContact(result.contacts[0])).toBe(false);
+  });
+
+  it('requires a selected active held row, a review reason, and a meaningful change', () => {
+    const contacts = heldContacts();
+    const input = correctionInput(contacts[0], { company: 'Acme' });
+    expect(() => correctCsvContact(contacts, 'missing', input, 'Source review.')).toThrow(/Choose one uniquely identified/);
+    expect(() => correctCsvContact([{ ...contacts[0], recordStatus: 'merged' }], 'C-1', input, 'Source review.')).toThrow(/Only active held/);
+    expect(() => correctCsvContact([{ ...contacts[0], qualityFlags: [] }], 'C-1', input, 'Source review.')).toThrow(/Only active held/);
+    expect(() => correctCsvContact(contacts, 'C-1', input, '   ')).toThrow(/Enter a review reason/);
+    expect(() => correctCsvContact(contacts, 'C-1', correctionInput(contacts[0], { recheckEmail: true }), 'Still the same invalid email.')).toThrow(/Change a contact field/);
   });
 });

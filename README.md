@@ -19,7 +19,8 @@ the repository.
 
 1. Run the browser cleanup and open [the record decisions](https://gtm-control-tower.pages.dev/#decisions). Inspect a duplicate pair, an owner change, and a held record. The original values, applied rules, remaining issues, and downloadable decisions come from the same local run.
 2. Inspect the shared [CSV importer and repairs](lib/csv-control-tower.ts) and [their regression tests](tests/csv-control-tower.test.ts). Exact email matching preserves corporate plus tags; internationalized domains use IDNA; malformed row widths are rejected before readiness is calculated.
-3. For the separate Salesforce development work, read the [approval, stale-write, and partial-success test contract](docs/salesforce-apex-routing.md). Its dated native results are historical evidence, separate from the browser demonstration and the current CI run.
+3. In the self-hosted `/app/lab`, follow the [three-row held-record review](docs/held-record-review.md): correct an email, inspect a new duplicate hold, resolve it, and leave a partially corrected row held.
+4. For the separate Salesforce development work, read the [approval, stale-write, and partial-success test contract](docs/salesforce-apex-routing.md). Its dated native results are historical evidence, separate from the browser demonstration and the current CI run.
 
 These are independent development workflows using synthetic records. The browser example performs no CRM writes; the operator workspace requires your own configuration for connected operations.
 
@@ -28,6 +29,9 @@ These are independent development workflows using synthetic records. The browser
 - Previews any CSV, lets the operator map arbitrary headers, saves reusable
   mapping presets, and diagnoses duplicate
   identity, missing fields, bad email, owner gaps, and lifecycle regression.
+- Lets the operator [correct held imported rows](docs/held-record-review.md) in
+  `/app/lab` with a reason, revalidation, and before/after history. Email changes
+  recheck active-row duplicates; unresolved holds remain.
 - Scans every HubSpot Contact or every unconverted Salesforce Lead and Contact,
   persists provider-page progress, and produces an evidence-backed duplicate
   review queue without performing a native CRM merge.

@@ -274,3 +274,25 @@ Starting a replacement preview discards the previous draft and mapping. An unrea
 ## September 27, 2026 — Initialize the documented local D1 development store
 
 The Vite development server binds a local D1 database, while the standalone Docker path initializes SQLite automatically. A fresh Node checkout therefore needs the existing Drizzle migrations before it can save workspaces. The explicit `db:migrate:local` command pins Wrangler to a checked-in local configuration and `.wrangler/state`; it uses the same binding, database name and placeholder ID as Vite. It adds no schema or remote migration path. Reapplying completed migrations preserves saved workspaces.
+
+## September 27, 2026 — Resolve held records within the imported workspace
+
+Allow corrections to email, company, owner and current lifecycle stage on active
+held rows, with a required reason and before/after values. IDs, expected stages
+and merged rows stay fixed. An explicit email recheck can replace an invalid
+supplied normalized identity; editing other fields preserves it. Email changes
+recompute duplicate holds across active rows. Unresolved and unrelated flags
+remain, and an unknown lifecycle value cannot clear an existing stage hold.
+
+Store correction history in the existing workspace snapshot, with no migration
+or separate audit system. Old snapshots load with an empty history. Undo restores
+rows and history together; replacement imports and resets clear the current
+history. Existing revision and size limits still apply. When persistence is
+configured, a failed save leaves the correction unapplied and retains the draft
+for retry; session-only mode labels changes as browser-local.
+
+Workspace changes invalidate current CRM previews and sync results so the next
+write uses the existing eligibility and review flow. Historical connector
+receipts remain in their existing store. The first version belongs to the
+self-hosted operator workspace, not the static public demonstration, and performs
+no provider writes by itself.

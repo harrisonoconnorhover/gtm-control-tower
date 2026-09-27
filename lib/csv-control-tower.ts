@@ -23,6 +23,23 @@ export type CsvRepairResult = {
   run: RepairRun;
 };
 
+export type CsvContactCorrectionInput = {
+  rawEmail: string;
+  company: string;
+  ownerId: string;
+  lifecycleStage: string;
+  recheckEmail?: boolean;
+};
+
+export type CsvContactCorrection = {
+  id: string;
+  contactId: string;
+  reviewedAt: string;
+  reason: string;
+  before: LiveContactState;
+  after: LiveContactState;
+};
+
 const fieldAliases = {
   contactId: ['contact_id', 'contactid', 'id', 'record_id'],
   fullName: ['full_name', 'fullname', 'name', 'contact_name'],
@@ -216,6 +233,86 @@ export function importContactsCsv(csv: string, mapping: CsvColumnMapping = {}): 
     lifecycleComparedRows,
     expectedStageMapped: Boolean(effectiveMapping.expectedLifecycleStage)
       && headers.includes(normalizeHeader(effectiveMapping.expectedLifecycleStage ?? '')),
+  };
+}
+
+export function correctCsvContact(
+  contacts: LiveContactState[],
+  contactId: string,
+  input: CsvContactCorrectionInput,
+  reason: string,
+): { contacts: LiveContactState[]; correction: CsvContactCorrection } {
+  const matching = contacts.filter((contact) => contact.contactId === contactId);
+  if (matching.length !== 1) throw new Error('Choose one uniquely identified contact to correct.');
+  const original = matching[0];
+  if (original.recordStatus !== 'active' || isDestinationReadyContact(original)) {
+    throw new Error('Only active held contacts can be corrected.');
+  }
+  const reviewReason = reason.trim();
+  if (!reviewReason) throw new Error('Enter a review reason for this correction.');
+
+  const nextContacts = contacts.map(cloneContact);
+  const corrected = nextContacts.find((contact) => contact.contactId === contactId)!;
+  const flags = new Set(corrected.qualityFlags);
+  const setFlag = (flag: string, present: boolean) => {
+    if (present) flags.add(flag);
+    else flags.delete(flag);
+  };
+  corrected.rawEmail = input.rawEmail.trim();
+  corrected.company = nullable(input.company);
+  corrected.ownerId = nullable(input.ownerId);
+  corrected.lifecycleStage = normalizeStage(input.lifecycleStage) || 'lead';
+  const recheckEmail = corrected.rawEmail !== original.rawEmail || input.recheckEmail === true;
+
+  if (recheckEmail) {
+    corrected.normalizedEmail = normalizeEmail(corrected.rawEmail);
+    setFlag('invalid_email', !corrected.normalizedEmail);
+    setFlag('plus_address_present', corrected.rawEmail.split('@')[0]?.includes('+') ?? false);
+    setFlag('unicode_domain_present', containsNonAscii(corrected.rawEmail.split('@')[1] ?? ''));
+  }
+  if (corrected.company !== original.company) setFlag('missing_company', !corrected.company);
+  if (corrected.ownerId !== original.ownerId) setFlag('missing_owner', !corrected.ownerId);
+  if (corrected.lifecycleStage !== original.lifecycleStage) {
+    // Unknown stages cannot establish that a previously held lifecycle is safe.
+    if (Object.hasOwn(stageRank, corrected.lifecycleStage) && Object.hasOwn(stageRank, corrected.expectedLifecycleStage)) {
+      setFlag('stage_regression', isStageRegression(corrected.lifecycleStage, corrected.expectedLifecycleStage));
+    } else if (isStageRegression(corrected.lifecycleStage, corrected.expectedLifecycleStage)) {
+      flags.add('stage_regression');
+    }
+  }
+  corrected.qualityFlags = [...flags];
+
+  const reviewedAt = new Date().toISOString();
+  if (recheckEmail) {
+    const duplicateEmails = new Set([...groupActiveByEmail(nextContacts)]
+      .filter(([, group]) => group.length > 1).map(([email]) => email));
+    for (const contact of nextContacts) {
+      if (contact.recordStatus !== 'active') continue;
+      const duplicate = Boolean(contact.normalizedEmail && duplicateEmails.has(contact.normalizedEmail));
+      if (duplicate === contact.qualityFlags.includes('duplicate_identity')) continue;
+      contact.qualityFlags = duplicate
+        ? [...contact.qualityFlags, 'duplicate_identity']
+        : withoutFlag(contact.qualityFlags, 'duplicate_identity');
+      contact.updatedAt = reviewedAt;
+    }
+  }
+
+  const changed = corrected.rawEmail !== original.rawEmail
+    || corrected.normalizedEmail !== original.normalizedEmail
+    || corrected.company !== original.company
+    || corrected.ownerId !== original.ownerId
+    || corrected.lifecycleStage !== original.lifecycleStage
+    || corrected.qualityFlags.join('|') !== original.qualityFlags.join('|');
+  if (!changed) throw new Error('Change a contact field or recheck an identity that needs correction.');
+  corrected.lastAction = 'contact_corrected';
+  corrected.updatedAt = reviewedAt;
+
+  return {
+    contacts: nextContacts,
+    correction: {
+      id: globalThis.crypto.randomUUID(), contactId, reviewedAt, reason: reviewReason,
+      before: cloneContact(original), after: cloneContact(corrected),
+    },
   };
 }
 

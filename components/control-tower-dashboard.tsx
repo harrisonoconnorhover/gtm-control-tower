@@ -13,12 +13,17 @@ import {
   type ScenarioKey,
 } from '@/lib/control-tower';
 import {
+  correctCsvContact,
+  destinationHoldFlags,
   countCsvRepairCandidates,
   executeCsvRepair,
   exportContactsCsv,
   importContactsCsv,
   type CsvColumnMapping,
+  type CsvContactCorrection,
+  type CsvContactCorrectionInput,
 } from '@/lib/csv-control-tower';
+import { HeldContactReview } from '@/components/held-contact-review';
 import { SelfHostConsole } from '@/components/self-host-console';
 import type { ConnectorCatalog, ConnectorId, ConnectorReceipt } from '@/lib/connector-contract';
 import {
@@ -166,6 +171,9 @@ export function ControlTowerDashboard() {
   const [dataMode, setDataMode] = useState<'warehouse' | 'csv'>('csv');
   const [csvContacts, setCsvContacts] = useState<LiveContactState[]>([]);
   const [originalCsvContacts, setOriginalCsvContacts] = useState<LiveContactState[]>([]);
+  const [correctionHistory, setCorrectionHistory] = useState<CsvContactCorrection[]>([]);
+  const [reviewEpoch, setReviewEpoch] = useState(0);
+  const [correctionSaving, setCorrectionSaving] = useState(false);
   const [csvRepairHistory, setCsvRepairHistory] = useState<RepairRun[]>([]);
   const [csvFileName, setCsvFileName] = useState<string | null>(null);
   const [, setCsvStatus] = useState<'idle' | 'reading' | 'ready' | 'error'>('idle');
@@ -324,6 +332,9 @@ export function ControlTowerDashboard() {
     setCsvContacts(workspace.state.contacts);
     setOriginalCsvContacts(workspace.state.originalContacts);
     setCsvRepairHistory(workspace.state.repairHistory);
+    setCorrectionHistory(workspace.state.correctionHistory ?? []);
+    setReviewEpoch((epoch) => epoch + 1);
+    invalidateCrmReview();
     setCsvFileName(workspace.state.fileName);
     if (workspace.state.contacts.length) {
       setDataMode('csv');
@@ -350,7 +361,7 @@ export function ControlTowerDashboard() {
   }
 
   async function persistWorkspace(reason: string, overrides: Partial<WorkspaceState> = {}) {
-    if (persistenceStatus === 'disabled') return;
+    if (persistenceStatus === 'disabled') return false;
     setPersistenceStatus('saving');
     try {
       const id = await ensureWorkspace();
@@ -359,6 +370,7 @@ export function ControlTowerDashboard() {
         contacts: overrides.contacts ?? csvContacts,
         originalContacts: overrides.originalContacts ?? originalCsvContacts,
         repairHistory: overrides.repairHistory ?? csvRepairHistory,
+        correctionHistory: overrides.correctionHistory ?? correctionHistory,
         receipts: overrides.receipts ?? connectorReceipts,
         mapping: overrides.mapping ?? csvMapping,
         fileName: overrides.fileName === undefined ? csvFileName : overrides.fileName,
@@ -376,8 +388,10 @@ export function ControlTowerDashboard() {
       setWorkspaceRevision(saved.workspace.revision);
       setMappingPresets(saved.workspace.presets);
       setPersistenceStatus('saved');
+      return true;
     } catch {
       setPersistenceStatus('error');
+      return false;
     }
   }
 
@@ -399,18 +413,15 @@ export function ControlTowerDashboard() {
     setCsvContacts(snapshot);
     setOriginalCsvContacts(snapshot.map((contact) => ({ ...contact, qualityFlags: [...contact.qualityFlags] })));
     setCsvRepairHistory([]);
+    setCorrectionHistory([]);
+    setReviewEpoch((epoch) => epoch + 1);
+    invalidateCrmReview();
     setCsvFileName(fileName);
     setCsvMapping(mapping);
     setConnectorReceipts(receipts);
     setSourceType(importedSource);
     setCsvStatus('ready');
     setCsvError(null);
-    setHubSpotSyncStatus('idle');
-    setHubSpotSyncReceipt(null);
-    setHubSpotSyncError(null);
-    setSalesforceSyncStatus('idle');
-    setSalesforceSyncReceipt(null);
-    setSalesforceSyncError(null);
     setDataMode('csv');
     setActiveScenario('duplicate-surge');
     setRepaired(false);
@@ -422,7 +433,7 @@ export function ControlTowerDashboard() {
     await persistWorkspace('import_validated', {
       contacts: snapshot,
       originalContacts: snapshot.map((contact) => ({ ...contact, qualityFlags: [...contact.qualityFlags] })),
-      repairHistory: [], receipts, mapping, fileName, sourceType: importedSource,
+      repairHistory: [], correctionHistory: [], receipts, mapping, fileName, sourceType: importedSource,
     });
   }
 
@@ -487,18 +498,50 @@ export function ControlTowerDashboard() {
     const contacts = originalCsvContacts.map((contact) => ({ ...contact, qualityFlags: [...contact.qualityFlags] }));
     setCsvContacts(contacts);
     setCsvRepairHistory([]);
-    setHubSpotSyncStatus('idle');
-    setHubSpotSyncReceipt(null);
-    setHubSpotSyncError(null);
-    setSalesforceSyncStatus('idle');
-    setSalesforceSyncReceipt(null);
-    setSalesforceSyncError(null);
+    setCorrectionHistory([]);
+    setReviewEpoch((epoch) => epoch + 1);
+    invalidateCrmReview();
     setActiveScenario('duplicate-surge');
     setRepaired(false);
     setRepairStatus('idle');
     setRepairReceipt(null);
     setRepairError(null);
-    await persistWorkspace('import_reset', { contacts, repairHistory: [] });
+    await persistWorkspace('import_reset', { contacts, repairHistory: [], correctionHistory: [] });
+  }
+
+  function invalidateCrmReview() {
+    setHubSpotPlan(null);
+    setSalesforcePlan(null);
+    setHubSpotSyncReceipt(null);
+    setSalesforceSyncReceipt(null);
+    setHubSpotSyncStatus('idle');
+    setSalesforceSyncStatus('idle');
+    setHubSpotSyncError(null);
+    setSalesforceSyncError(null);
+  }
+
+  async function correctHeldContact(contactId: string, input: CsvContactCorrectionInput, reason: string): Promise<string> {
+    if (correctionSaving || persistenceStatus === 'loading' || persistenceStatus === 'saving'
+      || repairStatus === 'sending' || hubSpotSyncStatus === 'sending' || salesforceSyncStatus === 'sending') {
+      throw new Error('Wait for the current workspace operation to finish.');
+    }
+    const result = correctCsvContact(csvContacts, contactId, input, reason);
+    const history = [result.correction, ...correctionHistory];
+    setCorrectionSaving(true);
+    try {
+      const saved = await persistWorkspace('contact_corrected', { contacts: result.contacts, correctionHistory: history });
+      if (!saved && persistenceStatus !== 'disabled') {
+        throw new Error('The workspace could not save this correction. Your input is still here; retry when saving is available.');
+      }
+      setCsvContacts(result.contacts);
+      setCorrectionHistory(history);
+      invalidateCrmReview();
+      const holds = destinationHoldFlags(result.correction.after);
+      const outcome = holds.length ? `Still held: ${holds.map((flag) => flag.replaceAll('_', ' ')).join(', ')}.` : 'Now passes the generic destination checks.';
+      return `${contactId}: ${outcome} ${saved ? 'Correction and reason saved.' : 'Applied in this browser only; persistence is disabled.'} CRM previews must be rebuilt before syncing.`;
+    } finally {
+      setCorrectionSaving(false);
+    }
   }
 
   function exportCsvWorkspace() {
@@ -768,6 +811,7 @@ export function ControlTowerDashboard() {
       };
       const receipts = [connectorReceipt, ...connectorReceipts].slice(0, 30);
       setCsvContacts(result.contacts);
+      invalidateCrmReview();
       setCsvRepairHistory(history);
       setConnectorReceipts(receipts);
       setRepairReceipt(result.receipt);
@@ -796,6 +840,7 @@ export function ControlTowerDashboard() {
 
   return (
     <main className="min-h-screen overflow-hidden bg-[#07130f] text-[#edf8f2] selection:bg-[#cdfc54] selection:text-[#07130f]">
+      <fieldset disabled={correctionSaving} className="min-w-0 border-0 p-0">
       <div className="pointer-events-none fixed inset-x-0 top-0 h-[520px] bg-[radial-gradient(circle_at_76%_8%,rgba(205,252,84,0.11),transparent_33%),radial-gradient(circle_at_12%_0%,rgba(64,170,127,0.16),transparent_31%)]" />
       <div className="relative mx-auto max-w-[1540px] px-5 py-5 sm:px-8 lg:px-12">
         <header className="flex flex-wrap items-center justify-between gap-5 border-b border-white/10 pb-5">
@@ -894,6 +939,14 @@ export function ControlTowerDashboard() {
         </div>
 
         {bigQueryConfigured && <LiveWarehouseCard state={liveState} status={liveStatus} onRefresh={refreshLiveState} />}
+
+        {dataMode === 'csv' && <HeldContactReview
+          key={reviewEpoch}
+          contacts={csvContacts}
+          history={correctionHistory}
+          disabled={correctionSaving || persistenceStatus === 'loading' || persistenceStatus === 'saving' || repairStatus === 'sending' || hubSpotSyncStatus === 'sending' || salesforceSyncStatus === 'sending'}
+          onCorrect={correctHeldContact}
+        />}
 
         <FunkyCrmLab
           mode={dataMode}
@@ -1072,6 +1125,7 @@ export function ControlTowerDashboard() {
           <p className="font-mono">{dataMode === 'csv' ? 'CSV → LOCAL CHECKS → REVIEW → EXPORT' : 'HUBSPOT / SALESFORCE → N8N → BIGQUERY → DBT → DECISION'}</p>
         </footer>
       </div>
+      </fieldset>
     </main>
   );
 }
