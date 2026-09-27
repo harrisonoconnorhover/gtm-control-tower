@@ -2,35 +2,35 @@
 
 ## Finished
 
-- Fixed direct HubSpot/Salesforce batch progress: a second batch no longer forgets the first batch's completed contacts.
-- Preserved actual created, updated, unchanged, held and failed outcomes in both destination summaries and row labels. A successful retry replaces its earlier failure.
-- Added a repeatable credential-free browser regression using 105 fictional rows for each provider; updated the existing comparison guide.
-- Kept individual saved run receipts and rollback metadata intact. No CRM API or matching-rule changes; no live CRM reads or writes in this pass.
+- Fixed pending CRM operations allowing a replacement import, reset, undo, CRM switch or comparison refresh to change their input.
+- Extended the page's existing busy state through comparison/sync and receipt saving. One immediate request guard prevents overlapping CRM starts; errors release the controls.
+- Added visible pending-request status and extended the existing credential-free batch browser regression with deliberately delayed responses.
+- Preserved batch outcomes, key handling, provider APIs, matching rules and receipt formats. No live CRM requests or writes were made in this pass.
 
 ## Try It
 
-1. Start a disposable local self-hosted app with persistence enabled.
-2. Run `CONTROL_TOWER_BROWSER_BASE_URL=http://127.0.0.1:3000 npm run test:crm-batches`. Set `CHROMIUM_PATH` if needed; see `docs/import-crm-comparison.md`.
-3. For a configured CRM, compare and process successive eligible batches. Completed rows stay out; held/failed rows remain pending. Changing the import or reloading requires a fresh comparison.
+1. Start a disposable local app with persistence enabled and installed Chrome/Chromium.
+2. Run `CONTROL_TOWER_BROWSER_BASE_URL=http://127.0.0.1:3000 npm run test:crm-batches`; set `CHROMIUM_PATH` if needed. The script delays fictional CRM responses and run-history saving to exercise the busy state.
+3. Run `CONTROL_TOWER_BROWSER_BASE_URL=http://127.0.0.1:3000 npm run test:operator-key` to repeat the related key workflow.
 
 ## Checks
 
-- Before the fix, the browser regression failed for both providers: after batches of 100 and 6 it offered **Compare 100 with CRM** instead of **Compare 1 with CRM**.
-- After the fix, both providers passed: 5 created, 1 updated, 98 unchanged, 1 held, 0 failed; exactly 1 pending. Replacement imports cleared progress. CRM responses were simulated; local CSV/workspace persistence ran normally.
-- 215 tests across 23 suites, lint, TypeScript and both builds passed. Development mirror passed 8 focused workflow tests and TypeScript.
-- Browser checks found no page exceptions or 390px horizontal overflow; both mobile receipt summaries were visually checked.
+- The extended browser regression failed on the prior release for both providers because input controls remained enabled during comparison.
+- After the fix, HubSpot and Salesforce simulated checks passed at comparison, execution and receipt-saving pauses, including error recovery. Existing 105-row batch totals and replacement-import checks still passed.
+- Shared-key browser regression passed for both providers with 21 intercepted private requests and no native CRM requests.
+- 215 tests across 23 suites, lint, TypeScript and both builds passed. No browser page exceptions or horizontal overflow in the batch check.
 
 ## Decisions
 
-- Keep a session progress summary separate from individual execution receipts and legacy delegated sync results.
-- Count only created, updated and unchanged rows as completed. Reuse existing import/correction/repair/undo/reset invalidation.
+- Reuse the existing fieldset and sending states; retain a single synchronous request guard until receipt saving finishes.
+- Wait for input-changing operations to finish before CRM work starts. Avoid cancellation machinery or another approval step.
 
 ## Remaining
 
-- Native CRM write execution, duplicate rules and rollback remain unqualified. Earlier native read evidence remains in `docs/import-matching-native-check.md`; this simulated check does not extend it.
+- Native write execution, duplicate rules and rollback remain unqualified. These simulated browser checks do not extend the native-read claims in `docs/import-matching-native-check.md`.
 
 ## Review First
 
-- `components/control-tower-dashboard.tsx` receipt handling and pending counts.
-- `lib/crm-workflow.ts` and `tests/crm-workflow.test.ts`.
-- `scripts/check-crm-batches.mjs` and `docs/import-crm-comparison.md`.
+- `components/control-tower-dashboard.tsx` request guards, fieldset and receipt-saving order.
+- `scripts/check-crm-batches.mjs` delayed-response checks.
+- `docs/import-crm-comparison.md` execution boundaries.
