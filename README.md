@@ -235,6 +235,7 @@ multi-tenant service. Put any hosted instance behind authentication and HTTPS.
 ```bash
 npm run doctor
 npm run check:secrets
+npm run audit
 npm test
 npm run lint
 npm run build

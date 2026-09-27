@@ -58,7 +58,7 @@ export function auditContactsCsv(
     priority('duplicate_identity', 'Duplicate identity', duplicateRecords, 'blocker', 'Merge each duplicate cluster into one canonical contact.'),
     priority('missing_company', 'Missing company', countFlag(active, 'missing_company'), 'blocker', 'Enrich or review the account association before routing.'),
     priority('missing_owner', 'Missing owner', countFlag(active, 'missing_owner'), 'blocker', 'Apply a documented territory or capacity rule.'),
-    priority('stage_regression', 'Lifecycle regression', stageRegressions, 'blocker', 'Replay the last valid stage instead of accepting a backward write.'),
+    priority('stage_regression', 'Lifecycle regression', stageRegressions, 'blocker', 'Review the supplied expected stage before replaying it; the file does not establish CRM history.'),
     priority('plus_address_present', 'Plus-address identity', countFlag(active, 'plus_address_present'), 'warning', 'Review before collapsing aliases; this behavior is company-specific.'),
     priority('unicode_domain_present', 'Internationalized domain', countFlag(active, 'unicode_domain_present'), 'warning', 'Normalize the domain to its provider-safe ASCII form and retain the raw value.'),
   ].filter((item): item is CrmAuditPriority => item !== null)
