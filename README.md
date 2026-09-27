@@ -175,8 +175,13 @@ The Node.js development path remains available:
 
 ```bash
 npm ci
+npm run db:migrate:local
 npm run dev
 ```
+
+The development server stores its local D1 database in `.wrangler/state`.
+Run the migration step for a fresh checkout or after pulling new SQL migrations.
+The command is pinned to the local database and requires no Cloudflare account.
 
 ## Add the warehouse and workflow layer
 

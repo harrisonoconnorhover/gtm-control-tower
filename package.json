@@ -26,6 +26,7 @@
     "setup": "node scripts/setup.mjs",
     "doctor": "node scripts/doctor.mjs",
     "db:generate": "drizzle-kit generate",
+    "db:migrate:local": "wrangler d1 migrations apply DB --local --config wrangler.local.jsonc --persist-to .wrangler/state",
     "check:secrets": "node scripts/check-secrets.mjs",
     "audit": "npm audit --audit-level=high",
     "generate:public-fixture": "node scripts/generate_public_company_fixture.mjs",
