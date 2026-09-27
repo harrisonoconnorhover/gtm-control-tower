@@ -40,8 +40,14 @@ For local development without Docker, use Node.js 22.13 or newer:
 
 ```bash
 npm ci
+npm run db:migrate:local
 npm run dev
 ```
+
+This development path uses a local D1 database in `.wrangler/state`. Run
+`db:migrate:local` before the first start and after pulling new SQL migrations;
+it applies the existing `drizzle` files to that local store without a Cloudflare
+account. The Docker path above initializes its SQLite database automatically.
 
 ## 2. Add Google Sheets through n8n
 
