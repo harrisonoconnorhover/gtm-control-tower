@@ -270,3 +270,7 @@ plan's repeated rollback control.
 Each imported source record must have a unique final contact ID, including IDs generated for blank inputs. Repairs index records by ID; silently accepting repeats could merge an unrelated person. Reject the batch with both CSV row numbers instead of renaming or dropping records. Preview and direct import share the existing normalized-header collision check.
 
 Starting a replacement preview discards the previous draft and mapping. An unreadable, oversized or invalid file cannot leave an old Validate + load action available. Already imported contacts remain intact until a new file validates successfully. These changes correct the existing CSV workflow without changing the bundled sample or adding providers.
+
+## September 27, 2026 — Initialize the documented local D1 development store
+
+The Vite development server binds a local D1 database, while the standalone Docker path initializes SQLite automatically. A fresh Node checkout therefore needs the existing Drizzle migrations before it can save workspaces. The explicit `db:migrate:local` command pins Wrangler to a checked-in local configuration and `.wrangler/state`; it uses the same binding, database name and placeholder ID as Vite. It adds no schema or remote migration path. Reapplying completed migrations preserves saved workspaces.
