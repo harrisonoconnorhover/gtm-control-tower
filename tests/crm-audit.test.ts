@@ -8,6 +8,11 @@ C-3,Mia Santos,mia.santos @ gmail.com,,,West,SMB,lead,lead,
 C-4,Robin Cho,robin@oak.co,,Oak Co,Northeast,Mid-Market,mql,sql,NE-MM`;
 
 describe('browser-only CRM audit', () => {
+  it('refuses to report readiness for a row with shifted columns', () => {
+    const csv = 'email,company,owner_id\nada@example.com,Acme, Inc,rep-1';
+    expect(() => auditContactsCsv(csv, 'shifted.csv')).toThrow('CSV row 2 has 4 columns; the header has 3.');
+  });
+
   it('turns a common CRM export into an aggregate readiness report', () => {
     const report = auditContactsCsv(messyCsv, 'messy.csv');
 

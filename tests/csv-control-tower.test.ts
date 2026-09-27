@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import {
   countCsvRepairCandidates,
+  destinationHoldFlags,
   executeCsvRepair,
   exportContactsCsv,
   importContactsCsv,
@@ -59,6 +60,23 @@ Mia Santos,mia@example.com,not an email,Northstar,rep-1`;
     }
   });
 
+  it('clears a repaired missing owner while preserving independent blockers and repeat safety', () => {
+    const csv = `email,company,region,segment,owner_id
+ada@example.com,Acme,Northeast,Enterprise,
+not an email,Acme,Northeast,Enterprise,`;
+    const imported = importContactsCsv(csv).contacts;
+    const rerouted = executeCsvRepair(imported, 'routing-overload');
+
+    expect(rerouted.receipt.affectedRecords).toBe(2);
+    expect(rerouted.contacts[0]).toMatchObject({ ownerId: 'CE-ENT-OVERFLOW', qualityFlags: [] });
+    expect(isDestinationReadyContact(rerouted.contacts[0])).toBe(true);
+    expect(rerouted.contacts[1]).toMatchObject({ ownerId: 'CE-ENT-OVERFLOW', qualityFlags: ['invalid_email'] });
+    expect(isDestinationReadyContact(rerouted.contacts[1])).toBe(false);
+    const repeated = executeCsvRepair(rerouted.contacts, 'routing-overload');
+    expect(repeated.receipt.affectedRecords).toBe(0);
+    expect(repeated.contacts).toEqual(rerouted.contacts);
+  });
+
   it('validates supplied normalized emails with the same case and IDNA rules as raw emails', () => {
     const csv = `full_name,email,normalized_email,company,owner_id
 Alex Chen,original@example.com,SIGNAL@MAÑANA.EXAMPLE,Northstar,rep-1`;
@@ -76,6 +94,8 @@ Alex Chen,original@example.com,SIGNAL@MAÑANA.EXAMPLE,Northstar,rep-1`;
     const rerouted = executeCsvRepair(merged, 'routing-overload').contacts;
     const replayed = executeCsvRepair(rerouted, 'stage-regression').contacts;
     expect(replayed.filter(isDestinationReadyContact).map((contact) => contact.contactId)).toEqual(['C-1', 'C-4']);
+    expect(destinationHoldFlags(imported[1])).toEqual(['stage_regression', 'duplicate_identity']);
+    expect(destinationHoldFlags(replayed[0])).toEqual([]);
   });
 
   it('exports repaired state as valid quoted CSV', () => {
@@ -87,6 +107,34 @@ Alex Chen,original@example.com,SIGNAL@MAÑANA.EXAMPLE,Northstar,rep-1`;
 
   it('rejects files without a usable identity column', () => {
     expect(() => importContactsCsv('company,region\nAcme,West')).toThrow(/email or full_name/);
+  });
+
+  it.each([
+    ['extra', 'ada@example.com,Acme, Inc,rep-1', 4],
+    ['missing', 'ada@example.com,Acme', 2],
+  ])('rejects %s CSV columns before preview or import', (_label, row, columns) => {
+    const csv = `email,company,owner_id\n${row}`;
+    for (const read of [previewContactsCsv, importContactsCsv]) {
+      expect(() => read(csv)).toThrow(`CSV row 2 has ${columns} columns; the header has 3.`);
+    }
+  });
+
+  it('preserves quoted commas, embedded newlines, and explicit empty cells', () => {
+    const csv = 'email,company,owner_id\nada@example.com,"Acme, Inc",rep-1\nbob@example.com,"Acme,\nWest",\n';
+    const preview = previewContactsCsv(csv);
+    const imported = importContactsCsv(csv);
+
+    expect(preview.sourceRows).toBe(2);
+    expect(preview.sampleRows[0]).toEqual({ email: 'ada@example.com', company: 'Acme, Inc', owner_id: 'rep-1' });
+    expect(imported.contacts[0]).toMatchObject({ company: 'Acme, Inc', ownerId: 'rep-1' });
+    expect(imported.contacts[1]).toMatchObject({ company: 'Acme,\nWest', ownerId: null });
+  });
+
+  it('identifies the malformed CSV row after a quoted multiline record', () => {
+    const csv = 'email,company,owner_id\nada@example.com,"Acme,\nWest",rep-1\nbob@example.com,Acme';
+    for (const read of [previewContactsCsv, importContactsCsv]) {
+      expect(() => read(csv)).toThrow('CSV row 3 has 2 columns; the header has 3.');
+    }
   });
 
   it('previews and imports arbitrary columns through an explicit visual mapping', () => {

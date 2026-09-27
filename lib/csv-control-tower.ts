@@ -84,9 +84,12 @@ const destinationBlockingFlags = new Set([
   'invalid_email', 'missing_company', 'missing_owner', 'stage_regression', 'duplicate_identity',
 ]);
 
+export function destinationHoldFlags(contact: LiveContactState): string[] {
+  return contact.qualityFlags.filter((flag) => destinationBlockingFlags.has(flag));
+}
+
 export function isDestinationReadyContact(contact: LiveContactState): boolean {
-  return contact.recordStatus === 'active'
-    && !contact.qualityFlags.some((flag) => destinationBlockingFlags.has(flag));
+  return contact.recordStatus === 'active' && destinationHoldFlags(contact).length === 0;
 }
 
 export function previewContactsCsv(csv: string): CsvPreview {
@@ -245,6 +248,7 @@ export function executeCsvRepair(
       return {
         ...contact,
         ownerId: 'CE-ENT-OVERFLOW',
+        qualityFlags: withoutFlag(contact.qualityFlags, 'missing_owner'),
         lastAction: 'rerouted_from_ne_enterprise',
         updatedAt: timestamp,
       };
@@ -376,6 +380,14 @@ function parseCsv(csv: string): string[][] {
   if (cell || row.length) {
     row.push(cell.replace(/\r$/, ''));
     rows.push(row);
+  }
+  const expectedColumns = rows[0]?.length ?? 0;
+  for (let rowIndex = 1; rowIndex < rows.length; rowIndex += 1) {
+    const cells = rows[rowIndex];
+    if (cells.every((value) => value.trim() === '')) continue;
+    if (cells.length !== expectedColumns) {
+      throw new Error(`CSV row ${rowIndex + 1} has ${cells.length} columns; the header has ${expectedColumns}. Quote values containing commas or line breaks, and use commas to retain empty columns.`);
+    }
   }
   return rows;
 }
