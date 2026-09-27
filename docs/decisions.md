@@ -421,3 +421,24 @@ Show candidate evidence, never infer an identity link or merge. Accept additiona
 human review as the tradeoff: a held row may be a different person, and no
 candidate is not proof of absence. Snapshot age, search bounds, and concurrent
 CRM changes remain limitations; this is not universal duplicate prevention.
+
+## September 27, 2026 — Compare the name sent to the destination
+
+An import can contain both full_name and first_name/last_name with conflicting
+values. The provider mappers prefer first/last, so create review must compare
+those effective values after saved-input parity succeeds. Use the same precedence
+in exploratory review for eligible rows; preserve raw review for ineligible rows
+and exclude synthetic contact-ID placeholders. Do not let an unrelated display
+name clear the identity that will actually be written.
+
+## September 27, 2026 — Separate CRM outcomes from receipt-save outcomes
+
+Once a valid provider receipt returns, retain the completed outcome immediately.
+Failure to save it locally must not put successful records back into the write
+queue or offer the original execution as a recovery action. Require an explicit
+successful run-save acknowledgment, keep the full pending payload on the page,
+and offer download or a storage-only retry using the same receipt ID. Reuse the
+existing idempotent run store for both writes and rollback; add no schema or
+automatic CRM retry. Warn that unsaved recovery data is lost on navigation or
+reload unless it is saved or downloaded. Workspace-summary failures remain a
+separate status from detailed history persistence.

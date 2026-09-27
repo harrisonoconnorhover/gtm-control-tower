@@ -26,6 +26,8 @@ import {
 import { HeldContactReview } from '@/components/held-contact-review';
 import { SelfHostConsole } from '@/components/self-host-console';
 import { ImportMatchReview } from '@/components/import-match-review';
+import { UnsavedRuns } from '@/components/unsaved-runs';
+import { saveConnectorRunReceipt, type PendingConnectorRun } from '@/lib/save-connector-run';
 import type { ConnectorCatalog, ConnectorId, ConnectorReceipt } from '@/lib/connector-contract';
 import {
   combineHubSpotSyncReceipts,
@@ -196,6 +198,8 @@ export function ControlTowerDashboard() {
   const [destinationType, setDestinationType] = useState<ConnectorId>('csv');
   const [csvMapping, setCsvMapping] = useState<CsvColumnMapping>({});
   const [connectorReceipts, setConnectorReceipts] = useState<ConnectorReceipt[]>([]);
+  const [unsavedRuns, setUnsavedRuns] = useState<PendingConnectorRun[]>([]);
+  const [receiptSaveWarning, setReceiptSaveWarning] = useState<string | null>(null);
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
   const [workspaceRevision, setWorkspaceRevision] = useState<number | null>(null);
   const [mappingPresets, setMappingPresets] = useState<MappingPreset[]>([]);
@@ -401,6 +405,7 @@ export function ControlTowerDashboard() {
       setWorkspaceRevision(saved.workspace.revision);
       setMappingPresets(saved.workspace.presets);
       setPersistenceStatus('saved');
+      setReceiptSaveWarning(null);
       return true;
     } catch {
       setPersistenceStatus('error');
@@ -581,12 +586,18 @@ export function ControlTowerDashboard() {
   }
 
   async function recordDetailedRun(receipt: ConnectorReceipt, details: ConnectorRunDetails, undo: CrmWritebackReceipt['rollback']) {
-    await recordConnectorReceipt(receipt);
-    if (!workspaceId) return;
-    await fetch('/api/control-tower/runs', {
-      method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ workspaceId, run: { receipt, details, undo } }),
-    });
+    const pending: PendingConnectorRun = { workspaceId, run: { receipt, details, undo } };
+    const receipts = [receipt, ...connectorReceipts.filter((existing) => existing.id !== receipt.id)].slice(0, 30);
+    setConnectorReceipts(receipts);
+    const summarySaved = await persistWorkspace('connector_receipt', { receipts });
+    let historySaved = false;
+    try {
+      await saveConnectorRunReceipt(pending);
+      historySaved = true;
+    } catch {
+      setUnsavedRuns((current) => [...current.filter((existing) => existing.run.receipt.id !== receipt.id), pending]);
+    }
+    if (!summarySaved) setReceiptSaveWarning(`CRM completed; the workspace summary was not saved. ${historySaved ? 'The detailed receipt is saved in run history.' : 'Save or download the receipt below before closing this tab.'}`);
   }
 
   async function undoSavedWorkspace() {
@@ -737,6 +748,15 @@ export function ControlTowerDashboard() {
         recordsWritten: result.created + result.updated, recordsFailed: result.failed, createdAt: result.completedAt,
         undoAvailable: Boolean(result.rollback?.records.length), nativeReceiptId: result.runId,
       };
+      // A received CRM outcome stays completed even if local receipt storage fails.
+      const progress = combineCrmWritebackProgress(connectorId === 'hubspot' ? hubSpotWritebackProgress : salesforceWritebackProgress, result);
+      if (connectorId === 'hubspot') {
+        setHubSpotWritebackProgress(progress);
+        setHubSpotPlan(null);
+      } else {
+        setSalesforceWritebackProgress(progress);
+        setSalesforcePlan(null);
+      }
       await recordDetailedRun(receipt, {
         sourceLabel: csvFileName ?? 'imported-contacts.csv', inputCount: csvContacts.length,
         activeCount: csvContacts.filter((contact) => contact.recordStatus === 'active').length,
@@ -749,15 +769,9 @@ export function ControlTowerDashboard() {
         plan, writeback: result,
       }, result.rollback);
       if (connectorId === 'hubspot') {
-        const progress = combineCrmWritebackProgress(hubSpotWritebackProgress, result);
-        setHubSpotWritebackProgress(progress);
         setHubSpotSyncStatus(progress.failed || progress.held ? 'partial' : 'complete');
-        setHubSpotPlan(null);
       } else {
-        const progress = combineCrmWritebackProgress(salesforceWritebackProgress, result);
-        setSalesforceWritebackProgress(progress);
         setSalesforceSyncStatus(progress.failed || progress.held ? 'partial' : 'complete');
-        setSalesforcePlan(null);
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'CRM write-back failed.';
@@ -972,6 +986,9 @@ export function ControlTowerDashboard() {
           onReceipt={recordConnectorReceipt}
         />
         </div>
+
+        {receiptSaveWarning && <p role="alert" className="mb-4 rounded-2xl border border-[#e6bd68]/30 bg-[#e6bd68]/5 p-4 text-sm text-[#e6bd68]">{receiptSaveWarning}</p>}
+        <UnsavedRuns runs={unsavedRuns} onSaved={(receiptId) => setUnsavedRuns((current) => current.filter((pending) => pending.run.receipt.id !== receiptId))} />
 
         {bigQueryConfigured && <LiveWarehouseCard state={liveState} status={liveStatus} onRefresh={refreshLiveState} />}
 

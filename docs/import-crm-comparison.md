@@ -61,6 +61,27 @@ can be false positives. An empty candidate list does not prove absence. Snapshot
 visibility and changes after the scan limit coverage. Exact-email updates, unchanged
 records, and existing Salesforce Contact holds retain their existing behavior.
 
+Name comparison uses the first and last names that the destination mapper will
+actually write. If a CSV also supplies a conflicting full-name column, that
+display value cannot silently substitute a different person in the create check.
+The exploratory review follows the same name precedence for eligible rows.
+
+## When receipt storage fails
+
+A returned CRM outcome and a saved local receipt are separate results. If run
+history cannot confirm a save, completed rows stay completed and the app retains
+the full receipt and rollback backup on the current page. **Retry receipt save**
+sends that same receipt to local storage only; it never repeats the CRM operation.
+**Download receipt** preserves the pending payload as JSON. Keep the page open
+until saving succeeds or download the receipt before leaving. Pending recovery
+does not survive navigation or reload by itself.
+
+The same handling applies to update rollback. A completed rollback remains
+completed while its receipt awaits storage. A failed workspace-summary save is
+reported separately from a successful detailed run-history save. These behaviors
+are checked with simulated CRM responses and real local persistence; they do not
+claim recovery when no CRM response reaches the app.
+
 ## Try with your own development CRM
 
 1. Start the [self-hosted workspace](../README.md#quick-start-one-command-no-accounts-required),
@@ -163,3 +184,13 @@ workspace controls stay disabled, then checks recovery from a failed comparison.
 Only local workspace and run-history storage reach the app; private CRM responses
 are intercepted and external requests are blocked. This is browser regression
 evidence, not native CRM write qualification.
+
+## Repeat the receipt-storage failure check
+
+Run `npm run test:receipt-recovery` with the same local-app URL and Chromium
+settings above. For both providers, it simulates a returned CRM success followed
+by an HTTP error and a network failure while saving the receipt. It checks the
+downloaded backup, unchanged CRM execution count during storage retries, durable
+read-back after recovery, rollback receipt recovery, and a separately failed
+workspace-summary save. CRM responses are simulated; workspace and run-history
+persistence are real. The September 27 check passed with zero live CRM requests.

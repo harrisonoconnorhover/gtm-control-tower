@@ -58,6 +58,9 @@ That original run used advisory approximate review. A later [native follow-up](d
   matches before execution. Governed previews also hold proposed creates when
   any approximate candidate exists or a fresh complete snapshot is unavailable.
   Newly created records are never auto-deleted.
+- Keeps returned CRM outcomes separate from local receipt-save failures. Failed
+  history saves expose the full receipt for download or storage-only retry;
+  retrying receipt storage does not repeat CRM writes or rollback.
 - Includes a source-driven Salesforce development slice: a published read-only
   Agentforce triage path plus a separate human-approved Screen Flow, invocable
   Apex planner, Queueable executor, Custom Metadata policies, stale-record
