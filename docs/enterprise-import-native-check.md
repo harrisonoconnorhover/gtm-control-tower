@@ -1,5 +1,9 @@
 # Native enterprise import check — September 27, 2026
 
+**Current behavior:** the later [create-hold qualification](#follow-up-control-tower-holds-possible-duplicates)
+below closes the advisory-only gap shown in the original run. Both original
+provider-rule outcomes remain documented as historical evidence.
+
 GTM Control Tower completed the fictional event-import workflow through its
 browser interface against the configured development CRMs. The HubSpot run took
 place at **21:24:03–21:24:14 UTC**; Salesforce at **21:28:49–21:29:03 UTC**.
@@ -86,3 +90,43 @@ Salesforce documents the [duplicate-rule header](https://developer.salesforce.co
 its behavior depends on the configured matching rule and supplied fields. The
 strong and sparse probes demonstrate that boundary instead of promising universal
 duplicate prevention.
+
+## Follow-up: Control Tower holds possible duplicates
+
+The governed direct path now checks would-be creates against the saved import
+and a complete CRM snapshot started within 15 minutes. It uses all five identity
+fields independently of exploratory review checkboxes. Any returned candidate
+holds creation; missing, stale, partial, or capped evidence also holds creates.
+The server rechecks at execution. Exact-email updates keep their existing logic.
+
+Native browser qualification ran at **22:02:26–22:02:33 UTC for HubSpot** and
+**22:02:52–22:03:00 UTC for Salesforce**, using the retained development records:
+
+| Check | HubSpot | Salesforce |
+| --- | --- | --- |
+| No snapshot | 2 held; 0 creates or updates proposed | 2 held; 0 creates or updates proposed |
+| Fresh complete snapshot | 26 records, 1 page | 139 records, 2 pages |
+| Priya candidate | 72/100; held | 72/100; held |
+| Sparse Jordan candidates | 28/100 and 28/100; held | 28/100 and 28/100; held |
+| Execution receipt | 2 held; 0 created, updated, or failed | 2 held; 0 created, updated, or failed |
+
+Selecting only Name in the exploratory review did not weaken enforcement: the
+write preview still used all five fields. Receipts were saved with HTTP `201`
+and read back from run history. Independent provider reads verified all nine
+fictional records per CRM unchanged, with both proposed emails absent. No
+provider responses were mocked. Screenshots expand the scroll area for
+readability and mask native IDs.
+
+The same sparse Jordan that Salesforce previously accepted is now held by
+Control Tower before creation. This is conservative prevention, not proof that
+the candidates are the same person. A reviewer must resolve or remove the row;
+there is no override or automatic linking. Snapshot visibility, search rules,
+and records changed after collection can still leave possible duplicates unseen.
+Legacy direct-sync and webhook routes are outside this guard.
+
+The [follow-up evidence](evidence/import-create-holds-native-2026-09-27.json)
+records counts and dates. `scripts/check-enterprise-import.mjs <provider> --holds-only`
+repeats this check against the retained nine-person fixture. The original
+first-run create/repeat/rollback check still requires its eight-person baseline.
+After the guard change, all 228 tests passed, including sparse-match holds,
+clear creates, stale/partial/capped evidence, and execution revalidation.

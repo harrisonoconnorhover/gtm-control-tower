@@ -180,7 +180,7 @@ function MatchReview({ inputs, connectorId, workspaceId, accessKey, disabled = f
         <div className="min-w-0">
           <p className="text-xs font-semibold uppercase tracking-wider text-[#83bcff]">Read-only review · {connectorName}</p>
           <h3 className="mt-2 text-xl font-semibold">Find possible CRM matches</h3>
-          <p className="mt-2 max-w-3xl text-xs leading-5 text-[#9db1a7]">Choose which imported fields to compare with a dated CRM snapshot. Review suggestions; resolve possible duplicates before using the separate CRM write preview. These suggestions do not link records or change write eligibility.</p>
+          <p className="mt-2 max-w-3xl text-xs leading-5 text-[#9db1a7]">Choose fields to explore possible matches in a dated CRM snapshot. The write preview separately checks all five fields and holds new records with possible duplicates, even if the CRM would accept them. Suggestions never link or update an existing person automatically.</p>
         </div>
         <span className="text-xs text-[#cdfc54]">{inputs.length} active imported records</span>
       </div>
@@ -189,7 +189,7 @@ function MatchReview({ inputs, connectorId, workspaceId, accessKey, disabled = f
         <>
           <fieldset disabled={disabled || scanning} className="mt-5 disabled:opacity-60">
             <legend className="text-sm font-semibold">Matching fields</legend>
-            <p className="mt-1 text-xs text-[#9db1a7]">Suggested fields reflect coverage in your imported file. You can change the selection.</p>
+            <p className="mt-1 text-xs text-[#9db1a7]">Suggested fields reflect coverage in your imported file. Change this selection to explore the evidence; it does not weaken the duplicate check in the write preview.</p>
             <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
               {suggestions.map((suggestion) => (
                 <label key={suggestion.field} className="flex min-w-0 cursor-pointer items-start gap-3 rounded-xl border border-white/10 bg-[#07130f]/60 p-3">
@@ -223,7 +223,7 @@ function MatchReview({ inputs, connectorId, workspaceId, accessKey, disabled = f
                 </>
               )}
             </div>
-            <p className="mt-2 text-xs leading-5 text-[#9db1a7]">Reading a snapshot makes CRM read requests and saves pages in this workspace. It does not write CRM records. Stop takes effect after the current page.</p>
+            <p className="mt-2 text-xs leading-5 text-[#9db1a7]">Reading a snapshot makes CRM read requests and saves pages in this workspace. It does not write CRM records. Stop takes effect after the current page. New-record creation requires a complete snapshot started within the last 15 minutes; missing or partial coverage holds creation.</p>
             {!workspaceId && <p className="mt-2 text-xs text-[#e6bd68]">Save this workspace before reading a CRM snapshot.</p>}
           </div>
 

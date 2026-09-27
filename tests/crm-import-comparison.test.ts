@@ -1,4 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { IdentityRecord } from '../lib/identity-resolution';
+import type { LiveContactState } from '../lib/live-control-tower';
+import { emptyWorkspaceState } from '../lib/workspace';
+
+const store = vi.hoisted(() => ({ getWorkspace: vi.fn(), getLatestDuplicateScan: vi.fn(), getDuplicateScanRecords: vi.fn() }));
+vi.mock('../lib/workspace-store', () => ({ getWorkspace: store.getWorkspace, persistenceEnabled: () => true }));
+vi.mock('../lib/duplicate-scan-store', () => ({ getLatestDuplicateScan: store.getLatestDuplicateScan, getDuplicateScanRecords: store.getDuplicateScanRecords }));
 import { POST } from '../app/api/control-tower/crm-writeback/route';
 import type { CrmWritePlan, PortableCrmContact } from '../lib/crm-workflow';
 
@@ -7,11 +14,21 @@ const contact = (id: string, email: string): PortableCrmContact => ({
   phone: null, jobTitle: 'Analyst', website: null,
 });
 const response = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
-function request(connectorId: 'salesforce' | 'hubspot', contacts: PortableCrmContact[], plan?: CrmWritePlan) {
+let savedContacts: LiveContactState[] = [];
+let snapshotStartedAt = '';
+function request(connectorId: 'salesforce' | 'hubspot', contacts: PortableCrmContact[], plan?: CrmWritePlan, overrides = {}) {
+  savedContacts = contacts.map((item) => ({ ...item, fullName: `${item.firstName} ${item.lastName}`, rawEmail: item.email,
+    normalizedEmail: item.email, state: 'WA', recordStatus: 'active', qualityFlags: [], region: 'West', segment: '',
+    lifecycleStage: 'Lead', expectedLifecycleStage: 'Lead', ownerId: null, canonicalContactId: null, lastAction: '', updatedAt: new Date().toISOString(),
+  }));
   return new Request('http://localhost/api/control-tower/crm-writeback', {
     method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ connectorId, contacts, sourceFile: 'synthetic.csv', action: plan ? 'execute' : 'preview', plan }),
+    body: JSON.stringify({ connectorId, contacts, sourceFile: 'synthetic.csv', action: plan ? 'execute' : 'preview', plan, workspaceId: 'workspace-1', ...overrides }),
   });
+}
+function snapshot(connectorId: 'salesforce' | 'hubspot') {
+  return { id: 'snapshot-1', workspaceId: 'workspace-1', connectorId, complete: true, sourceComplete: true,
+    recordsScanned: 0, startedAt: snapshotStartedAt };
 }
 const lead = (Id: string, Email: string, IsConverted = false) => ({
   Id, Email, IsConverted, FirstName: 'Test', LastName: 'Person', Company: 'Example',
@@ -25,8 +42,12 @@ beforeEach(() => {
   vi.stubEnv('SALESFORCE_INSTANCE_URL', 'https://example.my.salesforce.com');
   vi.stubEnv('SALESFORCE_ACCESS_TOKEN', 'synthetic-test-token');
   vi.stubEnv('HUBSPOT_ACCESS_TOKEN', 'synthetic-test-token');
+  snapshotStartedAt = new Date(Date.now() - 1000).toISOString();
+  store.getWorkspace.mockImplementation(async () => ({ id: 'workspace-1', state: { ...emptyWorkspaceState(), contacts: savedContacts } }));
+  store.getLatestDuplicateScan.mockImplementation(async (_workspaceId, connectorId) => snapshot(connectorId));
+  store.getDuplicateScanRecords.mockResolvedValue([]);
 });
-afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); });
+afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); vi.resetAllMocks(); });
 
 describe('import comparison before governed CRM writes', () => {
   it('updates one active Lead, creates one new Lead, and never writes Contact or converted matches', async () => {
@@ -125,5 +146,41 @@ describe('import comparison before governed CRM writes', () => {
     expect(result.status).toBe(202);
     expect(await result.json()).toMatchObject({ created: 0, updated: 0, failed: 1 });
     expect(paths.some((path) => path.endsWith('/batch/upsert') || path.endsWith('/batch/update'))).toBe(false);
+  });
+
+  it('rechecks the latest snapshot before execution and cannot bypass a possible-match hold with a supplied plan', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => response({ done: true, records: [] }));
+    const imported = [{ ...contact('one', 'new@example.com'), firstName: 'Jordan', lastName: 'Lee', company: 'Cisco' }];
+    const plan = await (await POST(request('salesforce', imported))).json() as CrmWritePlan;
+    expect(plan.creates).toBe(1);
+    const candidate: IdentityRecord = {
+      recordKey: 'salesforce:lead:crm-jordan', nativeId: 'crm-jordan', connectorId: 'salesforce', objectType: 'lead',
+      firstName: 'Jordan', lastName: 'Lee', fullName: 'Jordan Lee', email: 'other@example.com',
+      company: 'Cisco', state: 'Washington', phone: '', jobTitle: '', website: '', createdAt: null, updatedAt: null,
+    };
+    store.getLatestDuplicateScan.mockResolvedValue({ ...snapshot('salesforce'), id: 'snapshot-2', recordsScanned: 1 });
+    store.getDuplicateScanRecords.mockResolvedValue([candidate]);
+    expect((await POST(request('salesforce', imported, plan, { fields: ['email'], possibleMatches: [], warnings: [] }))).status).toBe(409);
+
+    const held = await (await POST(request('salesforce', imported))).json() as CrmWritePlan;
+    expect(held).toMatchObject({ creates: 0, held: 1, records: [{ operation: 'hold', possibleMatches: [{ score: 28, nativeId: 'crm-jordan' }] }] });
+    // Even a caller who changes the visible plan cannot change the recomputed execution.
+    const forged = { ...held, creates: 1, held: 0, records: held.records.map((row) => ({ ...row, operation: 'create', possibleMatches: [] })) } as CrmWritePlan;
+    const result = await POST(request('salesforce', imported, forged));
+    expect(await result.json()).toMatchObject({ created: 0, held: 1, records: [{ status: 'held' }] });
+    expect(fetchMock.mock.calls.every(([url]) => String(url).includes('/query?'))).toBe(true);
+    expect(store.getDuplicateScanRecords).toHaveBeenCalledWith('snapshot-2');
+  });
+
+  it('holds creates when workspace context is omitted while exact-email updates still work', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const query = new URL(String(input)).searchParams.get('q')!;
+      return response({ done: true, records: query.includes('FROM Lead') ? [lead('00Q-existing', 'lead@example.com')] : [] });
+    });
+    const imported = [contact('one', 'lead@example.com'), contact('two', 'new@example.com')];
+    const plan = await (await POST(request('salesforce', imported, undefined, { workspaceId: undefined }))).json() as CrmWritePlan;
+    expect(plan).toMatchObject({ creates: 0, updates: 1, held: 1 });
+    expect(plan.records[1].reason).toContain('Save this import workspace');
+    expect(store.getWorkspace).not.toHaveBeenCalled();
   });
 });

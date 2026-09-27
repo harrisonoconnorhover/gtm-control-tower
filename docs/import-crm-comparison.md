@@ -3,8 +3,7 @@
 **Later native evidence:** the [enterprise import case](enterprise-import-native-check.md)
 verified creates, updates, unchanged records, an existing Salesforce Contact hold,
 repeat imports, and update rollback in development accounts on September 27, 2026.
-Approximate suggestions still require manual review. Earlier read-only results below
-retain their original scope.
+That original run used advisory approximate review. The [native follow-up](enterprise-import-native-check.md#follow-up-control-tower-holds-possible-duplicates) verified the current create guard against both development CRMs; earlier evidence retains its original scope.
 
 In the self-hosted `/app/lab`, **Compare N with CRM** reads current records for
 the eligible imported rows before proposing writes. It requires a direct
@@ -14,14 +13,17 @@ whole-account duplicate scan.
 
 For name, phone, state, company, or approximate email evidence, use the separate
 [possible-match review](approximate-import-matches.md). It ranks candidates from
-a dated snapshot and exports review JSON; it never selects a write target or
-changes eligibility. This page describes the fresh exact-email write preview.
+a dated snapshot and exports review JSON; it never selects a write target.
+The governed direct preview independently uses all five fields to hold unsafe
+creates. Updates and unchanged decisions still require exact-email identity.
 
 ## Decisions you can inspect
 
 | Current CRM result for an imported email | HubSpot | Salesforce |
 | --- | --- | --- |
-| No match after complete successful reads | Propose Contact create | Propose Lead create |
+| No exact match; fresh complete snapshot has no approximate candidates and no search cap | Propose Contact create | Propose Lead create |
+| No exact match, but any approximate candidate is returned | Hold create for review | Hold create for review |
+| Proposed create lacks a fresh complete snapshot, or candidate search is capped | Hold create | Hold create |
 | One exact Contact primary or additional email match | Compare portable fields using its native ID; preserve primary email | Hold a Contact match |
 | One unconverted Lead, with no other match | Not applicable | Compare portable fields using its native ID |
 | Converted Lead | Not applicable | Hold |
@@ -43,6 +45,21 @@ similarity to join different, unlinked emails. HubSpot's
 [additional email identifiers](https://developers.hubspot.com/docs/api-reference/legacy/crm/objects/contacts/guide#additional-emails)
 can link an imported secondary email to an existing Contact; the update uses
 that Contact's ID and does not replace its primary email.
+
+## Approximate create holds
+
+The latest snapshot for the same workspace and CRM must be complete and
+provider-complete (`sourceComplete`), with its scan started within 15 minutes.
+Missing, stale, or partial snapshots hold would-be creates. A capped candidate
+search also holds them. The server uses the saved import's full name and state
+and all five matching fields, independently of exploratory review checkboxes.
+Any returned candidate holds a create, including low-scoring same-name coworkers.
+
+Correct or remove unresolved import rows, refresh the snapshot when needed, and
+refresh the preview. There is no override, automatic linking, or merge. Holds
+can be false positives. An empty candidate list does not prove absence. Snapshot
+visibility and changes after the scan limit coverage. Exact-email updates, unchanged
+records, and existing Salesforce Contact holds retain their existing behavior.
 
 ## Try with your own development CRM
 
@@ -66,7 +83,8 @@ that Contact's ID and does not replace its primary email.
    an unconverted Lead for one email and a Contact for another. Leave the new
    email absent. Results depend on the CRM records you actually create.
 4. Select HubSpot or Salesforce under **Where should clean records go?**, then
-   choose **Compare N with CRM** and inspect the proposed creates, updates,
+   read a fresh complete snapshot under **Find possible CRM matches**. Choose
+   **Compare N with CRM** and inspect the proposed creates, updates,
    unchanged rows, and holds. Comparison itself does not write to the CRM.
    Execute only after reviewing the changes. `/runs` records outcomes and
    eligible update rollback; newly created records are not auto-deleted.
@@ -80,7 +98,8 @@ also wait for an existing workspace save or repair; errors release them for retr
 
 Plans expire after 15 minutes. Execution rereads the relevant CRM records and
 rejects a changed comparison; invalid or incomplete reads cannot prove absence.
-Persisted whole-account scans are not used as absence evidence. Read visibility
+The server rechecks the approximate create guard before writing. Its snapshot
+requirement does not replace exact-email reads or prove absence. Read visibility
 is limited to the configured credentials.
 
 Direct HubSpot creates use the native create operation, including the legacy
@@ -92,8 +111,10 @@ operations: neither connector guarantees atomic protection against external
 writers.
 
 The existing HubSpot n8n workflow remains a delegated email upsert, without this
-comparison promise. The disabled Salesforce n8n node is unchanged. No path here
-merges native CRM records or converts Leads.
+comparison promise. The approximate create guard applies only to the governed
+`/api/control-tower/crm-writeback` path, not legacy direct-sync or webhook routes.
+The disabled Salesforce n8n node is unchanged. No path here merges native CRM
+records or converts Leads.
 
 ## Verification
 

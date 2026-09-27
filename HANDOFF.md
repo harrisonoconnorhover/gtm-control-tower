@@ -2,38 +2,39 @@
 
 ## Finished
 
-- Seeded realistic fictional event records in the designated HubSpot development portal and Salesforce Developer Edition, using recognizable companies, reserved example.com email subdomains and fictional phone numbers.
-- Verified the browser workflow against native APIs: each CRM created one person and updated two. Salesforce held an existing Contact. Repeat imports made zero new writes; rollback restored both updates and retained the new person.
-- Demonstrated manual exclusion of two approximate matches and both native Salesforce rule outcomes: a strong match was blocked; a sparse row passed and its test-created Lead was removed.
-- Added the illustrated walkthrough, downloadable review/approved CSVs, repeatable seeder, native check script and public evidence. Retained nine fictional people per CRM.
-- Fixed Salesforce receipts dropping the native composite statusCode; matching policy and CRM write headers are unchanged.
+- Connected approximate matching to governed CRM import plans: possible duplicates hold new-record creation independently of HubSpot or Salesforce rules.
+- Required matching saved input and a complete snapshot started within 15 minutes; preview and execution use all five identity fields regardless of exploratory checkboxes.
+- Added candidate evidence and actionable hold reasons to the existing preview and saved receipts. Exact-email updates retain their behavior.
+- Verified Priya and sparse Jordan against both development CRMs: two holds, zero creates or updates, all nine fictional records unchanged per CRM.
+- Updated the illustrated case, guides and repeatable native check while preserving the earlier Salesforce limitation as dated evidence.
 
 ## Try It
 
-1. Open `public/enterprise-import-walkthrough.html` through the public demo or a local static server.
-2. Download the seven-row review and five-row approved CSVs. Follow `docs/enterprise-import-fixtures.md` in a configured development workspace.
-3. Existing development records remain after rollback. Reimporting proposes the two updates again; the new Nina already exists. The first-run native check requires a fresh eight-person baseline and does not reset CRM records.
+1. In a configured saved `/app/lab` workspace, import `public/enterprise-import-review.csv` and select HubSpot or Salesforce.
+2. Read a fresh complete snapshot, then compare with CRM. Priya and Jordan remain held with candidate evidence. Correct or remove unresolved rows before proceeding.
+3. Run `scripts/check-enterprise-import.mjs <provider> --holds-only` with the documented private environment/output settings to repeat the retained-fixture check.
 
 ## Checks
 
-- Native HubSpot and Salesforce browser runs, independent field read-back, saved receipts, repeat imports and update rollback passed; no provider responses were mocked.
-- Native Salesforce rejection returned DUPLICATES_DETECTED after the receipt fix, with zero creates and a persisted failed receipt. Sparse probe cleanup was verified.
-- 216 tests across 23 suites, lint, TypeScript, both builds, script syntax, fixture consistency, secret scan and public account/record-ID checks passed.
-- Walkthrough images, downloads and website links passed desktop/mobile checks; no horizontal overflow or browser page errors.
+- 228 tests across 24 suites passed, including weak matches, clean creates, missing/stale/partial/capped snapshots, saved-input parity and execution revalidation.
+- Native browser checks passed for both providers; held receipts saved and read back, native records unchanged, proposed emails absent, zero browser page errors.
+- TypeScript, lint, both builds, script syntax, secret scan and diff checks passed.
+- Walkthrough and personal-site checks passed at 1440px and 390px: all five evidence images loaded, no overflow or browser errors.
 
 ## Decisions
 
-- Approximate suggestions require an operator decision; the approved CSV explicitly excludes unresolved identities.
-- A single duplicate-alert acknowledgment constructed the second fictional Jordan during setup. Application writes retain allowSave=false; no organization rule was changed.
-- Scores rank evidence; they are not calibrated probabilities. Only dated development behavior is claimed.
+- Any returned candidate holds a proposed create; 28/100 is sufficient for review, never a probability of identity.
+- Reuse existing plans and holds. No automatic link, merge, override or storage migration.
+- Guard only the governed direct write path. Legacy direct-sync and webhook paths retain their previous behavior.
 
 ## Remaining
 
-- No calibrated accuracy benchmark, production use, native merge, Lead conversion, additional-email mutation, bulk pagination or concurrent-writer qualification.
-- Configured native duplicate rules can permit sparse records. Manual review remains necessary.
+- Holds can include different people. Human resolution is required; no candidate does not prove absence.
+- Snapshot visibility, search limits and concurrent CRM changes prevent a universal duplicate-prevention guarantee.
+- New-create success is covered by automated tests; this follow-up's native execution intentionally exercises held outcomes. Earlier native creation/repeat/rollback evidence retains its original scope.
 
 ## Review First
 
-- `docs/enterprise-import-native-check.md` and the illustrated walkthrough.
-- `scripts/seed_enterprise_import.mjs` and `scripts/check-enterprise-import.mjs`.
-- Salesforce error formatting in `app/api/control-tower/crm-writeback/route.ts`.
+- `lib/import-create-review.ts` and `app/api/control-tower/crm-writeback/route.ts`.
+- `docs/enterprise-import-native-check.md`, follow-up section.
+- `public/enterprise-import-walkthrough.html` and its new hold screenshot.

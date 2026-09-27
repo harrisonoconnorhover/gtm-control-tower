@@ -23,25 +23,29 @@ fixture uses subdomains of [IANA-reserved example.com](https://www.iana.org/help
   HubSpot Contacts. In Salesforce, seed Denise as a Contact and the other seven
   as Leads. Description fields identify the case and fictional record key.
 - [Review CSV](../public/enterprise-import-review.csv): the complete attendee
-  import for inspecting approximate matches. Do not execute this file directly:
-  its two uncertain identities require a human decision.
+  import for inspecting approximate matches and governed create holds. Its two
+  uncertain identities require a human decision; the current governed direct
+  preview holds their proposed creates.
 - [Approved CSV](../public/enterprise-import-approved.csv): the same file after
   manually excluding Priya's changed email and the ambiguous Jordan Lee row.
-  This is a prepared example of an operator decision, not an automatic matching
-  decision or a saved-review feature.
+  This is a prepared example of an operator decision, not a saved-review feature
+  or an override of the governed create guard.
 
 ## Expected decisions
 
 These are fixture expectations; this guide alone does not establish that a
-native CRM run occurred.
+native CRM run occurred. The [dated native run](enterprise-import-native-check.md)
+used advisory approximate review and manual exclusions. The later
+[native follow-up](enterprise-import-native-check.md#follow-up-control-tower-holds-possible-duplicates)
+verified automatic create holds in both CRMs.
 
 | Import row | Scenario | Expected handling |
 | --- | --- | --- |
 | Elena Marquez, Microsoft | Same portable fields; `Washington` instead of `WA` | Exact-email preview reports unchanged. Approximate state comparison recognizes the equivalent state. |
 | Marcus Bell, Adobe | Promotion and new direct phone | Update only job title and phone on the existing record. |
 | Nina Alvarez, ServiceNow | New attendee | Create once; repeat import finds the created record and reports unchanged. |
-| Priya Nair, Salesforce | Different email; same name, phone, company, and state | Review the possible existing person and conflicting email; manually exclude from the approved file. |
-| Jordan Lee, Cisco | New email, no phone or title; two coworkers have the same name | Review both candidates; manually exclude until identity is resolved. |
+| Priya Nair, Salesforce | Different email; same name, phone, company, and state | Governed preview holds the create on the possible match; review and exclude until resolved. |
+| Jordan Lee, Cisco | New email, no phone or title; two coworkers have the same name | Governed preview holds the create even on weak candidates; review both and exclude until resolved. |
 | Denise Carter, ServiceNow | Existing person | HubSpot reports unchanged. Salesforce holds the row because the email belongs to a Contact, outside the direct Lead write path. |
 | Tess Morgan, Microsoft | Website intentionally blank | Clear the existing website; update rollback should restore it. |
 
@@ -56,10 +60,14 @@ imports must inspect those changes before execution.
    privately. Import the review CSV into a saved `/app/lab` workspace.
 2. Read a complete CRM snapshot and inspect suggestions using name, email,
    phone, state, and company. A score out of 100 ranks evidence; it is not a
-   probability or measured certainty. Suggestions do not hold rows or grant
-   permission to create them.
+   probability or measured certainty. Governed direct previews independently
+   check all five fields and hold creates on any candidate. The latest snapshot
+   must be complete and provider-complete, with its scan started within 15 minutes;
+   missing, stale, partial, or capped evidence holds creates too.
 3. Import the approved CSV and preview exact-email writes. Confirm each intended
    create, update, unchanged record, and Salesforce Contact hold before execution.
+   Correct or remove unresolved rows and refresh the preview; there is no
+   automatic linking or override. Review checkboxes do not change the guard.
 4. Execute, read back the actual CRM records, and repeat the same approved import
    to verify that no additional Nina record is created.
 5. Roll back the original update receipt and read back Marcus and Tess. Update
@@ -122,6 +130,12 @@ These checks **execute native CRM writes and update rollback**. They use install
 Chrome on macOS; set `CHROMIUM_PATH` for a different Chromium executable. Full
 snapshots, backup files, run history and browser storage are private output, not
 publication assets. Provider responses are not mocked.
+
+To repeat only the new create-hold check against the retained nine-person case,
+add `--holds-only` after `hubspot` or `salesforce` and use a fresh output directory.
+This mode imports only Priya and sparse Jordan, checks missing and complete
+snapshots, records the two held outcomes, and verifies native records unchanged.
+It makes CRM reads and saves workspace receipts, with zero CRM creates or updates.
 
 The completed development accounts retain nine fictional people each, including
 Nina. Running the seeder again preserves them. Reimporting the approved CSV after

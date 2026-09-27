@@ -3,8 +3,10 @@
 **Later native evidence:** the [enterprise import case](enterprise-import-native-check.md)
 verified creates, updates, unchanged records, an existing Salesforce Contact hold,
 repeat imports, and update rollback in development accounts on September 27, 2026.
-Approximate suggestions still require manual review. Earlier read-only results below
-retain their original scope.
+Those runs used advisory approximate review. The current [governed direct
+preview](import-crm-comparison.md#approximate-create-holds) also holds proposed
+creates with possible matches; the [native follow-up](enterprise-import-native-check.md#follow-up-control-tower-holds-possible-duplicates) verifies those holds in both CRMs.
+The dated read-only results below retain their original scope.
 
 **Result:** the approximate review and exact-email preview passed a read-only
 check against the configured HubSpot account and a Salesforce Developer Edition

@@ -18,6 +18,8 @@ assert(env.CONTROL_TOWER_SYNC_KEY, 'Use the same operator key as the local app.'
 const fixture = JSON.parse(readFileSync(repo + '/fixtures/enterprise-import-case.json', 'utf8'));
 const provider = process.argv[2];
 assert(['hubspot', 'salesforce'].includes(provider));
+const holdsOnly = process.argv.includes('--holds-only');
+assert(process.argv.slice(3).every(arg => arg === '--holds-only'), 'Only --holds-only is supported after the provider.');
 const base = env.CONTROL_TOWER_BROWSER_BASE_URL ?? 'http://127.0.0.1:3000', images = runtime + '/screens';
 mkdirSync(images, { recursive: true });
 const evidence = { provider, startedAt: new Date().toISOString(), caseId: fixture.caseId, stages: {}, pageErrors: [] };
@@ -28,13 +30,24 @@ page.setDefaultTimeout(45000);
 page.on('pageerror', e => evidence.pageErrors.push(e.message));
 let stage = 'startup';
 const approvedIds = new Set(fixture.approved.map(r => r.contactId));
+const heldInputs = fixture.review.filter(r => ['ENT-EMAIL-CHANGE', 'ENT-COWORKER'].includes(r.contactId));
 await page.route('**/api/control-tower/**', async (route) => {
     const q = route.request(), p = new URL(q.url()).pathname, b = q.method() === 'POST' ? q.postDataJSON() : null;
     if (/\/(hubspot-sync|salesforce-sync|demo-intake)$/.test(p))
         throw Error('Unexpected write endpoint');
     if (p.endsWith('/crm-writeback') && b?.action !== 'preview') {
         assert.equal(b.connectorId, provider);
-        if (b.action === 'execute')
+        if (holdsOnly) {
+            assert.equal(b.action, 'execute', 'The holds-only qualification never requests rollback.');
+            assert.equal(b.contacts.length, 2);
+            assert(b.contacts.every(r => heldInputs.some(f => f.contactId === r.contactId && f.email === r.email)));
+            assert.equal(b.plan.creates, 0);
+            assert.equal(b.plan.updates, 0);
+            assert.equal(b.plan.held, 2);
+            assert.equal(b.plan.records.length, 2);
+            assert(b.plan.records.every(r => r.operation === 'hold'), 'The holds-only qualification must not submit a native mutation.');
+        }
+        else if (b.action === 'execute')
             assert(b.contacts.every(r => approvedIds.has(r.contactId) && fixture.approved.some(f => f.contactId === r.contactId && f.email === r.email)));
         else
             assert.equal(b.action, 'rollback');
@@ -64,15 +77,15 @@ async function native() {
     return out;
 }
 function checkpoint(name, data) { save(provider + '-' + name, data); evidence.stages[name] = new Date().toISOString(); persist(); console.log(JSON.stringify({ provider, phase: name, ...(data.records ? { records: data.records.length } : {}) })); }
-async function load(file) {
+async function load(file, buffer) {
     await page.getByLabel('Where is your data?').selectOption('csv');
-    await page.locator('input[type=file]').setInputFiles(repo + '/public/' + file);
+    await page.locator('input[type=file]').setInputFiles(buffer ? { name: file, mimeType: 'text/csv', buffer } : repo + '/public/' + file);
     await page.getByRole('button', { name: 'Validate + load', exact: true }).click();
     await page.getByText(/SQLite r\d+ · saved/).waitFor();
 }
-async function preview() {
+async function preview(refresh = false) {
     const response = page.waitForResponse(r => r.url().endsWith('/crm-writeback') && r.request().postDataJSON()?.action === 'preview');
-    await page.getByRole('button', { name: /^Compare \d+ with CRM$/ }).click();
+    await page.getByRole('button', { name: refresh ? 'Refresh comparison' : /^Compare \d+ with CRM$/ }).click();
     const r = await response;
     assert.equal(r.status(), 200);
     return await r.json();
@@ -100,9 +113,120 @@ async function history(receipt) {
 async function planShot(name) {
     const list = page.getByLabel('CRM comparison records', { exact: true });
     const box = list.locator('..');
-    await box.screenshot({ path: images + '/' + provider + '-' + name + '.png', mask: [list.locator('details > p').filter({ hasText: 'Matched CRM records:' })], maskColor: '#182d25' });
+    // Expand only the scroll container for a legible capture; restore the UI afterward.
+    const previousStyle = await list.getAttribute('style');
+    try {
+        await list.evaluate(element => { element.style.maxHeight = 'none'; element.style.overflow = 'visible'; element.scrollTop = 0; });
+        await box.screenshot({ path: images + '/' + provider + '-' + name + '.png', mask: [list.locator('details > p').filter({ hasText: 'Matched CRM records:' }), list.locator('p.font-mono')], maskColor: '#182d25' });
+    } finally {
+        await list.evaluate((element, style) => { if (style === null) element.removeAttribute('style'); else element.setAttribute('style', style); }, previousStyle);
+    }
+}
+async function checkHolds() {
+    evidence.mode = 'holds-only';
+    stage = 'holds-before';
+    const stable = rows => [...rows].sort((a, b) => `${a.type}:${a.id}`.localeCompare(`${b.type}:${b.id}`));
+    const before = stable(await native());
+    assert.equal(before.length, 9, 'Requires the eight retained baseline people and the one Nina created by the first-run qualification.');
+    for (const record of fixture.baseline) {
+        const found = before.filter(row => row.email === record.email);
+        assert.equal(found.length, 1);
+        assert(found[0].marker?.includes(fixture.caseId));
+    }
+    assert.equal(before.filter(row => row.email === fixture.approved.find(r => r.contactId === 'ENT-CREATE').email).length, 1);
+    assert(heldInputs.every(input => !before.some(row => row.email === input.email)), 'Both proposed email addresses must be absent before qualification.');
+    checkpoint('holds-before', before);
+    await page.goto(base + '/app/lab');
+    await page.getByText('SQLite r0 · saved', { exact: false }).waitFor();
+    await page.getByLabel('Operator access key', { exact: true }).fill(env.CONTROL_TOWER_SYNC_KEY);
+    const lines = readFileSync(repo + '/public/enterprise-import-review.csv', 'utf8').trimEnd().split(/\r?\n/);
+    const selected = lines.slice(1).filter(line => heldInputs.some(row => line.startsWith(row.contactId + ',')));
+    assert.equal(selected.length, 2);
+    await load('enterprise-import-holds.csv', Buffer.from([lines[0], ...selected].join('\n') + '\n'));
+    await page.getByLabel('Where should clean records go?').selectOption(provider);
+    await page.getByText(/SQLite r\d+ · saved/).waitFor();
+    const panel = page.getByRole('region', { name: 'Approximate CRM matches' });
+    await panel.getByText('No saved snapshot. Read CRM records to build one.', { exact: true }).waitFor();
+    stage = 'holds-without-snapshot';
+    const missingSnapshot = await preview();
+    checkpoint('holds-without-snapshot-plan', missingSnapshot);
+    assert.equal(missingSnapshot.creates, 0);
+    assert.equal(missingSnapshot.updates, 0);
+    assert.equal(missingSnapshot.held, 2);
+    assert(missingSnapshot.records.every(record => record.operation === 'hold'));
+    await planShot('holds-without-snapshot');
+
+    stage = 'holds-snapshot';
+    await panel.getByRole('button', { name: 'Read CRM snapshot', exact: true }).click();
+    await panel.getByText(/records · \d+ pages · Provider pagination complete/).waitFor({ timeout: 90000 });
+    const workspaceId = await page.evaluate(() => localStorage.getItem('gtm-control-tower-workspace-id'));
+    const snapshotResponse = await page.request.get(base + '/api/control-tower/duplicate-scan?workspaceId=' + encodeURIComponent(workspaceId) + '&connectorId=' + provider,
+        { headers: { 'x-control-tower-key': env.CONTROL_TOWER_SYNC_KEY } });
+    assert.equal(snapshotResponse.status(), 200);
+    const snapshot = (await snapshotResponse.json()).scan;
+    assert(snapshot.sourceComplete);
+    checkpoint('holds-snapshot', snapshot);
+    // Exploratory field choices must not weaken the independent create-review guard.
+    for (const field of ['Email', 'Phone', 'State', 'Company'])
+        await panel.getByRole('checkbox', { name: new RegExp('^' + field) }).uncheck();
+    await panel.getByRole('checkbox', { name: /^Name/ }).check();
+    await panel.getByRole('button', { name: 'Find suggestions for these rows', exact: true }).click();
+    await panel.getByRole('status').filter({ hasText: 'Review ready for 2 imported records.' }).waitFor();
+    const download = page.waitForEvent('download');
+    await panel.getByRole('button', { name: 'Download this review (JSON)', exact: true }).click();
+    checkpoint('holds-name-only-review', JSON.parse(readFileSync(await (await download).path(), 'utf8')));
+    stage = 'holds-execute';
+    const plan = await preview(true);
+    checkpoint('holds-plan', plan);
+    assert.equal(plan.creates, 0);
+    assert.equal(plan.updates, 0);
+    assert.equal(plan.held, 2);
+    assert(plan.records.every(record => record.operation === 'hold'));
+    const scores = Object.fromEntries(plan.records.map(record => [record.contactId, record.possibleMatches.map(match => match.score).sort((a, b) => b - a)]));
+    assert.deepEqual(scores['ENT-EMAIL-CHANGE'], [72]);
+    assert.deepEqual(scores['ENT-COWORKER'], [28, 28]);
+    const list = page.getByLabel('CRM comparison records', { exact: true });
+    for (const detail of await list.locator('details').all()) {
+        if (await detail.getAttribute('open') === null) await detail.locator('summary').click();
+    }
+    await planShot('holds-plan');
+    for (const input of heldInputs) {
+        const detail = list.locator('details').filter({ has: page.locator('summary').filter({ hasText: input.contactId }) });
+        await detail.screenshot({ path: images + '/' + provider + '-holds-' + input.contactId.toLowerCase() + '.png',
+            mask: [detail.locator('p.font-mono')], maskColor: '#182d25' });
+    }
+    const receipt = await execute();
+    assert.equal(receipt.created, 0);
+    assert.equal(receipt.updated, 0);
+    assert.equal(receipt.held, 2);
+    assert.equal(receipt.failed, 0);
+    assert.equal(receipt.records.length, 2);
+    assert(receipt.records.every(record => record.status === 'held'));
+    const saved = await history(receipt);
+    const savedRun = saved.runs.find(run => run.details?.writeback?.runId === receipt.runId);
+    assert.deepEqual(savedRun.details.writeback, receipt);
+    assert.equal(savedRun.details.plan.held, 2);
+    const after = stable(await native());
+    checkpoint('holds-after', after);
+    assert.deepEqual(after, before, 'Every retained native fixture must be unchanged.');
+    assert(heldInputs.every(input => !after.some(row => row.email === input.email)));
+    assert.deepEqual(evidence.pageErrors, []);
+    evidence.finishedAt = new Date().toISOString();
+    const result = { provider, mode: 'holds-only', caseId: fixture.caseId, startedAt: evidence.startedAt, finishedAt: evidence.finishedAt,
+        withoutSnapshot: { created: missingSnapshot.creates, updated: missingSnapshot.updates, held: missingSnapshot.held },
+        snapshot: { records: snapshot.recordsScanned, pages: snapshot.pagesScanned, sourceComplete: snapshot.sourceComplete, startedAt: snapshot.startedAt, completedAt: snapshot.completedAt },
+        reviewSelection: ['name'], enforcedCandidateScores: scores,
+        receipt: { created: receipt.created, updated: receipt.updated, held: receipt.held, failed: receipt.failed },
+        nativeFixtureRecords: after.length, proposedEmailsAbsent: true, nativeStateIdentical: true, savedReceiptVerified: true, pageErrors: 0 };
+    evidence.result = result;
+    persist();
+    save(provider + '-holds-result', result);
+    console.log(JSON.stringify(result, null, 2));
 }
 try {
+    if (holdsOnly) {
+        await checkHolds();
+    } else {
     stage = 'before';
     const before = await native();
     assert.equal(before.length, 8, 'Requires eight baseline people and no created Nina yet. This first-run check does not reset or delete existing CRM data.');
@@ -135,7 +259,7 @@ try {
     const jordan = panel.locator('details').filter({ has: page.locator('summary').filter({ hasText: 'ENT-COWORKER' }) });
     await jordan.locator('summary').click();
     await jordan.screenshot({ path: images + '/' + provider + '-coworkers.png', mask: [jordan.locator('p.font-mono')], maskColor: '#182d25' });
-    // Operator resolution is represented by a second CSV; approximate suggestions never modify write eligibility.
+    // The second CSV records the operator's resolved subset; create candidates also pass the independent snapshot review guard.
     await load('enterprise-import-approved.csv');
     stage = 'execute';
     const plan = await preview();
@@ -227,6 +351,7 @@ try {
     evidence.finishedAt = new Date().toISOString();
     persist();
     console.log(JSON.stringify(evidence, null, 2));
+    }
 }
 catch (error) {
     evidence.failedStage = stage;
