@@ -455,3 +455,35 @@ CRM matches, and include it in the preview fingerprint rechecked at execution.
 This is a current-import check, not a cross-workspace lock or a guarantee that
 sparse identities will be detected. Preserve exact-email update behavior and
 the dated native evidence; qualify this correction with simulated providers.
+
+## September 27, 2026 — Save row selection separately from identity repair
+
+Operators need to exclude a reviewed row without editing and re-uploading a CSV
+or falsely marking it merged. Store a reason and timestamp on the source row,
+with explicit restore and existing workspace undo. Recompute duplicate flags
+among included rows, retain skipped source values, and round-trip the decision
+in the full CSV. Save before applying selection changes; keep completed session
+outcomes. Require the saved workspace for every governed CRM comparison, including
+updates, so missing context cannot bypass a skip. Recheck current row identity
+at execution as well as exclusion state. No native delete or merge is introduced.
+
+## September 27, 2026 — Make update intent explicit
+
+An operator may want to fill missing data without replacing known CRM values.
+Default to fill-empty and allow selected-field replacement with separate blank
+clearing permission. Save one portable policy per workspace for both connectors;
+include it in the preview fingerprint and compare against saved policy before
+execution. The effective after-values preserve unselected fields, and forward
+updates send only the fields in the approved diff. Rollback uses that same diff.
+Creates retain their mapped fields. Because missing columns and empty cells are
+already both null, disclose that explicit blank clearing applies to both.
+
+## September 27, 2026 — Separate spreadsheet proposals from observed outcomes
+
+Existing JSON exports and repaired source CSVs do not provide a per-row business
+review of a CRM batch. Add comparison/results CSV reports from existing plans and
+receipts, joining by contact ID and retaining receipt-only or missing-result rows.
+A comparison is not a receipt; blank outcomes and no_receipt must not imply a
+successful write. Keep import IDs, native IDs, candidate counts, evidence and
+update policy inspectable. Neutralize formula-like report cells without changing
+stored source data. Reuse saved runs rather than adding a reporting datastore.

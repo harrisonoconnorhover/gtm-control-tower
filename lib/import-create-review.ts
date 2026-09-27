@@ -59,7 +59,7 @@ export function reviewImportCreates(
   if (!inputs.length) return reviews;
   const savedInputs: ImportMatchInput[] = [];
   for (const saved of workspace.state.contacts) {
-    if (saved?.recordStatus === 'merged') continue;
+    if (saved?.recordStatus === 'merged' || saved?.importExclusion) continue;
     const input = saved?.recordStatus === 'active' && savedById.get(saved.contactId)?.length === 1
       ? savedMatchingInput(connectorId, saved) : null;
     if (!input) return holdAll('The saved import contains an identity that could not be checked. Correct or remove unusable rows and save the workspace before creating records.');
@@ -84,7 +84,7 @@ export function reviewImportCreates(
       ? `${sources.join(' and ')}. Do not create this row until the identity is resolved; the match score is not a probability.`
       : incomplete
         ? 'The possible-duplicate search reached a limit. Resolve this row manually before creating it; no suggestion does not establish that it is new.'
-        : 'No exact email match or possible-duplicate candidate was found in the recent complete CRM snapshot or other active saved import rows. This does not guarantee the person is new.',
+        : 'No exact email match or possible-duplicate candidate was found in the recent complete CRM snapshot or other included active saved import rows. This does not guarantee the person is new.',
     hasCandidates || incomplete ? 'held' : 'clear');
     reviewed.review.candidateCount = row.candidateCount;
     reviewed.review.importCandidateCount = importRow.candidateCount;

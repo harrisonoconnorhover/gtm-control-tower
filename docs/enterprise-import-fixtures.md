@@ -28,8 +28,8 @@ fixture uses subdomains of [IANA-reserved example.com](https://www.iana.org/help
   preview holds their proposed creates.
 - [Approved CSV](../public/enterprise-import-approved.csv): the same file after
   manually excluding Priya's changed email and the ambiguous Jordan Lee row.
-  This is a prepared example of an operator decision, not a saved-review feature
-  or an override of the governed create guard.
+  This is a prepared example of an operator decision. A saved workspace can also
+  skip those rows with a reason; neither path overrides the governed create guard.
 
 ## Expected decisions
 
@@ -50,9 +50,10 @@ verified automatic create holds in both CRMs.
 | Tess Morgan, Microsoft | Website intentionally blank | Clear the existing website; update rollback should restore it. |
 
 Omar Haddad and both original Jordan Lee records are control records that should
-remain unchanged. Priya's original record should also remain unchanged. Tess's
-blank website is intentional: empty portable fields request a clear, so ordinary
-imports must inspect those changes before execution.
+remain unchanged. Priya's original record should also remain unchanged. The
+default update policy only fills empty CRM fields and preserves existing values.
+Marcus's replacement values and Tess's blank website require an explicit opt-in
+to replacement and blank clearing for this exercise.
 
 ## Demonstration sequence
 
@@ -64,8 +65,11 @@ imports must inspect those changes before execution.
    check all five fields and hold creates on any candidate. The latest snapshot
    must be complete and provider-complete, with its scan started within 15 minutes;
    missing, stale, partial, or capped evidence holds creates too.
-3. Import the approved CSV and preview exact-email writes. Confirm each intended
-   create, update, unchanged record, and Salesforce Contact hold before execution.
+3. Import the approved CSV. Set **Update existing CRM records** to **Replace
+   selected fields**, keep all six fields selected, and check **Allow blank
+   values to clear selected fields**. Wait for the saved workspace status, then
+   preview exact-email writes. Confirm each intended create, update, unchanged
+   record, and Salesforce Contact hold before execution.
    Correct or remove unresolved rows and refresh the preview; there is no
    automatic linking or override. Review checkboxes do not change the guard.
 4. Execute, read back the actual CRM records, and repeat the same approved import
@@ -129,7 +133,10 @@ GTM_FIXTURE_OUTPUT="$PWD/outputs/enterprise-run" \
 These checks **execute native CRM writes and update rollback**. They use installed
 Chrome on macOS; set `CHROMIUM_PATH` for a different Chromium executable. Full
 snapshots, backup files, run history and browser storage are private output, not
-publication assets. Provider responses are not mocked.
+publication assets. Provider responses are not mocked. The first-run check
+explicitly selects and verifies a saved replacement policy with blank clearing
+before comparing the approved CSV. This policy intentionally changes Marcus's
+phone/title and clears Tess's website; it is not the default for ordinary imports.
 
 To repeat only the new create-hold check against the retained nine-person case,
 add `--holds-only` after `hubspot` or `salesforce` and use a fresh output directory.
@@ -139,6 +146,8 @@ It makes CRM reads and saves workspace receipts, with zero CRM creates or update
 
 The completed development accounts retain nine fictional people each, including
 Nina. Running the seeder again preserves them. Reimporting the approved CSV after
-rollback proposes the two updates again; Nina is already present, so there is no
-new create. The first-run browser check intentionally refuses that state instead
-of silently deleting or resetting records to manufacture another first run.
+rollback with the same explicit replacement-and-clear policy proposes the two
+updates again; Nina is already present, so there is no new create. With the safe
+default policy, existing populated fields remain unchanged. The first-run browser
+check intentionally refuses that state instead of silently deleting or resetting
+records to manufacture another first run.

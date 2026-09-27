@@ -3,6 +3,8 @@ import { readSalesforceExisting } from '@/lib/crm-existing-salesforce';
 import { createHubSpotContacts } from '@/app/api/control-tower/hubspot-sync/route';
 import {
   buildCrmWritePlan,
+  normalizeCrmUpdatePolicy,
+  portableCrmFieldNames,
   isCrmRollbackPlan,
   isCrmWritePlan,
   planStillMatches,
@@ -14,12 +16,16 @@ import {
   type CrmWritePlan,
   type CrmWritebackReceipt,
   type PortableCrmContact,
+  type CrmUpdatePolicy,
 } from '@/lib/crm-workflow';
 import { toHubSpotFieldPayload, toSalesforceFieldPayload } from '@/lib/crm-field-mapping';
 import { operatorAccessError } from '@/lib/operator-auth';
 import { getWorkspace, persistenceEnabled } from '@/lib/workspace-store';
 import { getDuplicateScanRecords, getLatestDuplicateScan } from '@/lib/duplicate-scan-store';
 import { reviewImportCreates, snapshotCoverageIssue } from '@/lib/import-create-review';
+import type { SavedWorkspace } from '@/lib/workspace';
+import { toHubSpotSyncContact } from '@/lib/hubspot-sync';
+import { toSalesforceSyncLead } from '@/lib/salesforce-sync';
 
 const DEFAULT_API_VERSION = '67.0';
 
@@ -37,8 +43,16 @@ export async function POST(request: Request) {
     const contacts = parseContacts(payload.contacts);
     if (!contacts.length || contacts.length > 100) return Response.json({ error: 'Use between 1 and 100 governed contacts.' }, { status: 400 });
     if (!contactsAreValid(payload.connectorId, contacts)) return Response.json({ error: 'The governed contacts contain duplicate identity, invalid email, missing provider-required fields, or overlong portable values.' }, { status: 400 });
+    let updatePolicy: CrmUpdatePolicy;
+    try { updatePolicy = normalizeCrmUpdatePolicy(payload.updatePolicy); }
+    catch { return Response.json({ error: 'Choose a valid CRM update policy and supported fields.' }, { status: 400 }); }
+    const workspace = typeof payload.workspaceId === 'string' && persistenceEnabled() ? await getWorkspace(payload.workspaceId) : null;
+    if (!workspace) return Response.json({ error: 'Save and select this import workspace before comparing or writing CRM records.' }, { status: 400 });
+    if (workspace.state.crmUpdatePolicy && JSON.stringify(normalizeCrmUpdatePolicy(workspace.state.crmUpdatePolicy)) !== JSON.stringify(updatePolicy)) {
+      return Response.json({ error: 'The saved update policy changed. Reload the workspace and refresh the comparison.' }, { status: 409 });
+    }
     const sourceFile = typeof payload.sourceFile === 'string' ? payload.sourceFile : 'crm-workspace';
-    const current = await createPlan(payload.connectorId, sourceFile, contacts, typeof payload.workspaceId === 'string' ? payload.workspaceId : '');
+    const current = await createPlan(payload.connectorId, sourceFile, contacts, workspace, updatePolicy);
     if (payload.action === 'preview') return Response.json(current, { headers: { 'Cache-Control': 'no-store' } });
     if (payload.action !== 'execute' || !isCrmWritePlan(payload.plan) || !planStillMatches(payload.plan, current)) {
       return Response.json({ error: 'The preview is stale. Refresh the change plan before writing.' }, { status: 409 });
@@ -50,18 +64,35 @@ export async function POST(request: Request) {
   }
 }
 
-async function createPlan(connectorId: CrmWritePlan['connectorId'], sourceFile: string, contacts: PortableCrmContact[], workspaceId: string) {
+async function createPlan(connectorId: CrmWritePlan['connectorId'], sourceFile: string, contacts: PortableCrmContact[], workspace: SavedWorkspace, updatePolicy: CrmUpdatePolicy) {
+  const rowHolds = new Map<string, string>();
+  for (const contact of contacts) {
+    const saved = workspace.state.contacts.filter((row) => row?.contactId === contact.contactId);
+    if (saved.length !== 1 || saved[0].recordStatus !== 'active') {
+      rowHolds.set(contact.contactId, 'This row is no longer a unique active row in the saved import. Refresh the workspace and comparison.');
+      continue;
+    }
+    if (saved[0].importExclusion) {
+      rowHolds.set(contact.contactId, `Skipped for this import: ${saved[0].importExclusion.reason}`);
+      continue;
+    }
+    try {
+      const portable = connectorId === 'hubspot' ? toHubSpotSyncContact(saved[0]) : toSalesforceSyncLead(saved[0]);
+      if (['contactId', 'email', ...portableCrmFieldNames].some((field) => (portable[field as keyof PortableCrmContact]?.trim() || null) !== (contact[field as keyof PortableCrmContact]?.trim() || null))) {
+        rowHolds.set(contact.contactId, 'This row changed in the saved import. Refresh the workspace and comparison.');
+      }
+    } catch { rowHolds.set(contact.contactId, 'This saved row is not eligible for this CRM. Resolve its import issues before writing.'); }
+  }
   const existing = await readExisting(connectorId, contacts);
   const now = new Date();
-  const exactPlan = buildCrmWritePlan(connectorId, sourceFile, contacts, existing, now);
+  const exactPlan = buildCrmWritePlan(connectorId, sourceFile, contacts, existing, now, undefined, updatePolicy, rowHolds);
   if (!exactPlan.creates) return exactPlan;
   const createIds = new Set(exactPlan.records.filter((record) => record.operation === 'create').map((record) => record.contactId));
-  const workspace = workspaceId && persistenceEnabled() ? await getWorkspace(workspaceId) : null;
-  const scan = workspace ? await getLatestDuplicateScan(workspace.id, connectorId) : null;
-  const records = workspace && scan && !snapshotCoverageIssue(workspace.id, connectorId, scan, now)
+  const scan = await getLatestDuplicateScan(workspace.id, connectorId);
+  const records = scan && !snapshotCoverageIssue(workspace.id, connectorId, scan, now)
     ? await getDuplicateScanRecords(scan.id) : null;
   const reviews = reviewImportCreates(connectorId, contacts.filter((contact) => createIds.has(contact.contactId)), workspace, scan, records, now);
-  return buildCrmWritePlan(connectorId, sourceFile, contacts, existing, now, reviews);
+  return buildCrmWritePlan(connectorId, sourceFile, contacts, existing, now, reviews, updatePolicy, rowHolds);
 }
 
 async function readExisting(connectorId: CrmWritePlan['connectorId'], contacts: PortableCrmContact[]) {
@@ -129,7 +160,7 @@ async function executeHubSpotPlan(
       body: JSON.stringify({ inputs: updates.map((record) => ({
         id: record.nativeId,
         objectWriteTraceId: `${runId}:${record.contactId}`,
-        properties: toHubSpotFieldPayload(record.after),
+        properties: toHubSpotFieldPayload(record.after, record.changes.map((change) => change.field)),
       })) }),
     });
     const payload: unknown = await response.json();
@@ -175,7 +206,7 @@ async function executeSalesforcePlan(plan: CrmWritePlan, runId: string): Promise
       body: JSON.stringify({ allOrNone: false, records: batch.map((record) => ({
         attributes: { type: 'Lead', referenceId: `${runId}:${record.contactId}` },
         ...(record.nativeId ? { Id: record.nativeId } : {}),
-        ...(operation === 'create' ? compact({ Email: record.email, ...toSalesforceFieldPayload(record.after) }) : toSalesforceFieldPayload(record.after)),
+        ...(operation === 'create' ? compact({ Email: record.email, ...toSalesforceFieldPayload(record.after) }) : toSalesforceFieldPayload(record.after, record.changes.map((change) => change.field))),
       })) }),
     });
     const payload: unknown = await response.json();

@@ -7,7 +7,9 @@ const store = vi.hoisted(() => ({ getWorkspace: vi.fn(), getLatestDuplicateScan:
 vi.mock('../lib/workspace-store', () => ({ getWorkspace: store.getWorkspace, persistenceEnabled: () => true }));
 vi.mock('../lib/duplicate-scan-store', () => ({ getLatestDuplicateScan: store.getLatestDuplicateScan, getDuplicateScanRecords: store.getDuplicateScanRecords }));
 import { POST } from '../app/api/control-tower/crm-writeback/route';
-import type { CrmWritePlan, PortableCrmContact } from '../lib/crm-workflow';
+import { defaultCrmUpdatePolicy, type CrmUpdatePolicy, type CrmWritePlan, type PortableCrmContact } from '../lib/crm-workflow';
+
+const replaceTitle: CrmUpdatePolicy = { mode: 'replace', fields: ['jobTitle'], clearBlanks: false };
 
 const contact = (id: string, email: string): PortableCrmContact => ({
   contactId: id, email, firstName: 'Test', lastName: 'Person', company: 'Example',
@@ -15,8 +17,10 @@ const contact = (id: string, email: string): PortableCrmContact => ({
 });
 const response = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 let savedContacts: LiveContactState[] = [];
+let savedPolicy: unknown;
 let snapshotStartedAt = '';
 function request(connectorId: 'salesforce' | 'hubspot', contacts: PortableCrmContact[], plan?: CrmWritePlan, overrides = {}, workspaceContacts = contacts) {
+  savedPolicy = (overrides as { updatePolicy?: unknown }).updatePolicy ?? defaultCrmUpdatePolicy();
   savedContacts = workspaceContacts.map((item) => ({ ...item, fullName: `${item.firstName} ${item.lastName}`, rawEmail: item.email,
     normalizedEmail: item.email, state: 'WA', recordStatus: 'active', qualityFlags: [], region: 'West', segment: '',
     lifecycleStage: 'Lead', expectedLifecycleStage: 'Lead', ownerId: null, canonicalContactId: null, lastAction: '', updatedAt: new Date().toISOString(),
@@ -61,7 +65,7 @@ beforeEach(() => {
   vi.stubEnv('SALESFORCE_ACCESS_TOKEN', 'synthetic-test-token');
   vi.stubEnv('HUBSPOT_ACCESS_TOKEN', 'synthetic-test-token');
   snapshotStartedAt = new Date(Date.now() - 1000).toISOString();
-  store.getWorkspace.mockImplementation(async () => ({ id: 'workspace-1', state: { ...emptyWorkspaceState(), contacts: savedContacts } }));
+  store.getWorkspace.mockImplementation(async () => ({ id: 'workspace-1', state: { ...emptyWorkspaceState(), contacts: savedContacts, crmUpdatePolicy: savedPolicy } }));
   store.getLatestDuplicateScan.mockImplementation(async (_workspaceId, connectorId) => snapshot(connectorId));
   store.getDuplicateScanRecords.mockResolvedValue([]);
 });
@@ -85,12 +89,12 @@ describe('import comparison before governed CRM writes', () => {
     });
     const imported = [contact('one', 'lead@example.com'), contact('two', 'contact@example.com'), contact('three', 'converted@example.com'),
       { ...contact('four', 'new@example.com'), firstName: 'Casey', lastName: 'Rivera', company: 'Separate Company' }];
-    const preview = await POST(request('salesforce', imported));
+    const preview = await POST(request('salesforce', imported, undefined, { updatePolicy: replaceTitle }));
     expect(preview.status).toBe(200);
     const plan = await preview.json() as CrmWritePlan;
     expect(plan).toMatchObject({ creates: 1, updates: 1, held: 2 });
     expect(writes).toEqual([]);
-    const execution = await POST(request('salesforce', imported, plan));
+    const execution = await POST(request('salesforce', imported, plan, { updatePolicy: replaceTitle }));
     expect(execution.status).toBe(202);
     expect(await execution.json()).toMatchObject({ created: 1, updated: 1, held: 2, failed: 0 });
     expect(writes).toHaveLength(2);
@@ -138,10 +142,10 @@ describe('import comparison before governed CRM writes', () => {
       return response({ status: 'COMPLETE', results: [{ id: 'hs-existing', objectWriteTraceId: body.inputs[0].objectWriteTraceId }] });
     });
     const imported = [contact('one', 'alias@example.com')];
-    const plan = await (await POST(request('hubspot', imported))).json() as CrmWritePlan;
+    const plan = await (await POST(request('hubspot', imported, undefined, { updatePolicy: replaceTitle }))).json() as CrmWritePlan;
     expect(plan).toMatchObject({ creates: 0, updates: 1, held: 0 });
     expect(plan.records[0].matches).toMatchObject([{ nativeId: 'hs-existing', email: 'primary@example.com' }]);
-    const result = await POST(request('hubspot', imported, plan));
+    const result = await POST(request('hubspot', imported, plan, { updatePolicy: replaceTitle }));
     expect(result.status).toBe(202);
     expect(await result.json()).toMatchObject({ created: 0, updated: 1, failed: 0 });
     expect(writes).toMatchObject([{ inputs: [{ id: 'hs-existing' }] }]);
@@ -191,16 +195,17 @@ describe('import comparison before governed CRM writes', () => {
     expect(store.getDuplicateScanRecords).toHaveBeenCalledWith('snapshot-2');
   });
 
-  it('holds creates when workspace context is omitted while exact-email updates still work', async () => {
-    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+  it('requires saved workspace context for creates and updates so row exclusions cannot be bypassed', async () => {
+    const native = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       const query = new URL(String(input)).searchParams.get('q')!;
       return response({ done: true, records: query.includes('FROM Lead') ? [lead('00Q-existing', 'lead@example.com')] : [] });
     });
     const imported = [contact('one', 'lead@example.com'), contact('two', 'new@example.com')];
-    const plan = await (await POST(request('salesforce', imported, undefined, { workspaceId: undefined }))).json() as CrmWritePlan;
-    expect(plan).toMatchObject({ creates: 0, updates: 1, held: 1 });
-    expect(plan.records[1].reason).toContain('Save this import workspace');
+    const rejected = await POST(request('salesforce', imported, undefined, { workspaceId: undefined }));
+    expect(rejected.status).toBe(400);
+    expect(await rejected.json()).toMatchObject({ error: expect.stringContaining('Save and select this import workspace') });
     expect(store.getWorkspace).not.toHaveBeenCalled();
+    expect(native).not.toHaveBeenCalled();
   });
 });
 
@@ -260,5 +265,92 @@ describe.each(['hubspot', 'salesforce'] as const)('%s import-to-import review be
     expect(refreshed).toMatchObject({ creates: 0, held: 1, records: [{
       operation: 'hold', possibleImportMatches: [{ contactId: duplicate.contactId }],
     }] });
+  });
+});
+
+function mockExistingCrm(connectorId: 'hubspot' | 'salesforce') {
+  const writes: Record<string, unknown>[] = [];
+  vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+    const url = new URL(String(input));
+    if (url.pathname.endsWith('/query')) return response({ done: true, records: url.searchParams.get('q')!.includes('FROM Lead')
+      ? [{ ...lead('native-existing', 'existing@example.com'), Website: 'https://existing.example.com' }] : [] });
+    if (url.pathname.endsWith('/batch/read')) return response({ status: 'COMPLETE', results: [{ id: 'native-existing', properties: {
+      email: 'existing@example.com', firstname: 'Test', lastname: 'Person', company: 'Example', phone: null,
+      jobtitle: 'Old title', website: 'https://existing.example.com',
+    } }] });
+    const body = JSON.parse(String(init?.body));
+    if (connectorId === 'hubspot') {
+      expect(url.pathname).toContain('/batch/update');
+      writes.push(body.inputs[0].properties);
+      return response({ status: 'COMPLETE', results: [{ id: 'native-existing', objectWriteTraceId: body.inputs[0].objectWriteTraceId }] });
+    }
+    expect(init?.method).toBe('PATCH');
+    expect(url.pathname).toContain('/composite/sobjects');
+    const fields = { ...body.records[0] };
+    delete fields.attributes;
+    delete fields.Id;
+    writes.push(fields);
+    return response([{ id: 'native-existing', success: true, errors: [] }]);
+  });
+  return writes;
+}
+
+describe.each(['hubspot', 'salesforce'] as const)('%s governed import controls', (connectorId) => {
+  it.each([
+    ['fill-empty', undefined, 'phone'],
+    ['replace selected', { mode: 'replace', fields: ['jobTitle', 'website'], clearBlanks: false }, 'jobTitle'],
+    ['explicit clear', { mode: 'replace', fields: ['website'], clearBlanks: true }, 'website'],
+  ] as const)('sends only approved fields for %s and retains an accurate rollback', async (_label, policy, field) => {
+    const writes = mockExistingCrm(connectorId);
+    const imported = [{ ...contact('one', 'existing@example.com'), phone: '4155550101' }];
+    const overrides = policy ? { updatePolicy: policy } : {};
+    const preview = await POST(request(connectorId, imported, undefined, overrides));
+    expect(preview.status).toBe(200);
+    const plan = await preview.json() as CrmWritePlan;
+    expect(plan.records[0].changes.map((change) => change.field)).toEqual([field]);
+    expect(plan.records[0].after.website).toBe(field === 'website' ? null : 'https://existing.example.com');
+    const execution = await POST(request(connectorId, imported, plan, overrides));
+    expect(execution.status).toBe(202);
+    expect(await execution.json()).toMatchObject({ updated: 1, failed: 0, rollback: { records: [{ changedFields: [field] }] } });
+    const property = connectorId === 'hubspot' ? { phone: 'phone', jobTitle: 'jobtitle', website: 'website' }[field]
+      : { phone: 'Phone', jobTitle: 'Title', website: 'Website' }[field];
+    const value = field === 'phone' ? '4155550101' : field === 'jobTitle' ? 'Analyst' : connectorId === 'hubspot' ? '' : null;
+    expect(writes).toEqual([{ [property]: value }]);
+  });
+
+  it('rejects invalid policies and changed policies before a native write', async () => {
+    const writes = mockExistingCrm(connectorId);
+    const imported = [{ ...contact('one', 'existing@example.com'), phone: '4155550101' }];
+    expect((await POST(request(connectorId, imported, undefined, { updatePolicy: { mode: 'replace', fields: ['email'], clearBlanks: false } }))).status).toBe(400);
+    const plan = await (await POST(request(connectorId, imported))).json() as CrmWritePlan;
+    expect((await POST(request(connectorId, imported, plan, { updatePolicy: replaceTitle }))).status).toBe(409);
+    const retry = request(connectorId, imported, plan);
+    store.getWorkspace.mockResolvedValue({ id: 'workspace-1', state: { ...emptyWorkspaceState(), contacts: savedContacts, crmUpdatePolicy: replaceTitle } });
+    expect((await POST(retry)).status).toBe(409);
+    expect(writes).toEqual([]);
+  });
+
+  it.each(['create', 'update'] as const)('rechecks a skipped row before an earlier %s preview can execute', async (operation) => {
+    const writes = operation === 'create' ? (mockEmptyCrm(connectorId), []) : mockExistingCrm(connectorId);
+    const imported = [{ ...contact('one', operation === 'create' ? 'new@example.com' : 'existing@example.com'), phone: '4155550101' }];
+    const plan = await (await POST(request(connectorId, imported))).json() as CrmWritePlan;
+    expect(plan.records[0].operation).toBe(operation);
+    const execution = request(connectorId, imported, plan);
+    savedContacts[0].importExclusion = { reason: 'Already handled outside this batch', excludedAt: new Date().toISOString() };
+    expect((await POST(execution)).status).toBe(409);
+    const preview = request(connectorId, imported);
+    savedContacts[0].importExclusion = { reason: 'Already handled outside this batch', excludedAt: new Date().toISOString() };
+    const held = await (await POST(preview)).json() as CrmWritePlan;
+    expect(held).toMatchObject({ creates: 0, updates: 0, held: 1, records: [{ reason: expect.stringContaining('Skipped for this import') }] });
+    expect(writes).toEqual([]);
+  });
+
+  it('uses the saved included rows to release a kept identity after its neighbor is skipped', async () => {
+    mockEmptyCrm(connectorId);
+    const imported = [importIdentity('keep', 'priya.nair@salesforce.example.com'), importIdentity('skip', 'p.nair@salesforce.example.com')];
+    const preview = request(connectorId, [imported[0]], undefined, { updatePolicy: defaultCrmUpdatePolicy() }, imported);
+    savedContacts[1].importExclusion = { reason: 'Same person, keeping the complete row', excludedAt: new Date().toISOString() };
+    const plan = await (await POST(preview)).json() as CrmWritePlan;
+    expect(plan).toMatchObject({ creates: 1, held: 0 });
   });
 });

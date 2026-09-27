@@ -2,7 +2,9 @@ import { afterAll, describe, expect, it, vi } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { CsvContactCorrection } from '../lib/csv-control-tower';
+import { exportContactsCsv, importContactsCsv, type CsvContactCorrection } from '../lib/csv-control-tower';
+import { defaultCrmUpdatePolicy, type CrmUpdatePolicy } from '../lib/crm-workflow';
+import { excludeImportRow, restoreImportRow } from '../lib/import-exclusions';
 import type { LiveContactState } from '../lib/live-control-tower';
 import { emptyWorkspaceState, validateWorkspaceState } from '../lib/workspace';
 
@@ -20,6 +22,8 @@ describe('workspace correction history', () => {
     expect(emptyWorkspaceState().correctionHistory).toEqual([]);
     const legacyState = { contacts: [], originalContacts: [], repairHistory: [] };
     expect(validateWorkspaceState(legacyState).correctionHistory).toEqual([]);
+    expect(validateWorkspaceState(legacyState).crmUpdatePolicy).toEqual(defaultCrmUpdatePolicy());
+    expect(validateWorkspaceState(legacyState).crmUpdatePolicy?.mode).toBe('fill-empty');
 
     const { createWorkspace, getWorkspace } = await import('../lib/workspace-store');
     const { getDatabase } = await import('../db');
@@ -28,7 +32,9 @@ describe('workspace correction history', () => {
     await db.prepare('UPDATE workspace_state_chunks SET payload = ? WHERE workspace_id = ? AND revision = 0')
       .bind(JSON.stringify(legacyState), workspace.id).run();
 
-    expect((await getWorkspace(workspace.id))?.state.correctionHistory).toEqual([]);
+    const loaded = await getWorkspace(workspace.id);
+    expect(loaded?.state.correctionHistory).toEqual([]);
+    expect(loaded?.state.crmUpdatePolicy).toEqual(defaultCrmUpdatePolicy());
   });
 
   it('saves and reloads correction evidence, then restores matching contacts and history on undo', async () => {
@@ -65,5 +71,67 @@ describe('workspace correction history', () => {
     expect(undone.state.contacts).toEqual([before]);
     expect(undone.state.originalContacts).toEqual([before]);
     expect(undone.state.correctionHistory).toEqual([]);
+  });
+});
+
+describe('persisted import decisions and update policy', () => {
+  const now = new Date('2026-09-27T22:00:00.000Z');
+  const source = () => importContactsCsv('contact_id,full_name,email,company,owner_id\nKEEP,Nina Shah,nina@costco.example,Costco,owner-1\nSKIP,Nina Shah,nina@costco.example,Costco,owner-1').contacts;
+
+  it('saves, reloads, restores, and undoes skip decisions and the selected CRM policy in SQLite', async () => {
+    const { createWorkspace, saveWorkspace, getWorkspace, undoWorkspace } = await import('../lib/workspace-store');
+    const workspace = await createWorkspace('Import row decisions');
+    const contacts = source();
+    const initial = await saveWorkspace(workspace.id, {
+      ...emptyWorkspaceState(), contacts, originalContacts: contacts,
+    });
+    const policy: CrmUpdatePolicy = { mode: 'replace', fields: ['phone'], clearBlanks: true };
+    const excluded = excludeImportRow(initial.state.contacts, 'SKIP', 'Duplicate registration; retain KEEP', now);
+    const exported = importContactsCsv(exportContactsCsv(excluded)).contacts;
+    expect(exported[1].qualityFlags).toEqual(contacts[1].qualityFlags);
+    expect(exported[1].qualityFlags).toContain('duplicate_identity');
+    expect(exported[0].qualityFlags).not.toContain('duplicate_identity');
+    const skipped = await saveWorkspace(workspace.id, {
+      ...initial.state, contacts: excluded, crmUpdatePolicy: policy,
+    }, 'import_row_skipped');
+    expect((await getWorkspace(workspace.id))?.state).toEqual(skipped.state);
+    expect(skipped.state.contacts[1].importExclusion).toEqual({ reason: 'Duplicate registration; retain KEEP', excludedAt: now.toISOString() });
+    expect(skipped.state.originalContacts).toEqual(contacts);
+    expect(skipped.state.crmUpdatePolicy).toEqual(policy);
+
+    const restored = await saveWorkspace(workspace.id, {
+      ...skipped.state, contacts: restoreImportRow(skipped.state.contacts, 'SKIP', new Date('2026-09-27T22:01:00.000Z')),
+    }, 'import_row_restored');
+    const reloaded = await getWorkspace(workspace.id);
+    expect(reloaded?.state).toEqual(restored.state);
+    expect(reloaded?.state.contacts[1]).not.toHaveProperty('importExclusion');
+    expect(reloaded?.state.contacts[0].qualityFlags).toContain('duplicate_identity');
+    expect(reloaded?.state.crmUpdatePolicy).toEqual(policy);
+
+    const undoRestore = await undoWorkspace(workspace.id);
+    expect(undoRestore.revision).toBe(skipped.revision);
+    expect(undoRestore.state).toEqual(skipped.state);
+    const undoSkip = await undoWorkspace(workspace.id);
+    expect(undoSkip.revision).toBe(initial.revision);
+    expect(undoSkip.state).toEqual(initial.state);
+    expect(undoSkip.state.crmUpdatePolicy).toEqual(defaultCrmUpdatePolicy());
+  });
+
+  it('rejects invalid skip reason, date, or merged status without advancing the saved revision', async () => {
+    const { createWorkspace, saveWorkspace, getWorkspace } = await import('../lib/workspace-store');
+    const workspace = await createWorkspace('Invalid import decisions');
+    const contacts = source();
+    const initial = await saveWorkspace(workspace.id, { ...emptyWorkspaceState(), contacts, originalContacts: contacts });
+    for (const [field, recordStatus, reason, excludedAt] of [
+      ['contacts', 'active', ' ', now.toISOString()],
+      ['originalContacts', 'active', 'Duplicate', '2026-02-30T22:00:00.000Z'],
+      ['contacts', 'merged', 'Duplicate', now.toISOString()],
+    ] as const) {
+      const invalid = { ...initial.state, [field]: [{ ...contacts[0], recordStatus, importExclusion: { reason, excludedAt } }] };
+      await expect(saveWorkspace(workspace.id, invalid)).rejects.toThrow(/Skipped import rows require/);
+      const unchanged = await getWorkspace(workspace.id);
+      expect(unchanged?.revision).toBe(initial.revision);
+      expect(unchanged?.state).toEqual(initial.state);
+    }
   });
 });

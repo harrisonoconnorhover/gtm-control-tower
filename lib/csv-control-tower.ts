@@ -1,4 +1,5 @@
 import type { ScenarioKey } from './control-tower';
+import { isImportExclusion, recomputeImportDuplicateFlags } from './import-exclusions';
 import type { LiveContactState, RepairReceipt, RepairRun } from './live-control-tower';
 
 export type CsvImportResult = {
@@ -61,6 +62,8 @@ const fieldAliases = {
   recordStatus: ['record_status', 'recordstatus'],
   lastAction: ['last_action', 'lastaction'],
   qualityFlags: ['quality_flags', 'qualityflags', 'issues', 'flags'],
+  importExclusionReason: ['import_skip_reason'],
+  importExcludedAt: ['import_skipped_at'],
 } as const;
 
 export const csvFieldLabels: Record<CsvFieldKey, string> = {
@@ -84,6 +87,8 @@ export const csvFieldLabels: Record<CsvFieldKey, string> = {
   recordStatus: 'Record status',
   lastAction: 'Last action',
   qualityFlags: 'Quality flags',
+  importExclusionReason: 'Import skip reason',
+  importExcludedAt: 'Import skipped at',
 };
 
 const stageRank: Record<string, number> = {
@@ -110,7 +115,7 @@ export function destinationHoldFlags(contact: LiveContactState): string[] {
 }
 
 export function isDestinationReadyContact(contact: LiveContactState): boolean {
-  return contact.recordStatus === 'active' && destinationHoldFlags(contact).length === 0;
+  return contact.recordStatus === 'active' && !contact.importExclusion && destinationHoldFlags(contact).length === 0;
 }
 
 export function previewContactsCsv(csv: string): CsvPreview {
@@ -182,8 +187,15 @@ export function importContactsCsv(csv: string, mapping: CsvColumnMapping = {}): 
     const ownerId = nullable(readField('ownerId'));
     const canonicalContactId = nullable(readField('canonicalContactId'));
     const recordStatus = readField('recordStatus').toLowerCase() === 'merged' ? 'merged' : 'active';
+    const exclusionReason = readField('importExclusionReason');
+    const excludedAt = readField('importExcludedAt');
+    const importExclusion = exclusionReason || excludedAt ? { reason: exclusionReason, excludedAt } : undefined;
+    if (importExclusion && (recordStatus !== 'active' || !isImportExclusion(importExclusion))) {
+      throw new Error(`CSV row ${rowNumber} has invalid skip metadata. Use an active row, a reason of 1–500 characters, and an ISO UTC timestamp such as 2026-09-27T22:00:00.000Z in import_skipped_at.`);
+    }
     const qualityFlags = new Set(splitFlags(readField('qualityFlags')));
     if (recordStatus === 'active'
+      && !importExclusion
       && Object.hasOwn(stageRank, suppliedLifecycleStage)
       && Object.hasOwn(stageRank, suppliedExpectedLifecycleStage)) lifecycleComparedRows += 1;
 
@@ -213,25 +225,15 @@ export function importContactsCsv(csv: string, mapping: CsvColumnMapping = {}): 
       ownerId,
       canonicalContactId,
       recordStatus,
+      ...(importExclusion ? { importExclusion } : {}),
       lastAction: readField('lastAction') || 'csv_imported',
       qualityFlags: [...qualityFlags],
       updatedAt: now,
     } satisfies LiveContactState;
   });
 
-  const duplicateEmails = new Set(
-    [...groupActiveByEmail(contacts)]
-      .filter(([, group]) => group.length > 1)
-      .map(([email]) => email),
-  );
-  for (const contact of contacts) {
-    if (contact.normalizedEmail && duplicateEmails.has(contact.normalizedEmail)) {
-      contact.qualityFlags = unique([...contact.qualityFlags, 'duplicate_identity']);
-    }
-  }
-
   return {
-    contacts,
+    contacts: recomputeImportDuplicateFlags(contacts),
     sourceRows: dataRows.length,
     lifecycleComparedRows,
     expectedStageMapped: Boolean(effectiveMapping.expectedLifecycleStage)
@@ -248,6 +250,7 @@ export function correctCsvContact(
   const matching = contacts.filter((contact) => contact.contactId === contactId);
   if (matching.length !== 1) throw new Error('Choose one uniquely identified contact to correct.');
   const original = matching[0];
+  if (original.importExclusion) throw new Error('Restore this skipped import row before correcting its fields.');
   if (original.recordStatus !== 'active' || isDestinationReadyContact(original)) {
     throw new Error('Only active held contacts can be corrected.');
   }
@@ -290,7 +293,7 @@ export function correctCsvContact(
     const duplicateEmails = new Set([...groupActiveByEmail(nextContacts)]
       .filter(([, group]) => group.length > 1).map(([email]) => email));
     for (const contact of nextContacts) {
-      if (contact.recordStatus !== 'active') continue;
+      if (contact.recordStatus !== 'active' || contact.importExclusion) continue;
       const duplicate = Boolean(contact.normalizedEmail && duplicateEmails.has(contact.normalizedEmail));
       if (duplicate === contact.qualityFlags.includes('duplicate_identity')) continue;
       contact.qualityFlags = duplicate
@@ -360,6 +363,7 @@ export function executeCsvRepair(
   if (scenario === 'routing-overload') {
     nextContacts = nextContacts.map((contact) => {
       const shouldReroute = contact.recordStatus === 'active'
+        && !contact.importExclusion
         && contact.region.trim().toLowerCase() === 'northeast'
         && contact.segment.trim().toLowerCase() === 'enterprise'
         && contact.ownerId !== 'CE-ENT-OVERFLOW';
@@ -378,6 +382,7 @@ export function executeCsvRepair(
   if (scenario === 'stage-regression') {
     nextContacts = nextContacts.map((contact) => {
       const shouldReplay = contact.recordStatus === 'active'
+        && !contact.importExclusion
         && contact.qualityFlags.includes('stage_regression');
       if (!shouldReplay) return contact;
       affectedRecords += 1;
@@ -423,11 +428,13 @@ export function countCsvRepairCandidates(
   }
   if (scenario === 'routing-overload') {
     return contacts.filter((contact) => contact.recordStatus === 'active'
+      && !contact.importExclusion
       && contact.region.trim().toLowerCase() === 'northeast'
       && contact.segment.trim().toLowerCase() === 'enterprise'
       && contact.ownerId !== 'CE-ENT-OVERFLOW').length;
   }
   return contacts.filter((contact) => contact.recordStatus === 'active'
+    && !contact.importExclusion
     && contact.qualityFlags.includes('stage_regression')).length;
 }
 
@@ -437,6 +444,7 @@ export function exportContactsCsv(contacts: LiveContactState[]): string {
     'company', 'phone', 'job_title', 'website', 'state', 'region',
     'segment', 'lifecycle_stage', 'expected_lifecycle_stage', 'owner_id',
     'canonical_contact_id', 'record_status', 'last_action', 'quality_flags',
+    'import_skip_reason', 'import_skipped_at',
   ];
   const rows = contacts.map((contact) => [
     contact.contactId,
@@ -459,6 +467,8 @@ export function exportContactsCsv(contacts: LiveContactState[]): string {
     contact.recordStatus,
     contact.lastAction,
     contact.qualityFlags.join('|'),
+    contact.importExclusion?.reason ?? '',
+    contact.importExclusion?.excludedAt ?? '',
   ]);
   return [headers, ...rows].map((row) => row.map(escapeCsvCell).join(',')).join('\n');
 }
@@ -565,7 +575,7 @@ function splitFlags(value: string): string[] {
 function groupActiveByEmail(contacts: LiveContactState[]): Map<string, LiveContactState[]> {
   const groups = new Map<string, LiveContactState[]>();
   for (const contact of contacts) {
-    if (contact.recordStatus !== 'active' || !contact.normalizedEmail) continue;
+    if (contact.recordStatus !== 'active' || contact.importExclusion || !contact.normalizedEmail) continue;
     const group = groups.get(contact.normalizedEmail) ?? [];
     group.push(contact);
     groups.set(contact.normalizedEmail, group);
@@ -585,10 +595,6 @@ function cloneContact(contact: LiveContactState): LiveContactState {
 
 function withoutFlag(flags: string[], flagToRemove: string): string[] {
   return flags.filter((flag) => flag !== flagToRemove);
-}
-
-function unique(values: string[]): string[] {
-  return [...new Set(values)];
 }
 
 function escapeCsvCell(value: string): string {

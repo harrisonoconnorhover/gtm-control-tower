@@ -60,6 +60,10 @@ That original run used advisory approximate review. A later [native follow-up](d
   the saved import, including later batches. A missing fresh complete snapshot
   also holds creates. Import matches show source row IDs separately from CRM IDs.
   Newly created records are never auto-deleted.
+- Provides [operator import controls](docs/import-operator-controls.md): save
+  per-row skip/restore decisions, fill empty CRM fields or replace selected ones,
+  explicitly permit blank clearing, and download batch comparisons and saved
+  results as spreadsheet CSVs. Existing CRM values are protected by default.
 - Keeps returned CRM outcomes separate from local receipt-save failures. Failed
   history saves expose the full receipt for download or storage-only retry;
   retrying receipt storage does not repeat CRM writes or rollback.

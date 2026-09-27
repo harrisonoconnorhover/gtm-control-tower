@@ -339,6 +339,7 @@ export function PublicDemo() {
               <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#486257]">Useful before enterprise software</p>
               <h2 className="mt-3 text-3xl font-semibold leading-tight tracking-[-0.045em] sm:text-4xl">Start with a file. Add systems only when they earn their keep.</h2>
               <p className="mt-4 max-w-xl text-sm leading-6 text-[#5d6f66]">This public demonstration runs entirely in your browser. The real operator workspace self-hosts with Docker, CSV, and SQLite; Google Sheets, HubSpot, Salesforce, and BigQuery remain optional connectors.</p>
+              <p className="mt-3 max-w-xl text-sm leading-6 text-[#5d6f66]">The self-hosted import workflow also lets you skip rows with a saved reason, protect selected CRM fields, and export comparison and results CSVs. <a href="https://github.com/harrisonoconnorhover/gtm-control-tower/blob/main/docs/import-operator-controls.md" className="underline underline-offset-4">Inspect the controls and their tests.</a></p>
               <div className="mt-6 flex flex-wrap gap-3">
                 <a href="https://github.com/harrisonoconnorhover/gtm-control-tower#quick-start-one-command-no-accounts-required" className="rounded-full bg-[#102019] px-5 py-3 text-sm font-bold text-white">See the self-host setup</a>
                 <a href="https://github.com/harrisonoconnorhover/gtm-control-tower" className="rounded-full border border-[#102019]/15 px-5 py-3 text-sm font-semibold">View source</a>

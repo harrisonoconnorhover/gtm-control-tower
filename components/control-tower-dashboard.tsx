@@ -27,6 +27,10 @@ import { HeldContactReview } from '@/components/held-contact-review';
 import { SelfHostConsole } from '@/components/self-host-console';
 import { ImportMatchReview } from '@/components/import-match-review';
 import { UnsavedRuns } from '@/components/unsaved-runs';
+import { ImportRowDecisions } from '@/components/import-row-decisions';
+import { CrmUpdatePolicyControls } from '@/components/crm-update-policy';
+import { excludeImportRow, restoreImportRow } from '@/lib/import-exclusions';
+import { downloadCrmReviewCsv } from '@/lib/crm-review-export';
 import { saveConnectorRunReceipt, type PendingConnectorRun } from '@/lib/save-connector-run';
 import type { ConnectorCatalog, ConnectorId, ConnectorReceipt } from '@/lib/connector-contract';
 import {
@@ -55,7 +59,7 @@ import {
 } from '@/lib/live-control-tower';
 import type { MappingPreset, SavedWorkspace, WorkspaceState } from '@/lib/workspace';
 import type { ConnectorRunDetails } from '@/lib/connector-run';
-import { combineCrmWritebackProgress, isSuccessfulCrmWritebackRecord, type CrmWritePlan, type CrmWritebackReceipt, type CrmWritebackProgress, type PortableCrmContact } from '@/lib/crm-workflow';
+import { combineCrmWritebackProgress, isSuccessfulCrmWritebackRecord, defaultCrmUpdatePolicy, normalizeCrmUpdatePolicy, type CrmUpdatePolicy, type CrmWritePlan, type CrmWritebackReceipt, type CrmWritebackProgress, type PortableCrmContact } from '@/lib/crm-workflow';
 
 const dbtTests = [
   ['unique_account_domain', '2 duplicates contained'],
@@ -200,6 +204,8 @@ export function ControlTowerDashboard() {
   const [connectorReceipts, setConnectorReceipts] = useState<ConnectorReceipt[]>([]);
   const [unsavedRuns, setUnsavedRuns] = useState<PendingConnectorRun[]>([]);
   const [receiptSaveWarning, setReceiptSaveWarning] = useState<string | null>(null);
+  const [updatePolicy, setUpdatePolicy] = useState<CrmUpdatePolicy>(defaultCrmUpdatePolicy);
+  const [policyError, setPolicyError] = useState<string | null>(null);
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
   const [workspaceRevision, setWorkspaceRevision] = useState<number | null>(null);
   const [mappingPresets, setMappingPresets] = useState<MappingPreset[]>([]);
@@ -350,6 +356,8 @@ export function ControlTowerDashboard() {
     setOriginalCsvContacts(workspace.state.originalContacts);
     setCsvRepairHistory(workspace.state.repairHistory);
     setCorrectionHistory(workspace.state.correctionHistory ?? []);
+    setUpdatePolicy(normalizeCrmUpdatePolicy(workspace.state.crmUpdatePolicy));
+    setPolicyError(null);
     setReviewEpoch((epoch) => epoch + 1);
     invalidateCrmReview();
     setCsvFileName(workspace.state.fileName);
@@ -394,6 +402,7 @@ export function ControlTowerDashboard() {
         sourceType: overrides.sourceType ?? sourceType,
         destinationType: overrides.destinationType ?? destinationType,
         sourceLabel: overrides.sourceLabel,
+        crmUpdatePolicy: overrides.crmUpdatePolicy ?? updatePolicy,
       };
       const response = await fetch('/api/control-tower/workspace', {
         method: 'POST',
@@ -527,17 +536,50 @@ export function ControlTowerDashboard() {
     await persistWorkspace('import_reset', { contacts, repairHistory: [], correctionHistory: [] });
   }
 
-  function invalidateCrmReview() {
+  function invalidateCrmReview(preserveProgress = false) {
     setHubSpotPlan(null);
     setSalesforcePlan(null);
-    setHubSpotSyncReceipt(null);
-    setHubSpotWritebackProgress(null);
-    setSalesforceSyncReceipt(null);
-    setSalesforceWritebackProgress(null);
+    if (!preserveProgress) {
+      setHubSpotSyncReceipt(null);
+      setHubSpotWritebackProgress(null);
+      setSalesforceSyncReceipt(null);
+      setSalesforceWritebackProgress(null);
+    }
     setHubSpotSyncStatus('idle');
     setSalesforceSyncStatus('idle');
     setHubSpotSyncError(null);
     setSalesforceSyncError(null);
+  }
+
+  async function changeImportSelection(contactId: string, reason?: string) {
+    if (crmRequestInFlight.current || workspaceBusy) throw new Error('Wait for the current workspace operation to finish.');
+    const contacts = reason === undefined ? restoreImportRow(csvContacts, contactId) : excludeImportRow(csvContacts, contactId, reason);
+    crmRequestInFlight.current = true;
+    setCorrectionSaving(true);
+    try {
+      if (!await persistWorkspace(reason === undefined ? 'import_row_restored' : 'import_row_skipped', { contacts })) {
+        throw new Error('The row selection could not be saved. No selection changed; retry when saving is available.');
+      }
+      setCsvContacts(contacts);
+      setReviewEpoch((epoch) => epoch + 1);
+      invalidateCrmReview(true);
+    } finally { crmRequestInFlight.current = false; setCorrectionSaving(false); }
+  }
+
+  async function changeUpdatePolicy(value: CrmUpdatePolicy) {
+    if (crmRequestInFlight.current || workspaceBusy) return;
+    crmRequestInFlight.current = true;
+    setCorrectionSaving(true);
+    setPolicyError(null);
+    try {
+      const policy = normalizeCrmUpdatePolicy(value);
+      if (!await persistWorkspace('crm_update_policy_changed', { crmUpdatePolicy: policy })) {
+        throw new Error('The update policy could not be saved. Your previous policy is still selected.');
+      }
+      setUpdatePolicy(policy);
+      invalidateCrmReview();
+    } catch (error) { setPolicyError(error instanceof Error ? error.message : 'Update policy save failed.'); }
+    finally { crmRequestInFlight.current = false; setCorrectionSaving(false); }
   }
 
   async function correctHeldContact(contactId: string, input: CsvContactCorrectionInput, reason: string): Promise<string> {
@@ -707,7 +749,7 @@ export function ControlTowerDashboard() {
     try {
       const response = await fetch('/api/control-tower/crm-writeback', {
         method: 'POST', headers: { 'content-type': 'application/json', ...((connectorId === 'hubspot' ? hubSpotSyncKey : salesforceSyncKey) ? { 'x-control-tower-key': connectorId === 'hubspot' ? hubSpotSyncKey : salesforceSyncKey } : {}) },
-        body: JSON.stringify({ action: 'preview', connectorId, workspaceId, sourceFile: csvFileName ?? 'imported-contacts.csv', contacts }),
+        body: JSON.stringify({ action: 'preview', connectorId, workspaceId, sourceFile: csvFileName ?? 'imported-contacts.csv', contacts, updatePolicy }),
       });
       const result = await response.json() as CrmWritePlan | { error?: string };
       if (!response.ok || !('planId' in result)) throw new Error('error' in result ? result.error : 'CRM preview failed.');
@@ -738,7 +780,7 @@ export function ControlTowerDashboard() {
     try {
       const response = await fetch('/api/control-tower/crm-writeback', {
         method: 'POST', headers: { 'content-type': 'application/json', ...((connectorId === 'hubspot' ? hubSpotSyncKey : salesforceSyncKey) ? { 'x-control-tower-key': connectorId === 'hubspot' ? hubSpotSyncKey : salesforceSyncKey } : {}) },
-        body: JSON.stringify({ action: 'execute', connectorId, workspaceId, sourceFile: csvFileName ?? 'imported-contacts.csv', contacts, plan }),
+        body: JSON.stringify({ action: 'execute', connectorId, workspaceId, sourceFile: csvFileName ?? 'imported-contacts.csv', contacts, plan, updatePolicy }),
       });
       const result = await response.json() as CrmWritebackReceipt | { error?: string };
       if (!response.ok || !('accepted' in result)) throw new Error('error' in result ? result.error : 'CRM write-back failed.');
@@ -999,6 +1041,21 @@ export function ControlTowerDashboard() {
           disabled={workspaceBusy}
           onCorrect={correctHeldContact}
         />}
+
+        {dataMode === 'csv' && csvContacts.length > 0 && <details className="mb-6 rounded-3xl border border-white/10 bg-[#0c1d17] p-5">
+          <summary className="cursor-pointer text-sm font-semibold text-[#b8d8ff]">Choose rows to import · {csvContacts.filter((contact) => contact.importExclusion).length} skipped</summary>
+          <ImportRowDecisions contacts={csvContacts} busy={workspaceBusy}
+            onExclude={(contactId, reason) => changeImportSelection(contactId, reason)}
+            onRestore={(contactId) => changeImportSelection(contactId)} />
+        </details>}
+
+        {dataMode === 'csv' && csvContacts.length > 0
+          && ((destinationType === 'hubspot' && hubSpotSafeWriteback) || (destinationType === 'salesforce' && salesforceSafeWriteback))
+          && <div className="mb-6 rounded-3xl border border-white/10 bg-[#0c1d17] p-5">
+            <CrmUpdatePolicyControls value={updatePolicy} onChange={(value) => void changeUpdatePolicy(value)} disabled={workspaceBusy} />
+            <p className="mt-3 text-xs leading-5 text-[#8fa99d]">Saved with this workspace for both CRM destinations. Changing this policy starts a fresh comparison, including previously completed rows. New records still use their imported fields.</p>
+            {policyError && <p role="alert" className="mt-3 text-sm text-[#ff9d7f]">{policyError}</p>}
+          </div>}
 
         {dataMode === 'csv' && csvContacts.length > 0
           && ((destinationType === 'hubspot' && hubSpotSafeWriteback) || (destinationType === 'salesforce' && salesforceSafeWriteback))
@@ -1429,6 +1486,7 @@ function FunkyCrmLab({
                 <td className="px-5 py-3.5 align-top">
                   <p className="font-semibold">{contact.fullName}</p>
                   <p className="mt-1 font-mono text-[9px] text-[#71877c]">{contact.contactId}</p>
+                  {contact.importExclusion && <p className="mt-2 max-w-[240px] break-words text-xs text-[#e6bd68]">Skipped: {contact.importExclusion.reason}</p>}
                 </td>
                 <td className="px-4 py-3.5 align-top">
                   <p className="max-w-[240px] break-all">{contact.rawEmail}</p>
@@ -1683,10 +1741,12 @@ function ChangePlanCard({ plan, onRefresh }: { plan: CrmWritePlan; onRefresh: ()
           <p className="mt-1 text-xs text-[#a8bbb1]">{plan.creates} create · {plan.updates} update · {plan.unchanged} unchanged · {plan.held} held</p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <button onClick={() => downloadCrmReviewCsv({ plan })} className="rounded-full border border-white/10 px-3 py-2 text-xs text-[#b8d8ff]">Download comparison CSV</button>
           <button onClick={downloadBackup} className="rounded-full border border-white/10 px-3 py-2 text-xs text-[#b8d8ff]">Download pre-write backup</button>
           <button onClick={() => void onRefresh()} className="rounded-full border border-white/10 px-3 py-2 text-xs text-[#a8bbb1]">Refresh comparison</button>
         </div>
       </div>
+      {plan.updatePolicy && <p className="mt-3 text-xs leading-5 text-[#b8d8ff]">Existing-record policy: {plan.updatePolicy.mode === 'fill-empty' ? 'fill empty fields only' : 'replace selected fields'} · {plan.updatePolicy.fields.length} selected fields · blank clearing {plan.updatePolicy.clearBlanks ? 'allowed' : 'off'}. This comparison and its CSV cover this batch only.</p>}
       <p className="mt-3 text-xs leading-5 text-[#a8bbb1]">{plan.connectorId === 'hubspot'
         ? 'Checks exact primary and additional email addresses. Two imported rows matching the same Contact are held.'
         : 'Checks exact email across Leads and Contacts. Contact matches, converted Leads and ambiguous matches are held.'} New records are also checked against the CRM snapshot and other active rows in the saved import, including later batches, using name, email, phone, state and company. A possible match holds creation for review; it never links or updates that person automatically. Creates require a complete CRM snapshot started within the last 15 minutes. These checks run again before execution.</p>
@@ -1713,8 +1773,8 @@ function ChangePlanCard({ plan, onRefresh }: { plan: CrmWritePlan; onRefresh: ()
                 <ul className="mt-2 space-y-1 text-[#a8bbb1]">{candidate.evidence.map((evidence, index) => <li key={index}>{evidence.label} ({evidence.weight > 0 ? '+' : ''}{evidence.weight})</li>)}</ul>
               </div>
             ))}
-            {Boolean(record.possibleImportMatches?.length) && <p className="mt-2 leading-5 text-[#a8bbb1]">Review both rows. Correct or remove unresolved duplicates from the source file, load it again, and refresh the comparison. No row is automatically chosen to create.</p>}
-            {record.operation === 'unchanged' && <p className="mt-2 text-[#a8bbb1]">Portable fields already match. No write needed.</p>}
+            {Boolean(record.possibleImportMatches?.length) && <p className="mt-2 leading-5 text-[#a8bbb1]">Review both rows. Use Choose rows to import to skip one with a reason, or correct the source values, then refresh the comparison. No row is automatically chosen to create.</p>}
+            {record.operation === 'unchanged' && <p className="mt-2 text-[#a8bbb1]">No field changes under this update policy. No write needed.</p>}
             {record.changes.length > 0 && <ul className="mt-2 space-y-1 text-[#a8bbb1]">{record.changes.map((change) => <li key={change.field} className="break-words">{change.field}: {change.before ?? 'Empty'} → {change.after ?? 'Empty'}</li>)}</ul>}
           </details>
         ))}

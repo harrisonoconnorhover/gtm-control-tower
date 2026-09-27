@@ -31,8 +31,9 @@ proposed creates against a fresh complete snapshot and the other active rows in
 the full saved import, including later batches. It uses all five fields and the
 name actually mapped to the destination. Any returned candidate, including a weak one,
 holds the create; changing these review checkboxes cannot bypass it. Missing,
-stale, partial, or capped evidence also holds creates. Correct or remove an
-unresolved import row and refresh the preview; there is no match override.
+stale, partial, or capped evidence also holds creates. Correct or explicitly skip
+an unresolved import row with the [operator controls](import-operator-controls.md)
+and refresh the preview; there is no match override or automatic identity link.
 
 ## Try a fictional review
 

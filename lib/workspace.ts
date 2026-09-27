@@ -1,6 +1,8 @@
 import type { CsvColumnMapping, CsvContactCorrection } from './csv-control-tower';
 import type { ConnectorId, ConnectorReceipt } from './connector-contract';
 import type { LiveContactState, RepairRun } from './live-control-tower';
+import { defaultCrmUpdatePolicy, normalizeCrmUpdatePolicy, type CrmUpdatePolicy } from './crm-workflow';
+import { isImportExclusion } from './import-exclusions';
 
 export const MAX_PERSISTED_CONTACTS = 5_000;
 export const MAX_WORKSPACE_BYTES = 8 * 1024 * 1024;
@@ -24,6 +26,7 @@ export type WorkspaceState = {
   sourceType: ConnectorId;
   destinationType: ConnectorId;
   sourceLabel?: string;
+  crmUpdatePolicy?: CrmUpdatePolicy;
 };
 
 export type SavedWorkspace = {
@@ -47,6 +50,7 @@ export function emptyWorkspaceState(): WorkspaceState {
     fileName: null,
     sourceType: 'csv',
     destinationType: 'csv',
+    crmUpdatePolicy: defaultCrmUpdatePolicy(),
   };
 }
 
@@ -58,6 +62,12 @@ export function validateWorkspaceState(value: unknown): WorkspaceState {
   }
   if (state.contacts.length > MAX_PERSISTED_CONTACTS || state.originalContacts.length > MAX_PERSISTED_CONTACTS) {
     throw new Error(`A saved workspace can contain at most ${MAX_PERSISTED_CONTACTS.toLocaleString()} contacts.`);
+  }
+  for (const row of [...state.contacts, ...state.originalContacts]) {
+    if (row && typeof row === 'object' && 'importExclusion' in row && row.importExclusion !== undefined
+      && (!isImportExclusion(row.importExclusion) || row.recordStatus !== 'active')) {
+      throw new Error('Skipped import rows require an active row, a reason and a valid timestamp.');
+    }
   }
   const sourceType = state.sourceType ?? 'csv';
   const destinationType = state.destinationType ?? 'csv';
@@ -76,5 +86,6 @@ export function validateWorkspaceState(value: unknown): WorkspaceState {
     sourceType,
     destinationType,
     sourceLabel: typeof state.sourceLabel === 'string' ? state.sourceLabel : undefined,
+    crmUpdatePolicy: normalizeCrmUpdatePolicy(state.crmUpdatePolicy),
   };
 }

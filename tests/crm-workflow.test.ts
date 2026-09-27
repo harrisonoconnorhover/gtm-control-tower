@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildCrmWritePlan, combineCrmWritebackProgress, isSuccessfulCrmWritebackRecord, planStillMatches, rollbackFromPlan, rollbackRecordAlreadyRestored, rollbackRecordStillMatches, type CrmWritebackReceipt, type NativeCrmRecord, type PortableCrmContact } from '../lib/crm-workflow';
+import { buildCrmWritePlan, combineCrmWritebackProgress, defaultCrmUpdatePolicy, isCrmUpdatePolicy, isSuccessfulCrmWritebackRecord, normalizeCrmUpdatePolicy, planStillMatches, portableCrmFieldNames, rollbackFromPlan, rollbackRecordAlreadyRestored, rollbackRecordStillMatches, type CrmUpdatePolicy, type CrmWritebackReceipt, type NativeCrmRecord, type PortableCrmContact } from '../lib/crm-workflow';
 import { sourceContactsToCsv } from '../lib/crm-source';
 import { importContactsCsv } from '../lib/csv-control-tower';
 
@@ -8,6 +8,7 @@ const contacts: PortableCrmContact[] = [
   { contactId: 'two', email: 'two@example.com', firstName: 'Two', lastName: 'Person', company: 'Example', phone: null, jobTitle: 'GTM Engineer', website: null },
   { contactId: 'three', email: 'three@example.com', firstName: 'Three', lastName: 'Person', company: 'Example', phone: null, jobTitle: 'Analyst', website: null },
 ];
+const replaceAll: CrmUpdatePolicy = { mode: 'replace', fields: [...portableCrmFieldNames], clearBlanks: true };
 
 describe('governed CRM source and write-back', () => {
   it('plans creates, exact field updates, unchanged records, and duplicate holds', () => {
@@ -16,7 +17,7 @@ describe('governed CRM source and write-back', () => {
       ['two@example.com', [native('crm-2', 'two@example.com', 'GTM Engineer')]],
       ['three@example.com', [native('crm-3a', 'three@example.com', 'Analyst'), native('crm-3b', 'three@example.com', 'Analyst')]],
     ]);
-    const plan = buildCrmWritePlan('salesforce', 'test.csv', contacts, existing, new Date('2026-08-26T20:00:00Z'));
+    const plan = buildCrmWritePlan('salesforce', 'test.csv', contacts, existing, new Date('2026-08-26T20:00:00Z'), undefined, replaceAll);
     expect(plan).toMatchObject({ creates: 0, updates: 1, unchanged: 1, held: 1, requested: 3 });
     expect(plan.records[0].changes).toEqual([{ field: 'jobTitle', before: 'Old title', after: 'RevOps' }]);
     expect(plan.records[2].reason).toMatch(/2 CRM records/u);
@@ -24,7 +25,7 @@ describe('governed CRM source and write-back', () => {
 
   it('creates a rollback only for updates and detects stale or changed plans', () => {
     const existing = new Map<string, NativeCrmRecord[]>([['one@example.com', [native('crm-1', 'one@example.com', 'Old title')]]]);
-    const plan = buildCrmWritePlan('hubspot', 'test.csv', contacts.slice(0, 2), existing, new Date('2026-08-26T20:00:00Z'));
+    const plan = buildCrmWritePlan('hubspot', 'test.csv', contacts.slice(0, 2), existing, new Date('2026-08-26T20:00:00Z'), undefined, replaceAll);
     const rollback = rollbackFromPlan(plan);
     expect(rollback?.records).toHaveLength(1);
     expect(rollback?.createdRecordsSkipped).toBe(1);
@@ -33,7 +34,7 @@ describe('governed CRM source and write-back', () => {
     expect(rollbackRecordAlreadyRestored(rollback!.records[0], native('crm-1', 'one@example.com', 'Old title'))).toBe(true);
     expect(rollbackRecordStillMatches(rollback!.records[0], native('crm-1', 'one@example.com', 'Changed after write'))).toBe(false);
     expect(planStillMatches(plan, { ...plan })).toBe(false);
-    const fresh = buildCrmWritePlan('hubspot', 'test.csv', contacts.slice(0, 2), existing, new Date());
+    const fresh = buildCrmWritePlan('hubspot', 'test.csv', contacts.slice(0, 2), existing, new Date(), undefined, replaceAll);
     expect(planStillMatches(fresh, { ...fresh })).toBe(true);
     expect(planStillMatches(fresh, { ...fresh, fingerprint: 'changed' })).toBe(false);
   });
@@ -43,6 +44,104 @@ describe('governed CRM source and write-back', () => {
     const imported = importContactsCsv(csv).contacts;
     expect(imported).toHaveLength(1);
     expect(imported[0]).toMatchObject({ contactId: 'hubspot:123', normalizedEmail: 'ada@example.com', company: 'Engines' });
+  });
+});
+
+describe('CRM update policy', () => {
+  it.each(['hubspot', 'salesforce'] as const)('fills only empty %s fields by default and leaves creates unaffected', (connectorId) => {
+    const current = native('crm-1', 'one@example.com', 'Existing title');
+    current.fields.phone = '212-555-0101';
+    const proposed = [{ ...contacts[0], firstName: 'Overwrite', phone: null, website: 'https://example.com' }, contacts[1]];
+    const plan = buildCrmWritePlan(connectorId, 'test.csv', proposed, new Map([['one@example.com', [current]]]));
+    expect(plan.updatePolicy).toEqual(defaultCrmUpdatePolicy());
+    expect(plan.records[0].changes).toEqual([{ field: 'website', before: null, after: 'https://example.com' }]);
+    expect(plan.records[0].after).toEqual({ ...current.fields, website: 'https://example.com' });
+    expect(plan.records[1]).toMatchObject({ operation: 'create', after: { firstName: 'Two', jobTitle: 'GTM Engineer' } });
+  });
+
+  it('replaces selected fields while preserving unselected fields and blank import values', () => {
+    const current = native('crm-1', 'one@example.com', 'Existing title');
+    current.fields.phone = '212-555-0101';
+    const policy: CrmUpdatePolicy = { mode: 'replace', fields: ['phone', 'jobTitle'], clearBlanks: false };
+    const plan = buildCrmWritePlan('hubspot', 'test.csv', [{ ...contacts[0], firstName: 'Overwrite' }], new Map([['one@example.com', [current]]]), new Date(), undefined, policy);
+    expect(plan.records[0].changes).toEqual([{ field: 'jobTitle', before: 'Existing title', after: 'RevOps' }]);
+    expect(plan.records[0].after).toEqual({ ...current.fields, jobTitle: 'RevOps' });
+    const rollback = rollbackFromPlan(plan);
+    expect(rollback?.records[0].changedFields).toEqual(['jobTitle']);
+    expect(rollback?.records[0].after.phone).toBe('212-555-0101');
+  });
+
+  it('clears only explicitly selected fields with an explicit replace-and-clear policy', () => {
+    const current = native('crm-1', 'one@example.com', 'Existing title');
+    current.fields.phone = '212-555-0101';
+    current.fields.website = 'https://example.com';
+    const policy: CrmUpdatePolicy = { mode: 'replace', fields: ['phone'], clearBlanks: true };
+    const plan = buildCrmWritePlan('salesforce', 'test.csv', [contacts[0]], new Map([['one@example.com', [current]]]), new Date(), undefined, policy);
+    expect(plan.records[0].changes).toEqual([{ field: 'phone', before: '212-555-0101', after: null }]);
+    expect(plan.records[0].after).toEqual({ ...current.fields, phone: null });
+    expect(rollbackFromPlan(plan)?.records[0]).toMatchObject({ changedFields: ['phone'], before: { phone: '212-555-0101' }, after: { phone: null } });
+  });
+
+  it('can preserve all existing fields without blocking new records', () => {
+    const current = native('crm-1', 'one@example.com', 'Existing title');
+    const policy: CrmUpdatePolicy = { mode: 'replace', fields: [], clearBlanks: false };
+    const plan = buildCrmWritePlan('hubspot', 'test.csv', contacts.slice(0, 2), new Map([['one@example.com', [current]]]), new Date(), undefined, policy);
+    expect(plan).toMatchObject({ creates: 1, unchanged: 1, updates: 0 });
+    expect(plan.records[0]).toMatchObject({ after: current.fields, changes: [], reason: 'No update fields are selected. Existing CRM values are preserved.' });
+    expect(rollbackFromPlan(plan)).toBeNull();
+  });
+
+  it('fingerprints policy changes even when the effective record changes are identical', () => {
+    const current = native('crm-1', 'one@example.com', 'RevOps');
+    const existing = new Map([['one@example.com', [current]]]);
+    const compare = (policy: CrmUpdatePolicy) => buildCrmWritePlan('hubspot', 'test.csv', [contacts[0]], existing, new Date(), undefined, policy);
+    const first = compare({ mode: 'replace', fields: ['phone', 'jobTitle'], clearBlanks: false });
+    const reordered = compare({ mode: 'replace', fields: ['jobTitle', 'phone'], clearBlanks: false });
+    const changed = compare({ mode: 'replace', fields: ['jobTitle'], clearBlanks: false });
+    expect(first.records[0].changes).toEqual([]);
+    expect(changed.records[0].changes).toEqual([]);
+    expect(planStillMatches(first, reordered)).toBe(true);
+    expect(planStillMatches(first, changed)).toBe(false);
+    expect(planStillMatches(first, compare({ mode: 'replace', fields: ['phone', 'jobTitle'], clearBlanks: true }))).toBe(false);
+    expect(planStillMatches(first, compare({ mode: 'fill-empty', fields: ['phone', 'jobTitle'], clearBlanks: false }))).toBe(false);
+  });
+
+  it('normalizes supported policies without sharing mutable defaults and rejects malformed inputs', () => {
+    const policy = defaultCrmUpdatePolicy();
+    policy.fields.pop();
+    expect(defaultCrmUpdatePolicy().fields).toEqual(portableCrmFieldNames);
+    expect(normalizeCrmUpdatePolicy()).toEqual(defaultCrmUpdatePolicy());
+    expect(normalizeCrmUpdatePolicy({ mode: 'replace', fields: ['website', 'phone'], clearBlanks: false }).fields).toEqual(['phone', 'website']);
+    for (const invalid of [null, [], {}, { mode: 'merge', fields: [], clearBlanks: false },
+      { mode: 'replace', fields: ['email'], clearBlanks: false }, { mode: 'replace', fields: ['phone', 'phone'], clearBlanks: false },
+      { mode: 'replace', fields: ['phone'], clearBlanks: 'false' }, { mode: 'fill-empty', fields: ['phone'], clearBlanks: true }]) {
+      expect(isCrmUpdatePolicy(invalid)).toBe(false);
+      expect(() => normalizeCrmUpdatePolicy(invalid)).toThrow(/Invalid CRM update policy/u);
+    }
+  });
+
+  it('holds explicitly excluded rows before create, update, and unchanged decisions', () => {
+    const existing = new Map([
+      ['one@example.com', [native('crm-1', 'one@example.com', 'Old title')]],
+      ['two@example.com', [native('crm-2', 'two@example.com', 'GTM Engineer')]],
+    ]);
+    const exclusions = new Map(contacts.map((contact) => [contact.contactId, 'Excluded from this import: needs owner review.']));
+    const plan = buildCrmWritePlan('hubspot', 'test.csv', contacts, existing, new Date(), undefined, replaceAll, exclusions);
+    expect(plan).toMatchObject({ held: 3, creates: 0, updates: 0, unchanged: 0 });
+    expect(plan.records.every((row) => row.reason === exclusions.get(row.contactId) && row.changes.length === 0)).toBe(true);
+    expect(rollbackFromPlan(plan)).toBeNull();
+    const ordinary = buildCrmWritePlan('hubspot', 'test.csv', contacts, existing, new Date(), undefined, replaceAll);
+    expect(planStillMatches(plan, ordinary)).toBe(false);
+  });
+
+  it('allows an included exact match when another row targeting that record is explicitly excluded', () => {
+    const record = { ...native('hs-1', 'primary@example.com', 'Old title'), objectType: 'contact' as const };
+    const existing = new Map([['one@example.com', [record]], ['two@example.com', [record]]]);
+    const plan = buildCrmWritePlan('hubspot', 'test.csv', contacts.slice(0, 2), existing, new Date(), undefined, replaceAll,
+      new Map([['two', 'Excluded: another imported row represents this person.']]));
+    expect(plan).toMatchObject({ held: 1, updates: 1, creates: 0 });
+    expect(plan.records[0]).toMatchObject({ operation: 'update', nativeId: 'hs-1' });
+    expect(plan.records[1].operation).toBe('hold');
   });
 });
 

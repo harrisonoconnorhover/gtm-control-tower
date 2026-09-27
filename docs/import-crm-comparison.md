@@ -16,6 +16,10 @@ For name, phone, state, company, or approximate email evidence, use the separate
 a dated snapshot and exports review JSON; it never selects a write target.
 The governed direct preview independently uses all five fields to hold unsafe
 creates. Updates and unchanged decisions still require exact-email identity.
+Use [operator controls](import-operator-controls.md) to skip or restore rows,
+choose the fields that may change, and download comparison or result CSVs.
+Updates default to filling empty CRM fields; replacement and blank clearing
+require explicit policy choices.
 
 ## Decisions you can inspect
 
@@ -30,7 +34,8 @@ creates. Updates and unchanged decisions still require exact-email identity.
 | Converted Lead | Not applicable | Hold |
 | Multiple matching records | Hold | Hold |
 | Multiple imported rows target one native record | Hold affected rows | Hold affected rows |
-| Matched fields already agree | Unchanged; no write | Unchanged; no write |
+| No permitted field differences under the selected update policy | Unchanged; no write | Unchanged; no write |
+| Row is skipped in the saved import | Excluded from the batch; stale requests held | Excluded from the batch; stale requests held |
 | Failed, malformed, or incomplete lookup | Stop comparison | Stop comparison |
 
 Across batches in the current workspace session, the destination summary retains
@@ -65,11 +70,13 @@ CRM matches. It does not choose a winning row. A row never matches itself, and
 rows already merged locally are excluded. Shared-phone weights and search limits
 count the other rows only.
 
-Correct or remove unresolved import rows, refresh the snapshot when needed, and
+Correct or explicitly skip unresolved import rows, refresh the snapshot when needed, and
 refresh the preview. There is no override, automatic linking, or merge. Holds
 can be false positives. An empty candidate list does not prove absence. Snapshot
 visibility and changes after the scan limit coverage. Exact-email updates, unchanged
 records, and existing Salesforce Contact holds retain their existing behavior.
+Skipped rows stay out of same-import candidate matching. Restoring them rechecks
+duplicate flags and invalidates previews. Skipping does not clear a CRM-side match.
 The import comparison covers the current saved workspace, not other uploaded
 files or simultaneous imports in other workspaces. Conflicting or sparse identities
 can still evade these matching rules.
@@ -132,6 +139,9 @@ also wait for an existing workspace save or repair; errors release them for retr
 
 Plans expire after 15 minutes. Execution rereads the relevant CRM records and
 rejects a changed comparison; invalid or incomplete reads cannot prove absence.
+All governed comparisons require a saved workspace. Execution also rechecks row
+selection, current imported values and the saved update policy. Forward updates
+send only the fields shown as changed; rollback covers those same fields.
 The server rechecks the approximate create guard before writing. Its snapshot
 requirement does not replace exact-email reads or prove absence. Read visibility
 is limited to the configured credentials.

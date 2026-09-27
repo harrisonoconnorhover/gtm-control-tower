@@ -36,7 +36,7 @@ function displayValue(value: string | string[] | null) {
 export function HeldContactReview({ contacts, history, disabled, onCorrect }: Props) {
   const [selectedId, setSelectedId] = useState('');
   const [message, setMessage] = useState('');
-  const held = contacts.filter((contact) => contact.recordStatus === 'active' && destinationHoldFlags(contact).length > 0);
+  const held = contacts.filter((contact) => contact.recordStatus === 'active' && !contact.importExclusion && destinationHoldFlags(contact).length > 0);
   const ready = contacts.filter(isDestinationReadyContact).length;
   const selected = held.find((contact) => contact.contactId === selectedId) ?? held[0];
 

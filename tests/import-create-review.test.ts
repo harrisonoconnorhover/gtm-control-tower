@@ -4,6 +4,7 @@ import { importContactsCsv } from '../lib/csv-control-tower';
 import type { DuplicateScanView } from '../lib/duplicate-scan-store';
 import { toHubSpotSyncContact } from '../lib/hubspot-sync';
 import { reviewImportCreates } from '../lib/import-create-review';
+import { excludeImportRow, restoreImportRow } from '../lib/import-exclusions';
 import type { IdentityRecord } from '../lib/identity-resolution';
 import type { LiveContactState } from '../lib/live-control-tower';
 import { toSalesforceSyncLead } from '../lib/salesforce-sync';
@@ -38,6 +39,18 @@ function compare(contacts: PortableCrmContact[], records: IdentityRecord[]) {
 }
 
 describe('server-side possible-duplicate create review', () => {
+  it.each(['salesforce', 'hubspot'] as const)('excludes a skipped neighbor from %s create review and rejects a proposed skipped row', (connectorId) => {
+    const proposed = [contact({ contactId: 'keep', phone: '2065550112' }), contact({ contactId: 'skip', email: 'n.shah@costco.example', phone: '2065550112' })];
+    const saved = workspace(proposed);
+    saved.state.contacts = excludeImportRow(saved.state.contacts, 'skip', 'Duplicate signup; retain keep', now);
+    const review = () => reviewImportCreates(connectorId, proposed, saved, { ...scan, connectorId }, [], now);
+    expect(review().get('keep')).toMatchObject({ review: { status: 'clear', importCandidateCount: 0 }, possibleImportMatches: [] });
+    expect(review().get('skip')).toMatchObject({ review: { status: 'held' } });
+    expect(review().get('skip')?.reason).toContain('usable saved import identity');
+    saved.state.contacts = restoreImportRow(saved.state.contacts, 'skip', now);
+    expect(review().get('keep')).toMatchObject({ review: { status: 'held', importCandidateCount: 1 } });
+  });
+
   it.each(['salesforce', 'hubspot'] as const)('holds different-email copies of a new person in the same %s import', (connectorId) => {
     const proposed = [contact({ contactId: 'first', phone: '2065550112' }), contact({ contactId: 'second', email: 'n.shah@costco.example', phone: '2065550112' })];
     const results = reviewImportCreates(connectorId, proposed, workspace(proposed), { ...scan, connectorId }, [], now);

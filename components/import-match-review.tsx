@@ -30,7 +30,7 @@ const secondaryButton = 'rounded-full border border-white/20 px-4 py-2 text-xs f
 const fieldLabels: Record<MatchField, string> = { name: 'Name', email: 'Email', phone: 'Phone', state: 'State', company: 'Company' };
 
 export function ImportMatchReview({ contacts, ...props }: Props) {
-  const inputs = useMemo<ImportMatchInput[]>(() => contacts.filter((contact) => contact.recordStatus === 'active').map((contact) => {
+  const inputs = useMemo<ImportMatchInput[]>(() => contacts.filter((contact) => contact.recordStatus === 'active' && !contact.importExclusion).map((contact) => {
     const placeholderName = contact.fullName.trim() === contact.contactId.trim();
     let fullName = placeholderName ? '' : contact.fullName;
     const eligible = props.connectorId === 'hubspot' ? isHubSpotEligible(contact) : isSalesforceEligible(contact);
