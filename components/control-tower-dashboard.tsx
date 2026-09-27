@@ -163,7 +163,7 @@ export function ControlTowerDashboard() {
   const [seedStatus, setSeedStatus] = useState<'idle' | 'sending' | 'seeded' | 'error'>('idle');
   const [seedReceipt, setSeedReceipt] = useState<SeedReceipt | null>(null);
   const [seedError, setSeedError] = useState<string | null>(null);
-  const [dataMode, setDataMode] = useState<'warehouse' | 'csv'>('warehouse');
+  const [dataMode, setDataMode] = useState<'warehouse' | 'csv'>('csv');
   const [csvContacts, setCsvContacts] = useState<LiveContactState[]>([]);
   const [originalCsvContacts, setOriginalCsvContacts] = useState<LiveContactState[]>([]);
   const [csvRepairHistory, setCsvRepairHistory] = useState<RepairRun[]>([]);
@@ -213,6 +213,10 @@ export function ControlTowerDashboard() {
   const hubSpotSafeWriteback = connectorCatalog?.connectors.find((connector) => connector.id === 'hubspot')?.features?.includes('safe-writeback') ?? false;
   const salesforceSafeWriteback = connectorCatalog?.connectors.find((connector) => connector.id === 'salesforce')?.features?.includes('safe-writeback') ?? false;
   const googleSheetsConfigured = connectorCatalog?.connectors.some((connector) => connector.id === 'google-sheets' && connector.configured) ?? false;
+  const configuredConnectorNames = connectorCatalog?.connectors
+    .filter((connector) => connector.id !== 'csv' && connector.configured)
+    .map((connector) => connector.label).join(' · ');
+  const showWarehouseDemo = dataMode === 'warehouse' && bigQueryConfigured;
   function rememberOperatorKey(value: string) {
     setHubSpotSyncKey(value);
     setSalesforceSyncKey(value);
@@ -816,7 +820,7 @@ export function ControlTowerDashboard() {
               Open source · GitHub ↗
             </a>
             <span className="rounded-full border border-[#cdfc54]/20 bg-[#cdfc54]/[0.07] px-3 py-2 font-mono text-[10px] uppercase tracking-wider text-[#cdfc54]">Self-hosted · MIT</span>
-            <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 font-mono text-[10px] uppercase tracking-wider text-[#9db1a7]">Synthetic demo data</span>
+            <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 font-mono text-[10px] uppercase tracking-wider text-[#9db1a7]">{dataMode === 'csv' ? 'CSV workspace' : 'Synthetic warehouse demo'}</span>
           </div>
         </header>
 
@@ -824,29 +828,30 @@ export function ControlTowerDashboard() {
           <div>
             <div className="mb-4 flex items-center gap-2 font-mono text-xs uppercase tracking-[0.2em] text-[#cdfc54]">
               <span className={`h-2 w-2 rounded-full ${demoRunning ? 'animate-pulse bg-[#cdfc54]' : 'bg-[#4fa782]'}`} />
-              {demoRunning ? `Processing · ${demoStages[Math.max(demoStage, 0)].label}` : 'Guided system walkthrough'}
+              {demoRunning ? `Processing · ${demoStages[Math.max(demoStage, 0)].label}` : dataMode === 'csv' ? 'CSV cleanup lab' : 'Synthetic warehouse walkthrough'}
             </div>
             <h2 className="max-w-[980px] text-4xl font-semibold leading-[0.98] tracking-[-0.05em] sm:text-6xl lg:text-[72px]">
-              Watch messy CRM data become a trusted revenue decision.
+              {dataMode === 'csv' ? 'Inspect and repair your CSV before choosing a destination.' : 'Review the synthetic warehouse batch.'}
             </h2>
             <p className="mt-6 max-w-2xl text-base leading-7 text-[#9cb0a7] sm:text-lg">
-              Ten flawed contacts enter. The system enriches and routes the usable records, contains bad writes, rebuilds the funnel, and explains what is costing the team revenue.
+              {dataMode === 'csv' ? 'Import a file or try the sample, map its columns, inspect quality flags, run local repairs, and export the result. No CRM connection is required for this workflow.' : 'Load the configured BigQuery snapshot and inspect returned repair receipts. The illustrative walkthrough below explains the architecture; its example counters are not current execution results.'}
             </p>
             <div className="mt-7 flex flex-wrap gap-3">
-              <button
+              {dataMode === 'csv' ? <a href="#workspace-console" className="rounded-full bg-[#cdfc54] px-6 py-3 text-sm font-bold text-[#07130f] shadow-[0_12px_40px_rgba(205,252,84,0.16)] transition hover:-translate-y-0.5 hover:bg-[#dcff83] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#cdfc54]">Import a CSV or try the sample</a> : <button
                 data-testid="run-demo"
                 onClick={() => void runMessyBatch()}
                 disabled={demoRunning || seedStatus === 'sending'}
                 className="rounded-full bg-[#cdfc54] px-6 py-3 text-sm font-bold text-[#07130f] shadow-[0_12px_40px_rgba(205,252,84,0.16)] transition hover:-translate-y-0.5 hover:bg-[#dcff83] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#cdfc54] disabled:cursor-wait disabled:opacity-65"
               >
                 {seedStatus === 'sending' ? 'Loading funky CRM data…' : demoRunning ? 'Batch running…' : demoStage >= 0 ? 'Reset + replay messy batch' : 'Run messy lead batch'}
-              </button>
+              </button>}
               <button
                 data-testid="chaos-trigger"
                 onClick={triggerChaos}
-                className="rounded-full border border-white/15 bg-white/[0.04] px-6 py-3 text-sm font-semibold text-[#c9d8d0] transition hover:-translate-y-0.5 hover:border-white/25 hover:bg-white/[0.08] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#c9d8d0]"
+                disabled={dataMode === 'csv' && csvContacts.length === 0}
+                className="rounded-full border border-white/15 bg-white/[0.04] px-6 py-3 text-sm font-semibold text-[#c9d8d0] transition hover:-translate-y-0.5 hover:border-white/25 hover:bg-white/[0.08] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#c9d8d0] disabled:cursor-not-allowed disabled:opacity-50"
               >
-                Test another failure
+                {dataMode === 'csv' ? 'Review a repair scenario' : 'Test another failure'}
               </button>
             </div>
           </div>
@@ -859,14 +864,15 @@ export function ControlTowerDashboard() {
               <span className="rounded-full bg-[#cdfc54]/10 px-3 py-1 font-mono text-[10px] text-[#cdfc54]">PORTFOLIO-SAFE</span>
             </div>
             <div className="mt-5 grid gap-3 sm:grid-cols-2">
-              <ProofPoint label="Live path" value="HubSpot · Salesforce · n8n · BigQuery" />
-              <ProofPoint label="Analytics" value="dbt · 15 checks passed" />
-              <ProofPoint label="Demo layer" value="Deterministic synthetic batch" />
-              <ProofPoint label="Salesforce" value="Create + update · same Lead ID" />
+              <ProofPoint label="Available without accounts" value="CSV import · local checks · export" />
+              <ProofPoint label="Configured connectors" value={connectorCatalog ? configuredConnectorNames || 'None · CSV remains available' : 'Checking configuration…'} />
+              <ProofPoint label="Validation" value="Computed from loaded rows" />
+              <ProofPoint label="External writes" value="Explicit action + returned receipt" />
             </div>
           </article>
         </section>
 
+        <div id="workspace-console" className="scroll-mt-6">
         <SelfHostConsole
           catalog={connectorCatalog}
           contacts={csvContacts}
@@ -885,6 +891,7 @@ export function ControlTowerDashboard() {
           onExport={exportCsvWorkspace}
           onReceipt={recordConnectorReceipt}
         />
+        </div>
 
         {bigQueryConfigured && <LiveWarehouseCard state={liveState} status={liveStatus} onRefresh={refreshLiveState} />}
 
@@ -929,14 +936,16 @@ export function ControlTowerDashboard() {
           onReset={() => dataMode === 'csv' ? Promise.resolve(resetCsvWorkspace()) : resetFunkyBatch(false)}
         />
 
-        <section className="rounded-[34px] border border-white/10 bg-[#091a14]/92 p-4 shadow-[0_30px_100px_rgba(0,0,0,0.22)] sm:p-6" aria-label="Messy lead processing walkthrough">
+        {showWarehouseDemo && <>
+        <section className="rounded-[34px] border border-white/10 bg-[#091a14]/92 p-4 shadow-[0_30px_100px_rgba(0,0,0,0.22)] sm:p-6" aria-label="Illustrative messy lead processing walkthrough">
           <div className="flex flex-wrap items-end justify-between gap-4 px-1 pb-5">
             <div>
-              <p className="text-sm text-[#8fa99d]">One batch, six controls</p>
+              <p className="text-sm text-[#8fa99d]">Illustrative architecture walkthrough</p>
               <h3 className="mt-1 text-2xl font-semibold tracking-tight">From raw signal to governed action</h3>
+              <p className="mt-2 max-w-2xl text-xs leading-5 text-[#8fa99d]">Stage counters and example records below are sample values, not current provider or dbt execution results.</p>
             </div>
             <p aria-live="polite" className="font-mono text-[10px] uppercase tracking-[0.18em] text-[#8fa99d]">
-              {demoStage < 0 ? 'Ready for input' : demoRunning ? `Step ${demoStage + 1} of ${demoStages.length}` : 'Run complete · diagnosis ready'}
+              {demoStage < 0 ? 'Example ready' : demoRunning ? `Step ${demoStage + 1} of ${demoStages.length}` : 'Illustration complete'}
             </p>
           </div>
           <div className="grid gap-2 md:grid-cols-3 xl:grid-cols-6">
@@ -967,14 +976,15 @@ export function ControlTowerDashboard() {
           <TransformationCard demoStage={demoStage} />
           <RunOutcomeCard summary={runSummary} demoStage={demoStage} />
         </section>
+        </>}
 
         <div className="mt-7 flex items-center justify-between gap-4">
           <div>
-            <p className="text-sm text-[#8fa99d]">{dataMode === 'csv' ? 'Imported CSV metrics' : visibleScenario ? 'Scenario impact model' : liveState ? 'Live warehouse metrics' : 'Demo baseline'}</p>
-            <h3 className="mt-1 text-xl font-semibold">{dataMode === 'csv' ? 'What this browser-local file says now' : visibleScenario ? 'How this failure changes the business' : 'What BigQuery says now'}</h3>
+            <p className="text-sm text-[#8fa99d]">{dataMode === 'csv' ? 'Imported CSV metrics' : visibleScenario ? 'Scenario impact model' : liveState ? 'Last returned warehouse snapshot' : 'Illustrative baseline'}</p>
+            <h3 className="mt-1 text-xl font-semibold">{dataMode === 'csv' ? 'What the imported rows show' : visibleScenario ? 'How this failure changes the model' : liveState ? 'What BigQuery returned' : 'No warehouse data loaded · example values below'}</h3>
           </div>
           <span className={`rounded-full px-3 py-1 font-mono text-[9px] uppercase tracking-wider ${dataMode === 'csv' ? 'bg-[#83bcff]/10 text-[#83bcff]' : visibleScenario ? 'bg-[#ff7b55]/10 text-[#ff9d7f]' : liveState ? 'bg-[#cdfc54]/10 text-[#cdfc54]' : 'bg-white/[0.05] text-[#8fa99d]'}`}>
-            {dataMode === 'csv' ? 'Local CSV' : visibleScenario ? 'Simulated overlay' : liveState ? 'Live' : 'Fallback'}
+            {dataMode === 'csv' ? 'Local CSV' : visibleScenario ? 'Simulated overlay' : liveState ? 'Snapshot' : 'Example values'}
           </span>
         </div>
         <section className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Pipeline health metrics">
@@ -1017,15 +1027,16 @@ export function ControlTowerDashboard() {
           </div>
         </section>
 
-        <section className="mt-6 grid gap-5 lg:grid-cols-2">
+        {showWarehouseDemo && <section className="mt-6 grid gap-5 lg:grid-cols-2">
           <article className="rounded-[28px] border border-white/10 bg-[#0c1d17] p-5 sm:p-6">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <p className="text-sm text-[#8fa99d]">dbt quality suite</p>
+                <p className="text-sm text-[#8fa99d]">Illustrative dbt rule catalogue</p>
                 <h3 className="mt-1 text-lg font-semibold">Business rules that fail loudly</h3>
               </div>
-              <span className="rounded-full bg-[#cdfc54]/10 px-3 py-1 font-mono text-[10px] text-[#cdfc54]">15 / 15 PASS</span>
+              <span className="rounded-full bg-[#cdfc54]/10 px-3 py-1 font-mono text-[10px] text-[#cdfc54]">EXAMPLE VALUES</span>
             </div>
+            <p className="mt-3 text-xs text-[#8fa99d]">These sample results are not a current dbt run.</p>
             <div className="mt-5 space-y-2">
               {dbtTests.map(([name, result]) => (
                 <div key={name} className="flex items-center justify-between gap-4 rounded-xl bg-white/[0.035] px-4 py-3">
@@ -1039,7 +1050,7 @@ export function ControlTowerDashboard() {
           <article className="rounded-[28px] border border-white/10 bg-[#f0f5e8] p-5 text-[#10221a] sm:p-6">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <p className="text-sm text-[#65736b]">Automation trace</p>
+                <p className="text-sm text-[#65736b]">Illustrative automation trace</p>
                 <h3 className="mt-1 text-lg font-semibold">Every decision is explainable</h3>
               </div>
               <span className="font-mono text-[10px] text-[#65736b]">DEMO REPLAY</span>
@@ -1054,11 +1065,11 @@ export function ControlTowerDashboard() {
               ))}
             </div>
           </article>
-        </section>
+        </section>}
 
         <footer className="flex flex-wrap items-center justify-between gap-3 py-8 text-xs text-[#71877c]">
-          <p>Portfolio simulation · no employer or customer data</p>
-          <p className="font-mono">HUBSPOT / SALESFORCE → N8N → BIGQUERY → DBT → DECISION</p>
+          <p>{dataMode === 'csv' ? 'Self-hosted CSV workspace · external writes are explicit' : 'Synthetic warehouse demonstration'}</p>
+          <p className="font-mono">{dataMode === 'csv' ? 'CSV → LOCAL CHECKS → REVIEW → EXPORT' : 'HUBSPOT / SALESFORCE → N8N → BIGQUERY → DBT → DECISION'}</p>
         </footer>
       </div>
     </main>
@@ -1209,9 +1220,9 @@ function FunkyCrmLab({
     <section className="mb-6 overflow-hidden rounded-[30px] border border-white/10 bg-[#0c1d17]" aria-label="Funky CRM contact lab">
       <div className="flex flex-wrap items-start justify-between gap-4 border-b border-white/10 px-5 py-5 sm:px-6">
         <div>
-          <p className="text-sm text-[#8fa99d]">{mode === 'csv' ? 'Saved contact workspace' : 'Executed-repair lab'}</p>
-          <h3 className="mt-1 text-xl font-semibold">{mode === 'csv' ? `${contacts.length} imported contacts · no warehouse required` : 'Ten genuinely funky contacts in mutable BigQuery state'}</h3>
-          <p className="mt-2 max-w-3xl text-xs leading-5 text-[#71877c]">{mode === 'csv' ? 'Mapped imports, quality flags, repairs, receipts, and undo snapshots persist in the self-hosted SQLite workspace. Explicit destination actions still control every external write.' : 'Duplicates, plus-addressing, malformed email, Unicode, conflicting companies, routing overload, and impossible lifecycle changes. The workers below change these rows and return native execution receipts.'}</p>
+          <p className="text-sm text-[#8fa99d]">{mode === 'csv' ? 'CSV contact workspace' : 'Warehouse contact snapshot'}</p>
+          <h3 className="mt-1 text-xl font-semibold">{mode === 'csv' ? `${contacts.length} imported contacts · no warehouse required` : `${contacts.length} contacts loaded from BigQuery`}</h3>
+          <p className="mt-2 max-w-3xl text-xs leading-5 text-[#71877c]">{mode === 'csv' ? 'Review mapped imports, quality flags, local repairs, and receipts here. Saving depends on configured local persistence. External writes require explicit destination actions.' : 'These rows show the last returned warehouse snapshot. Native repair results appear only after a valid execution receipt is returned.'}</p>
         </div>
         <div className="flex flex-wrap justify-end gap-2">
           <a href="/control-tower-csv-template.csv" download className="rounded-full border border-white/10 px-4 py-2 text-xs font-semibold text-[#a9bbb2] transition hover:bg-white/[0.05]">CSV template</a>
@@ -1330,7 +1341,7 @@ function FunkyCrmLab({
           </tbody>
         </table>
       </div>
-      {!contacts.length && <p className="px-5 py-5 text-sm text-[#8fa99d] sm:px-6">Import a CSV or reset the synthetic batch to load contact state.</p>}
+      {!contacts.length && <p className="px-5 py-5 text-sm text-[#8fa99d] sm:px-6">{mode === 'csv' ? 'Import a CSV or choose the sample above to load contact state.' : 'No warehouse contacts loaded. Refresh the snapshot or explicitly reset the synthetic batch.'}</p>}
       {repairHistory.length ? (
         <div className="flex flex-wrap gap-2 border-t border-white/10 px-5 py-4 sm:px-6">
           {repairHistory.slice(0, 3).map((run) => (
@@ -1634,7 +1645,7 @@ function FunnelCard({ funnel, source }: { funnel: ReturnType<typeof funnelForSce
       <div className="flex items-center justify-between gap-4">
         <div>
           <p className="text-sm text-[#8fa99d]">{title}</p>
-          <h3 className="mt-1 text-xl font-semibold">Accepted events only</h3>
+          <h3 className="mt-1 text-xl font-semibold">{source === 'csv' ? 'Active imported contacts by current stage' : 'Accepted events only'}</h3>
         </div>
         <span className={`font-mono text-[10px] ${source === 'warehouse' ? 'text-[#cdfc54]' : source === 'csv' ? 'text-[#83bcff]' : 'text-[#8fa99d]'}`}>{badge}</span>
       </div>
@@ -1677,22 +1688,23 @@ function IncidentCard({
   const active = baseActive && executionMode === 'csv' && candidateCount !== null
     ? { ...baseActive, detail: csvIncidentDetail(activeScenario, candidateCount) }
     : baseActive;
-  const incidentRows = active ? [active, ...baselineIncidents] : baselineIncidents;
+  const incidentRows = executionMode === 'csv' ? active ? [active] : [] : active ? [active, ...baselineIncidents] : baselineIncidents;
   return (
     <article className="rounded-[30px] border border-white/10 bg-[#f0f5e8] p-5 text-[#10221a] sm:p-6">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <p className="text-sm text-[#637169]">What is broken?</p>
-          <h3 className="mt-1 text-xl font-semibold">Revenue impact, then repair</h3>
+          <p className="text-sm text-[#637169]">{executionMode === 'csv' ? 'Local repair scope' : 'Illustrative scenario diagnosis'}</p>
+          <h3 className="mt-1 text-xl font-semibold">{executionMode === 'csv' ? 'Review local repair candidates' : 'Revenue impact, then repair'}</h3>
         </div>
         <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-full font-semibold text-white ${active ? 'bg-[#ff7b55]' : 'bg-[#2f956c]'}`}>{active ? incidentRows.length : repaired ? '✓' : incidentRows.length}</span>
       </div>
       {active && (
         <div className="mt-5 rounded-2xl border border-[#d97757]/20 bg-[#fff1e9] p-4">
-          <p className="font-mono text-[9px] uppercase tracking-wider text-[#b05a40]">Revenue consequence</p>
-          <p data-testid="health-headline" className="mt-2 text-sm font-semibold leading-5">{healthHeadline(active.scenario)}</p>
+          <p className="font-mono text-[9px] uppercase tracking-wider text-[#b05a40]">{executionMode === 'csv' ? 'Matching rows in this workspace' : 'Modeled revenue consequence'}</p>
+          <p data-testid="health-headline" className="mt-2 text-sm font-semibold leading-5">{executionMode === 'csv' ? active.detail : healthHeadline(active.scenario)}</p>
         </div>
       )}
+      {executionMode === 'csv' && !active && !repaired && <p className="mt-5 text-sm leading-6 text-[#637169]">No repair scenario selected. Import rows, then choose “Review a repair scenario” to see the actual matching rows.</p>}
       {repaired && repairReceipt && (
         <div data-testid="repair-success" className="mt-5 rounded-2xl border border-[#2f956c]/25 bg-[#dff2e8] p-4 text-sm text-[#236b50]">
           <p className="font-semibold">{executionMode === 'csv' ? 'The local worker executed in this browser tab.' : 'n8n executed the repair against BigQuery.'}</p>
@@ -1721,7 +1733,7 @@ function IncidentCard({
                       disabled={repairStatus === 'sending'}
                       className="mt-3 rounded-full bg-[#10221a] px-4 py-2 text-xs font-semibold text-white transition hover:bg-[#234234] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#10221a] disabled:cursor-wait disabled:opacity-65"
                     >
-                      {repairStatus === 'sending' ? 'Executing in n8n…' : repairButtonLabel(activeScenario)}
+                      {repairStatus === 'sending' ? executionMode === 'csv' ? 'Executing locally…' : 'Executing in n8n…' : repairButtonLabel(activeScenario)}
                     </button>
                   </div>
                 )}
