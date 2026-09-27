@@ -10,6 +10,29 @@ import {
   type SalesforceSyncReceipt,
 } from '../lib/salesforce-sync';
 
+const lead = (contactId: string, email = 'alex@example.com') => ({
+  contactId, email, firstName: 'Test', lastName: 'Person', company: 'Synthetic Lab',
+  phone: null, jobTitle: null, website: null,
+});
+const nativeLead = (Id = '00Q-EXISTING', Email = 'alex@example.com') => ({
+  Id, Email, IsConverted: false, FirstName: 'Test', LastName: 'Person', Company: 'Synthetic Lab',
+  Phone: null, Title: null, Website: null,
+});
+const nativeContact = {
+  Id: '003-CONTACT', Email: 'alex@example.com', FirstName: 'Test', LastName: 'Person',
+  Phone: null, Title: null, Account: { Name: 'Synthetic Lab', Website: null },
+};
+const page = (records: unknown[] = []) => new Response(JSON.stringify({ done: true, records }));
+function mockResponses(...responses: Response[]) {
+  const fetchMock = vi.fn(async () => responses.shift() as Response);
+  vi.stubGlobal('fetch', fetchMock);
+  return fetchMock;
+}
+function sync(leads = [lead('C-1')]) {
+  return syncDirectlyToSalesforce({ syncId: 'sync-synthetic', sourceFile: 'synthetic.csv', leads },
+    'https://example.my.salesforce.com', 'synthetic-token', '67.0');
+}
+
 describe('Salesforce sync contracts', () => {
   afterEach(() => vi.unstubAllGlobals());
 
@@ -76,34 +99,78 @@ describe('Salesforce sync contracts', () => {
   });
 
   it('queries first, creates missing Leads, updates one match, and holds duplicate matches', async () => {
-    const responses = [
-      { ok: true, status: 200, json: async () => ({ done: true, records: [
-        { Id: '00Q-EXISTING', Email: 'alex@example.com' },
-        { Id: '00Q-DUP-1', Email: 'sam@example.com' },
-        { Id: '00Q-DUP-2', Email: 'sam@example.com' },
-      ] }) },
-      { ok: true, status: 200, json: async () => ([{ id: '00Q-CREATED', success: true, errors: [] }]) },
-      { ok: true, status: 200, json: async () => ([{ id: '00Q-EXISTING', success: true, errors: [] }]) },
-    ];
-    const fetchMock = vi.fn(async () => responses.shift() as Response);
-    vi.stubGlobal('fetch', fetchMock);
-    const lead = (contactId: string, email: string) => ({
-      contactId, email, firstName: 'Test', lastName: 'Person', company: 'Synthetic Lab',
-      phone: null, jobTitle: null, website: null,
-    });
-
-    const receipt = await syncDirectlyToSalesforce({
-      syncId: 'sync-live-shape',
-      sourceFile: 'synthetic.csv',
-      leads: [lead('C-1', 'alex@example.com'), lead('C-2', 'new@example.com'), lead('C-3', 'sam@example.com')],
-    }, 'https://example.my.salesforce.com', 'secret', '67.0');
+    const fetchMock = mockResponses(
+      page([nativeLead(), nativeLead('00Q-DUP-1', 'sam@example.com'), nativeLead('00Q-DUP-2', 'sam@example.com')]),
+      page(),
+      new Response(JSON.stringify([{ id: '00Q-CREATED', success: true, errors: [] }])),
+      new Response(JSON.stringify([{ id: '00Q-EXISTING', success: true, errors: [] }])),
+    );
+    const receipt = await sync([lead('C-1'), lead('C-2', 'new@example.com'), lead('C-3', 'sam@example.com')]);
 
     expect(receipt).toMatchObject({ status: 'partial', created: 1, updated: 1, failed: 1 });
     expect(receipt.records.map((record) => record.status)).toEqual(['updated', 'created', 'failed']);
-    expect(receipt.records[2].error).toMatch(/2 active Leads/);
-    const createCall = fetchMock.mock.calls[1] as unknown as [string, RequestInit];
+    expect(receipt.records[2].error).toMatch(/2 Leads or Contacts/);
+    const createCall = fetchMock.mock.calls[2] as unknown as [string, RequestInit];
     const createBody = JSON.parse(String(createCall[1]?.body));
     expect(createBody.records[0]).toMatchObject({ Email: 'new@example.com', Company: 'Synthetic Lab' });
     expect(createBody.records[0]).not.toHaveProperty('OwnerId');
+    for (const call of fetchMock.mock.calls.slice(2)) {
+      const options = (call as unknown as [string, RequestInit])[1];
+      expect(options.headers).toMatchObject({ 'Sforce-Duplicate-Rule-Header': 'allowSave=false' });
+    }
+  });
+
+  it.each([
+    { name: 'Contact-only', leads: [], contacts: [nativeContact], reason: /already has a Contact/ },
+    { name: 'converted Lead-only', leads: [{ ...nativeLead(), IsConverted: true }], contacts: [], reason: /converted Lead/ },
+    { name: 'Lead and Contact', leads: [nativeLead()], contacts: [nativeContact], reason: /2 Leads or Contacts/ },
+  ])('holds $name matches without creating or updating a Lead', async ({ leads, contacts, reason }) => {
+    const fetchMock = mockResponses(page(leads), page(contacts));
+    const receipt = await sync();
+    expect(receipt).toMatchObject({ created: 0, updated: 0, failed: 1 });
+    expect(receipt.records[0].error).toMatch(reason);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('holds a Contact found on a later query page before any write', async () => {
+    const fetchMock = mockResponses(
+      page(),
+      new Response(JSON.stringify({ done: false, records: [], nextRecordsUrl: '/services/data/v67.0/query/contact-2' })),
+      page([nativeContact]),
+    );
+    const receipt = await sync();
+    expect(receipt).toMatchObject({ created: 0, updated: 0, failed: 1 });
+    expect(receipt.records[0].error).toMatch(/Contact/);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it.each([
+    { status: 503, body: { message: 'Service unavailable' } },
+    { status: 200, body: { done: true, records: [null] } },
+    { status: 200, body: { records: [] } },
+    { status: 200, body: { done: false, records: [] } },
+  ])('makes zero writes if the Contact lookup fails or is incomplete: %j', async ({ status, body }) => {
+    const fetchMock = mockResponses(page([nativeLead()]), new Response(JSON.stringify(body), { status }));
+    await expect(sync()).rejects.toThrow();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls.every((call) => (call as unknown as [string])[0].includes('/query?'))).toBe(true);
+  });
+
+  it('holds multiple imported rows targeting the same native Lead', async () => {
+    const fetchMock = mockResponses(page([nativeLead()]), page());
+    const receipt = await sync([lead('C-1'), lead('C-2', 'ALEX@example.com')]);
+    expect(receipt).toMatchObject({ created: 0, updated: 0, failed: 2 });
+    expect(receipt.records.every((record) => record.error?.includes('Multiple imported rows'))).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('surfaces a duplicate-rule rejection without retrying or bypassing the rule', async () => {
+    const fetchMock = mockResponses(page(), page(), new Response(JSON.stringify([{
+      success: false, errors: [{ statusCode: 'DUPLICATES_DETECTED', message: 'A matching Contact already exists.' }],
+    }])));
+    const receipt = await sync();
+    expect(receipt).toMatchObject({ created: 0, updated: 0, failed: 1 });
+    expect(receipt.records[0].error).toBe('A matching Contact already exists.');
+    expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 });

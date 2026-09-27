@@ -296,3 +296,20 @@ write uses the existing eligibility and review flow. Historical connector
 receipts remain in their existing store. The first version belongs to the
 self-hosted operator workspace, not the static public demonstration, and performs
 no provider writes by itself.
+
+## September 27, 2026 — Compare imported identities with current CRM records
+
+Use shared exact-email readers in both the reviewed write path and legacy direct
+sync routes. HubSpot includes primary and additional emails and individually
+confirms missing batch results before proposing a create. Salesforce checks
+Leads, including converted Leads, and Contacts; only a sole unconverted Lead is
+an update target. Contact, converted, ambiguous and shared-native input matches
+are held with visible native IDs. Incomplete reads stop the comparison.
+
+Keep the existing fifteen-minute plan and execution reread. Include matched
+identities in its fingerprint. HubSpot creates use create-only requests so a
+conflict cannot silently become an unreviewed update; Salesforce writes retain
+configured duplicate rules. Neither separate read/write sequence is atomic
+against external writers. Different unlinked emails and records outside the
+connected user's visibility remain outside the guarantee. Add no fuzzy matching,
+native merge, schema, dependency or n8n behavior change.

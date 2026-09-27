@@ -16,6 +16,8 @@ export type PortableCrmContact = {
 
 export type NativeCrmRecord = {
   nativeId: string;
+  objectType: 'lead' | 'contact';
+  isConverted?: boolean;
   email: string;
   fields: Record<PortableCrmFieldName, string | null>;
 };
@@ -26,11 +28,14 @@ export type CrmFieldChange = {
   after: string | null;
 };
 
+export type CrmMatch = Pick<NativeCrmRecord, 'nativeId' | 'objectType' | 'email' | 'isConverted'>;
+
 export type CrmPlanRecord = {
   contactId: string;
   email: string;
   nativeId: string | null;
   operation: 'create' | 'update' | 'unchanged' | 'hold';
+  matches: CrmMatch[];
   before: Record<PortableCrmFieldName, string | null> | null;
   after: Record<PortableCrmFieldName, string | null>;
   changes: CrmFieldChange[];
@@ -100,20 +105,44 @@ export function buildCrmWritePlan(
   existingByEmail: Map<string, NativeCrmRecord[]>,
   now = new Date(),
 ): CrmWritePlan {
+  const matchedInputs = new Map<string, Set<string>>();
+  const recordKey = (record: NativeCrmRecord) => `${record.objectType}:${record.nativeId}`;
+  for (const contact of proposed) {
+    for (const match of existingByEmail.get(contact.email.toLowerCase()) ?? []) {
+      const key = recordKey(match);
+      const inputs = matchedInputs.get(key) ?? new Set<string>();
+      inputs.add(contact.contactId);
+      matchedInputs.set(key, inputs);
+    }
+  }
   const records = proposed.map((contact): CrmPlanRecord => {
     const after = contactFields(contact);
-    const matches = existingByEmail.get(contact.email.toLowerCase()) ?? [];
+    const nativeMatches = existingByEmail.get(contact.email.toLowerCase()) ?? [];
+    const matches = nativeMatches.map(({ nativeId, objectType, email, isConverted }) => ({ nativeId, objectType, email, isConverted }));
+    const hold = (reason: string): CrmPlanRecord => ({
+      contactId: contact.contactId, email: contact.email, nativeId: null, operation: 'hold',
+      matches, before: null, after, changes: [], reason,
+    });
     if (matches.length > 1) {
-      return { contactId: contact.contactId, email: contact.email, nativeId: null, operation: 'hold', before: null, after, changes: [], reason: `${matches.length} active CRM records share this email.` };
+      return hold(`${matches.length} CRM records match this email. Review the existing records before importing.`);
     }
     if (!matches.length) {
       return {
-        contactId: contact.contactId, email: contact.email, nativeId: null, operation: 'create', before: null, after,
+        contactId: contact.contactId, email: contact.email, nativeId: null, operation: 'create', matches,
+        before: null, after,
         changes: portableCrmFieldNames.filter((field) => after[field] !== null).map((field) => ({ field, before: null, after: after[field] })),
-        reason: null,
+        reason: 'No existing exact email match was returned by the CRM lookup.',
       };
     }
-    const match = matches[0];
+    const match = nativeMatches[0];
+    if ((matchedInputs.get(recordKey(match))?.size ?? 0) > 1) {
+      return hold('Multiple imported rows match the same CRM record. Resolve the rows before writing.');
+    }
+    if (connectorId === 'salesforce' && (match.objectType === 'contact' || match.isConverted)) {
+      return hold(match.objectType === 'contact'
+        ? 'An existing Salesforce Contact has this email. Review that Contact instead of creating a Lead.'
+        : 'An existing converted Salesforce Lead has this email. Review its conversion instead of creating another Lead.');
+    }
     const changes = portableCrmFieldNames.flatMap((field) => {
       const before = cleanValue(match.fields[field]);
       const next = cleanValue(after[field]);
@@ -121,7 +150,8 @@ export function buildCrmWritePlan(
     });
     return {
       contactId: contact.contactId, email: contact.email, nativeId: match.nativeId,
-      operation: changes.length ? 'update' : 'unchanged', before: match.fields, after, changes, reason: null,
+      operation: changes.length ? 'update' : 'unchanged', matches,
+      before: match.fields, after, changes, reason: null,
     };
   });
   const createdAt = now.toISOString();
@@ -211,7 +241,7 @@ function cleanValue(value: string | null | undefined): string | null {
 }
 
 function fingerprintPlan(connectorId: string, records: CrmPlanRecord[]): string {
-  const stable = JSON.stringify([connectorId, records.map(({ contactId, email, nativeId, operation, before, after }) => ({ contactId, email, nativeId, operation, before, after }))]);
+  const stable = JSON.stringify([connectorId, records.map(({ contactId, email, nativeId, operation, matches, before, after }) => ({ contactId, email, nativeId, operation, matches, before, after }))]);
   let hash = 0x811c9dc5;
   for (let index = 0; index < stable.length; index += 1) {
     hash ^= stable.charCodeAt(index);

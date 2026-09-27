@@ -1446,10 +1446,11 @@ function HubSpotSyncPanel({
         <div>
           <div className="flex flex-wrap items-center gap-2">
             <p className="text-sm font-semibold">Governed HubSpot destination</p>
-            <span className="rounded-full bg-[#cdfc54]/10 px-3 py-1 font-mono text-[9px] uppercase text-[#cdfc54]">Upsert by email</span>
+            <span className="rounded-full bg-[#cdfc54]/10 px-3 py-1 font-mono text-[9px] uppercase text-[#cdfc54]">{safeMode ? 'Compare exact email' : 'n8n email upsert'}</span>
           </div>
-          <p className="mt-2 max-w-3xl text-xs leading-5 text-[#71877c]">{eligibleCount} clean active contacts qualify; {heldCount} merged or unresolved rows stay out. Each click writes at most 100 contacts and returns a result for every email. Portable fields: name, company, phone, job title, and website.</p>
+          <p className="mt-2 max-w-3xl text-xs leading-5 text-[#71877c]">{eligibleCount} clean active contacts qualify; {heldCount} merged or unresolved rows stay out. {safeMode ? 'Compare up to 100 contacts before approving creates or updates.' : 'Each sync sends at most 100 contacts.'} Portable fields: name, company, phone, job title, and website.</p>
           <p className="mt-1 text-[10px] leading-5 text-[#566b61]">Lifecycle and symbolic owner routes remain local because safely changing those fields requires reading each portal’s current stages and owner IDs first.</p>
+          {!safeMode && <p className="mt-2 text-xs leading-5 text-[#a8bbb1]">Delegated n8n uses its configured email upsert. Comparing primary and additional emails with a reviewed change plan requires the direct HubSpot connector.</p>}
         </div>
         <div className="flex flex-wrap items-end gap-2 lg:justify-end">
           <label className="grid gap-1 font-mono text-[8px] uppercase tracking-wider text-[#71877c]">
@@ -1467,7 +1468,7 @@ function HubSpotSyncPanel({
             disabled={status === 'sending' || pendingCount === 0}
             className="rounded-full bg-[#cdfc54] px-5 py-3 text-xs font-bold text-[#07130f] transition hover:bg-[#dcff83] disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {status === 'sending' ? (plan ? 'Writing approved plan…' : 'Inspecting HubSpot…') : pendingCount ? safeMode ? plan ? `Execute ${plan.creates + plan.updates} approved changes` : `Preview ${batchCount} changes` : `Sync ${batchCount}${pendingCount > 100 ? ` of ${pendingCount}` : ''} to HubSpot` : eligibleCount ? 'All clean contacts synced' : 'Fix held records first'}
+            {status === 'sending' ? (plan ? 'Writing approved plan…' : 'Inspecting HubSpot…') : pendingCount ? safeMode ? plan ? (plan.creates + plan.updates ? `Execute ${plan.creates + plan.updates} approved changes` : 'Record comparison result') : `Compare ${batchCount} with CRM` : `Sync ${batchCount}${pendingCount > 100 ? ` of ${pendingCount}` : ''} to HubSpot` : eligibleCount ? 'All clean contacts synced' : 'Fix held records first'}
           </button>
         </div>
       </div>
@@ -1529,7 +1530,7 @@ function SalesforceSyncPanel({
             <p className="text-sm font-semibold">Governed Salesforce destination</p>
             <span className="rounded-full bg-[#83bcff]/10 px-3 py-1 font-mono text-[9px] uppercase text-[#83bcff]">Lead · match by email</span>
           </div>
-          <p className="mt-2 max-w-3xl text-xs leading-5 text-[#71877c]">{eligibleCount} clean active contacts qualify; {heldCount} rows stay out. Company and last name are required. One email match is updated, no match is created, and duplicate Lead matches are held for review.</p>
+          <p className="mt-2 max-w-3xl text-xs leading-5 text-[#71877c]">{eligibleCount} clean active contacts qualify; {heldCount} rows stay out. Company and last name are required. A sole unconverted Lead can be updated. Contact matches, converted Leads and ambiguous matches are held; a completed lookup with no match can create a Lead.</p>
           <p className="mt-1 text-[10px] leading-5 text-[#566b61]">Portable standard fields only: email, name, company, phone, title, and website. Owner, status, score, and custom fields remain untouched.</p>
         </div>
         <div className="flex flex-wrap items-end gap-2 lg:justify-end xl:justify-start">
@@ -1548,7 +1549,7 @@ function SalesforceSyncPanel({
             disabled={status === 'sending' || pendingCount === 0}
             className="rounded-full bg-[#83bcff] px-5 py-3 text-xs font-bold text-[#07130f] transition hover:bg-[#a7d0ff] disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {status === 'sending' ? (plan ? 'Writing approved plan…' : 'Inspecting Salesforce…') : pendingCount ? safeMode ? plan ? `Execute ${plan.creates + plan.updates} approved changes` : `Preview ${batchCount} changes` : `Sync ${batchCount}${pendingCount > 100 ? ` of ${pendingCount}` : ''} to Salesforce` : eligibleCount ? 'All clean Leads synced' : 'Fix held records first'}
+            {status === 'sending' ? (plan ? 'Writing approved plan…' : 'Inspecting Salesforce…') : pendingCount ? safeMode ? plan ? (plan.creates + plan.updates ? `Execute ${plan.creates + plan.updates} approved changes` : 'Record comparison result') : `Compare ${batchCount} with CRM` : `Sync ${batchCount}${pendingCount > 100 ? ` of ${pendingCount}` : ''} to Salesforce` : eligibleCount ? 'All clean Leads synced' : 'Fix held records first'}
           </button>
         </div>
       </div>
@@ -1584,8 +1585,32 @@ function ChangePlanCard({ plan, onRefresh }: { plan: CrmWritePlan; onRefresh: ()
   }
   return (
     <div className="mt-4 rounded-2xl border border-[#83bcff]/20 bg-[#83bcff]/[0.05] p-4">
-      <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs font-semibold text-[#b8d8ff]">Write preview ready · expires {new Date(plan.expiresAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</p><p className="mt-1 text-[10px] text-[#71877c]">{plan.creates} create · {plan.updates} update · {plan.unchanged} unchanged · {plan.held} held</p></div><div className="flex gap-2"><button onClick={downloadBackup} className="rounded-full border border-white/10 px-3 py-2 text-[10px] text-[#b8d8ff]">Download pre-write backup</button><button onClick={() => void onRefresh()} className="rounded-full border border-white/10 px-3 py-2 text-[10px] text-[#8ca096]">Refresh diff</button></div></div>
-      <div className="mt-3 max-h-36 space-y-1 overflow-y-auto font-mono text-[8px] leading-5 text-[#71877c]">{plan.records.filter((record) => record.changes.length || record.reason).slice(0, 20).map((record) => <p key={record.contactId}><span className="text-[#a8bbb1]">{record.email}</span> · {record.reason ?? record.changes.map((change) => `${change.field}: ${change.before ?? '∅'} → ${change.after ?? '∅'}`).join(' · ')}</p>)}</div>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-semibold text-[#b8d8ff]">CRM comparison ready · expires {new Date(plan.expiresAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</p>
+          <p className="mt-1 text-xs text-[#a8bbb1]">{plan.creates} create · {plan.updates} update · {plan.unchanged} unchanged · {plan.held} held</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button onClick={downloadBackup} className="rounded-full border border-white/10 px-3 py-2 text-xs text-[#b8d8ff]">Download pre-write backup</button>
+          <button onClick={() => void onRefresh()} className="rounded-full border border-white/10 px-3 py-2 text-xs text-[#a8bbb1]">Refresh comparison</button>
+        </div>
+      </div>
+      <p className="mt-3 text-xs leading-5 text-[#a8bbb1]">{plan.connectorId === 'hubspot'
+        ? 'Checks exact primary and additional email addresses. Two imported rows matching the same Contact are held.'
+        : 'Checks exact email across Leads and Contacts. Contact matches, converted Leads and ambiguous matches are held.'} The CRM is checked again before execution. Different, unlinked email addresses are not matched by name or company.</p>
+      <div className="mt-3 max-h-80 space-y-2 overflow-y-auto" aria-label="CRM comparison records">
+        {plan.records.map((record) => (
+          <details key={record.contactId} className="rounded-xl border border-white/10 p-3 text-xs">
+            <summary className="cursor-pointer break-words leading-5"><span className={record.operation === 'hold' ? 'text-[#ffb19a]' : 'text-[#cdfc54]'}>{record.operation}</span> · {record.email} · {record.contactId}</summary>
+            <p className="mt-2 break-words leading-5 text-[#b8d8ff]">{record.matches?.length
+              ? `Matched CRM records: ${record.matches.map((match) => `${match.isConverted ? 'Converted Lead' : match.objectType === 'lead' ? 'Lead' : 'Contact'} ${match.nativeId} (${match.email})`).join('; ')}`
+              : 'No exact email match returned by the completed lookup.'}</p>
+            {record.reason && <p className="mt-2 leading-5 text-[#a8bbb1]">{record.reason}</p>}
+            {record.operation === 'unchanged' && <p className="mt-2 text-[#a8bbb1]">Portable fields already match. No write needed.</p>}
+            {record.changes.length > 0 && <ul className="mt-2 space-y-1 text-[#a8bbb1]">{record.changes.map((change) => <li key={change.field} className="break-words">{change.field}: {change.before ?? 'Empty'} → {change.after ?? 'Empty'}</li>)}</ul>}
+          </details>
+        ))}
+      </div>
     </div>
   );
 }

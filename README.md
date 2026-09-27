@@ -44,8 +44,10 @@ These are independent development workflows using synthetic records. The browser
 - Reads HubSpot Contacts or Salesforce Leads back through the same visual
   mapping path used by CSV, then proposes rather than silently applies changes.
 - Syncs eligible contacts to HubSpot Contacts or Salesforce Leads with
-  read-before-write field diffs, 100-record ceilings, per-record receipts, and
-  update rollback. Newly created records are never auto-deleted.
+  [imported-file CRM comparison](docs/import-crm-comparison.md), field diffs,
+  100-record ceilings, per-record receipts, and update rollback. Direct
+  connectors distinguish new records from exact email matches and hold unsafe
+  matches before execution. Newly created records are never auto-deleted.
 - Includes a source-driven Salesforce development slice: a published read-only
   Agentforce triage path plus a separate human-approved Screen Flow, invocable
   Apex planner, Queueable executor, Custom Metadata policies, stale-record
@@ -210,6 +212,7 @@ Lead webhook -> n8n normalize/score/route -> CRM + BigQuery -> dbt -> dashboard
 
 Full instructions: [self-hosting](docs/self-hosting.md),
 [duplicate audit](docs/duplicate-audit.md),
+[imported-file CRM comparison](docs/import-crm-comparison.md),
 [Google Sheets](docs/google-sheets-setup.md),
 [HubSpot](docs/hubspot-csv-setup.md), and
 [Salesforce](docs/salesforce-csv-setup.md). The deployable Salesforce developer
@@ -219,9 +222,12 @@ slice is documented in [Flow, Apex, and Agentforce proof](docs/salesforce-agentf
 
 - The browser never receives CRM, n8n, or Google credentials.
 - Unconfigured connectors do not appear as operational choices.
-- Every connector follows Preview → Validate → Execute → Receipt → Undo/Export.
-- CRM execution refuses a plan after 15 minutes or whenever a fresh provider
-  read no longer matches the reviewed fingerprint.
+- Direct CRM connectors offer Compare with CRM → Review → Execute → Receipt
+  → eligible update rollback. The HubSpot n8n path remains a delegated email
+  upsert and does not provide this comparison or rollback.
+- Governed CRM execution refuses a plan after 15 minutes or whenever a fresh
+  provider read no longer matches the reviewed fingerprint. Failed or incomplete
+  reads cannot establish that a record is absent.
 - Destination gates hold unresolved duplicates, invalid email, missing company,
   missing owner, and lifecycle regression out of generic writes.
 - Public templates contain no credential bindings or private project IDs.
@@ -231,13 +237,20 @@ slice is documented in [Flow, Apex, and Agentforce proof](docs/salesforce-agentf
   at provider merges or deletes records created by a successful run.
 - Duplicate-audit approval saves a review decision only; no confidence band
   triggers an automatic native merge.
-- Multiple matching Salesforce Leads fail closed instead of selecting one.
+- Salesforce Contact matches, converted Leads, and ambiguous matches are held.
+  Both direct connectors hold multiple imported rows targeting the same CRM
+  record. Exact matching does not infer identity from names or companies.
+- HubSpot direct creates never fall back to an update on conflict. Salesforce
+  writes retain configured duplicate rules with `allowSave=false`. Comparison
+  and reread do not make the later write atomic against other CRM writers.
 - Production CRM writes remain disabled until `CONTROL_TOWER_SYNC_KEY` is set.
 - The synthetic merge keeps source rows queryable and points them to a canonical
   record rather than deleting them.
 
 This repository is a self-hosted reference implementation, not a managed
 multi-tenant service. Put any hosted instance behind authentication and HTTPS.
+The imported-file CRM comparison is covered by mocked responses and synthetic
+records; the dated Salesforce-native receipts above do not verify that new path.
 
 ## Development
 

@@ -19,7 +19,7 @@ describe('governed CRM source and write-back', () => {
     const plan = buildCrmWritePlan('salesforce', 'test.csv', contacts, existing, new Date('2026-08-26T20:00:00Z'));
     expect(plan).toMatchObject({ creates: 0, updates: 1, unchanged: 1, held: 1, requested: 3 });
     expect(plan.records[0].changes).toEqual([{ field: 'jobTitle', before: 'Old title', after: 'RevOps' }]);
-    expect(plan.records[2].reason).toMatch(/2 active CRM records/u);
+    expect(plan.records[2].reason).toMatch(/2 CRM records/u);
   });
 
   it('creates a rollback only for updates and detects stale or changed plans', () => {
@@ -48,5 +48,38 @@ describe('governed CRM source and write-back', () => {
 
 function native(nativeId: string, email: string, jobTitle: string | null): NativeCrmRecord {
   const local = email.split('@')[0];
-  return { nativeId, email, fields: { firstName: `${local.charAt(0).toUpperCase()}${local.slice(1)}`, lastName: 'Person', company: 'Example', phone: null, jobTitle, website: null } };
+  return { nativeId, objectType: 'lead', isConverted: false, email, fields: { firstName: `${local.charAt(0).toUpperCase()}${local.slice(1)}`, lastName: 'Person', company: 'Example', phone: null, jobTitle, website: null } };
 }
+
+describe('CRM import matching evidence', () => {
+  it('holds Salesforce Contacts and converted Leads instead of proposing another Lead', () => {
+    const existing = new Map<string, NativeCrmRecord[]>([
+      ['one@example.com', [{ ...native('003-1', 'one@example.com', 'RevOps'), objectType: 'contact' }]],
+      ['two@example.com', [{ ...native('00Q-2', 'two@example.com', 'GTM Engineer'), isConverted: true }]],
+    ]);
+    const plan = buildCrmWritePlan('salesforce', 'import.csv', contacts, existing);
+    expect(plan).toMatchObject({ creates: 1, updates: 0, held: 2 });
+    expect(plan.records[0]).toMatchObject({ operation: 'hold', matches: [{ nativeId: '003-1', objectType: 'contact' }] });
+    expect(plan.records[0].reason).toContain('existing Salesforce Contact');
+    expect(plan.records[1].reason).toContain('converted Salesforce Lead');
+  });
+
+  it('holds two imported emails targeting the same native Contact', () => {
+    const record = { ...native('hs-1', 'primary@example.com', 'RevOps'), objectType: 'contact' as const };
+    const existing = new Map([['one@example.com', [record]], ['two@example.com', [record]]]);
+    const plan = buildCrmWritePlan('hubspot', 'aliases.csv', contacts.slice(0, 2), existing);
+    expect(plan).toMatchObject({ creates: 0, updates: 0, held: 2 });
+    expect(plan.records.every((row) => row.reason?.includes('Multiple imported rows'))).toBe(true);
+    expect(plan.records[0].matches[0]).toMatchObject({ nativeId: 'hs-1', email: 'primary@example.com' });
+  });
+
+  it('invalidates held comparisons when the matched CRM record changes', () => {
+    const before = new Map([['one@example.com', [{ ...native('003-1', 'one@example.com', 'RevOps'), objectType: 'contact' as const }]]]);
+    const after = new Map([['one@example.com', [{ ...native('003-2', 'one@example.com', 'RevOps'), objectType: 'contact' as const }]]]);
+    const oldPlan = buildCrmWritePlan('salesforce', 'import.csv', contacts.slice(0, 1), before);
+    const newPlan = buildCrmWritePlan('salesforce', 'import.csv', contacts.slice(0, 1), after);
+    expect(oldPlan.held).toBe(1);
+    expect(newPlan.held).toBe(1);
+    expect(planStillMatches(oldPlan, newPlan)).toBe(false);
+  });
+});

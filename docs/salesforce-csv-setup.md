@@ -19,18 +19,29 @@ Lead fields cross the network boundary during that separate write workflow.
 
 Merged rows, malformed or overlong emails, unresolved duplicates, lifecycle regressions, missing company, and missing last name are held back. Salesforce requires `Company` and `LastName` on Leads. Owner, status, source, score, lifecycle, and custom fields are not written because those values are organization-specific.
 
-The connector does a bounded SOQL lookup before every write:
+The direct connector compares at most 100 eligible imported rows by exact email
+across both Leads, including converted Leads, and Contacts:
 
-- no active Lead with the email: create one;
-- exactly one active Lead: update its portable fields;
-- more than one active Lead: return a held failure instead of guessing.
+- no match after complete successful reads: propose a new Lead;
+- exactly one unconverted Lead, with no other match: propose its field changes;
+- any Contact, converted Lead, or ambiguous match: hold the row;
+- multiple imported rows targeting the same native record: hold those rows.
+
+Failed, invalid, or incomplete reads stop comparison; a saved whole-account scan
+cannot establish absence. Different unlinked emails are not matched by name or
+company. See [comparison cases and limits](import-crm-comparison.md).
 
 ## Local connection
 
 1. Authorize Salesforce CLI with `sf org login web --alias gtm-control-tower-salesforce --set-default`.
 2. Run `npm run configure:salesforce`. It reads the current CLI session into ignored, owner-readable `.env.local` without printing the access token.
 3. Restart the dashboard. Import a CSV or read a bounded active-Lead sample,
-   resolve held rows, preview the exact field diff, then execute the plan.
+   resolve local holds, and choose **Compare N with CRM** in `/app/lab`. Review
+   matched record IDs, held reasons, and exact field changes before executing.
+
+The configured user needs read access to Leads, Contacts, their compared fields,
+and referenced Account `Name` and `Website`, plus write access to the mapped Lead
+fields. A successful Lead-only source read does not qualify the Contact lookup.
 
 ## Whole-account Lead and Contact audit
 
@@ -71,6 +82,15 @@ The reviewed plan expires after fifteen minutes and is rejected if a fresh SOQL
 read produces a different fingerprint. `/runs` retains the native per-record
 receipt and a portable backup for updated fields. Rollback restores exact empty
 values as `null`; newly created Leads are never automatically deleted.
+
+Writes set `Sforce-Duplicate-Rule-Header: allowSave=false`; they do not bypass
+configured Salesforce duplicate rules. The organization's rules still determine
+which duplicates are detected and blocked. Salesforce documents that header in
+its [duplicate-rule guide](https://developer.salesforce.com/docs/platform/api-rest/guide/headers-duplicaterules.html).
+The fresh read and later write are not atomic: another CRM writer can change
+records between them. Matching is limited to records visible to the configured
+credentials, and no native merge or Lead conversion is performed. The disabled
+Salesforce n8n template node is unchanged; it is not this comparison path.
 
 The generated environment includes the organization instance URL, its current
 API version, and a local access token. Treat `.env.local` as a secret even though
