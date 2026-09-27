@@ -1,0 +1,751 @@
+{
+  "startedAt": "2026-09-27T19:25:56.719Z",
+  "scope": "Read-only configured development CRM qualification using existing synthetic fixtures",
+  "providers": {
+    "hubspot": {
+      "scan": {
+        "records": 17,
+        "pages": 1,
+        "sourceComplete": true,
+        "startedAt": "2026-09-27T19:26:00.613Z",
+        "completedAt": "2026-09-27T19:26:01.021Z"
+      },
+      "fixtureCount": 12,
+      "fixtureCoverage": {
+        "names": 12,
+        "phones": 8,
+        "states": 0,
+        "additionalEmails": 0
+      },
+      "rows": [
+        {
+          "case": "exact",
+          "candidateCount": 2,
+          "suggestions": [
+            {
+              "fixture": true,
+              "objectType": "contact",
+              "score": 100,
+              "evidence": [
+                {
+                  "key": "name",
+                  "weight": 32
+                },
+                {
+                  "key": "exact_email",
+                  "weight": 90
+                },
+                {
+                  "key": "phone",
+                  "weight": 30
+                },
+                {
+                  "key": "company",
+                  "weight": 12
+                }
+              ],
+              "comparisonStatuses": [
+                {
+                  "field": "name",
+                  "status": "match"
+                },
+                {
+                  "field": "email",
+                  "status": "match"
+                },
+                {
+                  "field": "phone",
+                  "status": "match"
+                },
+                {
+                  "field": "state",
+                  "status": "missing"
+                },
+                {
+                  "field": "company",
+                  "status": "match"
+                }
+              ]
+            },
+            {
+              "fixture": true,
+              "objectType": "contact",
+              "score": 47,
+              "evidence": [
+                {
+                  "key": "name",
+                  "weight": 32
+                },
+                {
+                  "key": "email_conflict",
+                  "weight": -22
+                },
+                {
+                  "key": "phone",
+                  "weight": 30
+                },
+                {
+                  "key": "company",
+                  "weight": 12
+                }
+              ],
+              "comparisonStatuses": [
+                {
+                  "field": "name",
+                  "status": "match"
+                },
+                {
+                  "field": "email",
+                  "status": "conflict"
+                },
+                {
+                  "field": "phone",
+                  "status": "match"
+                },
+                {
+                  "field": "state",
+                  "status": "missing"
+                },
+                {
+                  "field": "company",
+                  "status": "match"
+                }
+              ]
+            }
+          ],
+          "warnings": []
+        },
+        {
+          "case": "changed-email",
+          "candidateCount": 2,
+          "suggestions": [
+            {
+              "fixture": true,
+              "objectType": "contact",
+              "score": 47,
+              "evidence": [
+                {
+                  "key": "name",
+                  "weight": 32
+                },
+                {
+                  "key": "email_conflict",
+                  "weight": -22
+                },
+                {
+                  "key": "phone",
+                  "weight": 30
+                },
+                {
+                  "key": "company",
+                  "weight": 12
+                }
+              ],
+              "comparisonStatuses": [
+                {
+                  "field": "name",
+                  "status": "match"
+                },
+                {
+                  "field": "email",
+                  "status": "conflict"
+                },
+                {
+                  "field": "phone",
+                  "status": "match"
+                },
+                {
+                  "field": "state",
+                  "status": "missing"
+                },
+                {
+                  "field": "company",
+                  "status": "match"
+                }
+              ]
+            },
+            {
+              "fixture": true,
+              "objectType": "contact",
+              "score": 47,
+              "evidence": [
+                {
+                  "key": "name",
+                  "weight": 32
+                },
+                {
+                  "key": "email_conflict",
+                  "weight": -22
+                },
+                {
+                  "key": "phone",
+                  "weight": 30
+                },
+                {
+                  "key": "company",
+                  "weight": 12
+                }
+              ],
+              "comparisonStatuses": [
+                {
+                  "field": "name",
+                  "status": "match"
+                },
+                {
+                  "field": "email",
+                  "status": "conflict"
+                },
+                {
+                  "field": "phone",
+                  "status": "match"
+                },
+                {
+                  "field": "state",
+                  "status": "missing"
+                },
+                {
+                  "field": "company",
+                  "status": "match"
+                }
+              ]
+            }
+          ],
+          "warnings": []
+        },
+        {
+          "case": "same-name",
+          "candidateCount": 2,
+          "suggestions": [
+            {
+              "fixture": true,
+              "objectType": "contact",
+              "score": 32,
+              "evidence": [
+                {
+                  "key": "name",
+                  "weight": 32
+                }
+              ],
+              "comparisonStatuses": [
+                {
+                  "field": "name",
+                  "status": "match"
+                },
+                {
+                  "field": "email",
+                  "status": "missing"
+                },
+                {
+                  "field": "phone",
+                  "status": "missing"
+                },
+                {
+                  "field": "state",
+                  "status": "missing"
+                },
+                {
+                  "field": "company",
+                  "status": "missing"
+                }
+              ]
+            },
+            {
+              "fixture": true,
+              "objectType": "contact",
+              "score": 32,
+              "evidence": [
+                {
+                  "key": "name",
+                  "weight": 32
+                }
+              ],
+              "comparisonStatuses": [
+                {
+                  "field": "name",
+                  "status": "match"
+                },
+                {
+                  "field": "email",
+                  "status": "missing"
+                },
+                {
+                  "field": "phone",
+                  "status": "missing"
+                },
+                {
+                  "field": "state",
+                  "status": "missing"
+                },
+                {
+                  "field": "company",
+                  "status": "missing"
+                }
+              ]
+            }
+          ],
+          "warnings": []
+        },
+        {
+          "case": "unrelated",
+          "candidateCount": 0,
+          "suggestions": [],
+          "warnings": []
+        },
+        {
+          "case": "shared-phone",
+          "candidateCount": 0,
+          "suggestions": [],
+          "warnings": [
+            "This phone appears on more than 3 CRM records and is used only as supporting context, not to generate candidates on its own."
+          ]
+        }
+      ],
+      "warnings": [
+        "Match scores are deterministic review signals, not probabilities. No suggestion does not establish that a contact is absent from the CRM.",
+        "No usable state values are present in this CRM snapshot; that field cannot contribute to this analysis.",
+        "State comparison treats US state names and two-letter codes as equivalent; other regions use normalized text.",
+        "Phone comparison ignores extensions and assumes a US country code for ten-digit numbers; a shared phone is not proof of identity."
+      ],
+      "status": "completed"
+    },
+    "salesforce": {
+      "scan": {
+        "records": 130,
+        "pages": 2,
+        "sourceComplete": true,
+        "startedAt": "2026-09-27T19:26:01.026Z",
+        "completedAt": "2026-09-27T19:26:01.824Z"
+      },
+      "fixtureCount": 7,
+      "fixtureCoverage": {
+        "names": 7,
+        "phones": 3,
+        "states": 0,
+        "additionalEmails": 0
+      },
+      "rows": [
+        {
+          "case": "exact",
+          "candidateCount": 2,
+          "suggestions": [
+            {
+              "fixture": true,
+              "objectType": "lead",
+              "score": 100,
+              "evidence": [
+                {
+                  "key": "name",
+                  "weight": 32
+                },
+                {
+                  "key": "exact_email",
+                  "weight": 90
+                },
+                {
+                  "key": "phone",
+                  "weight": 30
+                },
+                {
+                  "key": "company",
+                  "weight": 12
+                }
+              ],
+              "comparisonStatuses": [
+                {
+                  "field": "name",
+                  "status": "match"
+                },
+                {
+                  "field": "email",
+                  "status": "match"
+                },
+                {
+                  "field": "phone",
+                  "status": "match"
+                },
+                {
+                  "field": "state",
+                  "status": "missing"
+                },
+                {
+                  "field": "company",
+                  "status": "match"
+                }
+              ]
+            },
+            {
+              "fixture": true,
+              "objectType": "contact",
+              "score": 47,
+              "evidence": [
+                {
+                  "key": "name",
+                  "weight": 32
+                },
+                {
+                  "key": "email_conflict",
+                  "weight": -22
+                },
+                {
+                  "key": "phone",
+                  "weight": 30
+                },
+                {
+                  "key": "company",
+                  "weight": 12
+                }
+              ],
+              "comparisonStatuses": [
+                {
+                  "field": "name",
+                  "status": "match"
+                },
+                {
+                  "field": "email",
+                  "status": "conflict"
+                },
+                {
+                  "field": "phone",
+                  "status": "match"
+                },
+                {
+                  "field": "state",
+                  "status": "missing"
+                },
+                {
+                  "field": "company",
+                  "status": "match"
+                }
+              ]
+            }
+          ],
+          "warnings": []
+        },
+        {
+          "case": "changed-email",
+          "candidateCount": 2,
+          "suggestions": [
+            {
+              "fixture": true,
+              "objectType": "contact",
+              "score": 47,
+              "evidence": [
+                {
+                  "key": "name",
+                  "weight": 32
+                },
+                {
+                  "key": "email_conflict",
+                  "weight": -22
+                },
+                {
+                  "key": "phone",
+                  "weight": 30
+                },
+                {
+                  "key": "company",
+                  "weight": 12
+                }
+              ],
+              "comparisonStatuses": [
+                {
+                  "field": "name",
+                  "status": "match"
+                },
+                {
+                  "field": "email",
+                  "status": "conflict"
+                },
+                {
+                  "field": "phone",
+                  "status": "match"
+                },
+                {
+                  "field": "state",
+                  "status": "missing"
+                },
+                {
+                  "field": "company",
+                  "status": "match"
+                }
+              ]
+            },
+            {
+              "fixture": true,
+              "objectType": "lead",
+              "score": 47,
+              "evidence": [
+                {
+                  "key": "name",
+                  "weight": 32
+                },
+                {
+                  "key": "email_conflict",
+                  "weight": -22
+                },
+                {
+                  "key": "phone",
+                  "weight": 30
+                },
+                {
+                  "key": "company",
+                  "weight": 12
+                }
+              ],
+              "comparisonStatuses": [
+                {
+                  "field": "name",
+                  "status": "match"
+                },
+                {
+                  "field": "email",
+                  "status": "conflict"
+                },
+                {
+                  "field": "phone",
+                  "status": "match"
+                },
+                {
+                  "field": "state",
+                  "status": "missing"
+                },
+                {
+                  "field": "company",
+                  "status": "match"
+                }
+              ]
+            }
+          ],
+          "warnings": []
+        },
+        {
+          "case": "same-name",
+          "candidateCount": 2,
+          "suggestions": [
+            {
+              "fixture": true,
+              "objectType": "lead",
+              "score": 32,
+              "evidence": [
+                {
+                  "key": "name",
+                  "weight": 32
+                }
+              ],
+              "comparisonStatuses": [
+                {
+                  "field": "name",
+                  "status": "match"
+                },
+                {
+                  "field": "email",
+                  "status": "missing"
+                },
+                {
+                  "field": "phone",
+                  "status": "missing"
+                },
+                {
+                  "field": "state",
+                  "status": "missing"
+                },
+                {
+                  "field": "company",
+                  "status": "missing"
+                }
+              ]
+            },
+            {
+              "fixture": true,
+              "objectType": "lead",
+              "score": 32,
+              "evidence": [
+                {
+                  "key": "name",
+                  "weight": 32
+                }
+              ],
+              "comparisonStatuses": [
+                {
+                  "field": "name",
+                  "status": "match"
+                },
+                {
+                  "field": "email",
+                  "status": "missing"
+                },
+                {
+                  "field": "phone",
+                  "status": "missing"
+                },
+                {
+                  "field": "state",
+                  "status": "missing"
+                },
+                {
+                  "field": "company",
+                  "status": "missing"
+                }
+              ]
+            }
+          ],
+          "warnings": []
+        },
+        {
+          "case": "unrelated",
+          "candidateCount": 0,
+          "suggestions": [],
+          "warnings": []
+        },
+        {
+          "case": "shared-phone",
+          "candidateCount": 0,
+          "suggestions": [],
+          "warnings": [
+            "This row has no usable values in the selected fields."
+          ]
+        }
+      ],
+      "warnings": [
+        "Match scores are deterministic review signals, not probabilities. No suggestion does not establish that a contact is absent from the CRM.",
+        "State comparison treats US state names and two-letter codes as equivalent; other regions use normalized text.",
+        "Phone comparison ignores extensions and assumes a US country code for ten-digit numbers; a shared phone is not proof of identity."
+      ],
+      "status": "completed"
+    }
+  },
+  "requests": [
+    {
+      "provider": "hubspot",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "provider": "salesforce",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "provider": "salesforce",
+      "method": "GET",
+      "status": 200
+    }
+  ],
+  "writes": 0,
+  "salesforceAccount": [
+    {
+      "type": "Developer Edition",
+      "isSandbox": false
+    }
+  ],
+  "completedAt": "2026-09-27T19:26:01.833Z",
+  "approximateAssertions": "passed",
+  "exactPreview": {
+    "startedAt": "2026-09-27T19:28:05.886Z",
+    "providers": {
+      "hubspot": {
+        "status": "passed",
+        "rows": [
+          {
+            "case": "existing-1",
+            "operation": "unchanged",
+            "matchedObjectTypes": [
+              "contact"
+            ],
+            "nativeIdMatchesFixture": true,
+            "changeCount": 0,
+            "reason": null
+          },
+          {
+            "case": "existing-2",
+            "operation": "update",
+            "matchedObjectTypes": [
+              "contact"
+            ],
+            "nativeIdMatchesFixture": true,
+            "changeCount": 1,
+            "reason": null
+          },
+          {
+            "case": "new-unrelated",
+            "operation": "create",
+            "matchedObjectTypes": [],
+            "nativeIdMatchesFixture": false,
+            "changeCount": 6,
+            "reason": "No existing exact email match was returned by the CRM lookup."
+          }
+        ]
+      },
+      "salesforce": {
+        "status": "passed",
+        "rows": [
+          {
+            "case": "existing-1",
+            "operation": "hold",
+            "matchedObjectTypes": [
+              "contact"
+            ],
+            "nativeIdMatchesFixture": true,
+            "changeCount": 0,
+            "reason": "An existing Salesforce Contact has this email. Review that Contact instead of creating a Lead."
+          },
+          {
+            "case": "existing-2",
+            "operation": "unchanged",
+            "matchedObjectTypes": [
+              "lead"
+            ],
+            "nativeIdMatchesFixture": true,
+            "changeCount": 0,
+            "reason": null
+          },
+          {
+            "case": "new-unrelated",
+            "operation": "create",
+            "matchedObjectTypes": [],
+            "nativeIdMatchesFixture": false,
+            "changeCount": 6,
+            "reason": "No existing exact email match was returned by the CRM lookup."
+          }
+        ]
+      }
+    },
+    "requests": [
+      {
+        "provider": "hubspot",
+        "method": "POST",
+        "operation": "identity read",
+        "status": 207
+      },
+      {
+        "provider": "hubspot",
+        "method": "GET",
+        "operation": "identity read",
+        "status": 404
+      },
+      {
+        "provider": "salesforce",
+        "method": "GET",
+        "operation": "identity read",
+        "status": 200
+      },
+      {
+        "provider": "salesforce",
+        "method": "GET",
+        "operation": "identity read",
+        "status": 200
+      }
+    ],
+    "writes": 0,
+    "completedAt": "2026-09-27T19:28:07.102Z"
+  },
+  "sourceCommit": "d7fc0f000c1e83dcd876d831acb058b05580f21a",
+  "method": "Invoked actual application route handlers under Node with a disposable SQLite database; external requests reached native CRM read endpoints. No live-provider browser run.",
+  "limitations": [
+    "Scores are not calibrated probabilities.",
+    "No populated state or additional HubSpot email on selected fixtures.",
+    "Provider results fit one page per object; continuation cursors were not exercised.",
+    "No CRM write, merge, conversion, duplicate-rule execution, or rollback was performed.",
+    "No empirical precision or recall measurement."
+  ]
+}

@@ -334,3 +334,13 @@ IDs and compared values so an operator can investigate in the CRM before the
 separate write preview. Reuse paged CRM reads, reject malformed pagination rather
 than reporting false completion, and review imports in batches of 100. Add no
 schema or dependencies; live development-account qualification remains pending.
+
+## September 27, 2026 — Distinguish native reads from write qualification
+
+A read-only run against the configured HubSpot account and Salesforce Developer
+Edition verified fresh scans, stored approximate suggestions and exact-email
+preview proposals using existing labeled fixtures. Record the dated results in
+`docs/import-matching-native-check.md`; keep screenshots from earlier simulated
+browser checks labeled separately. Do not turn successful reads into a claim
+about write execution, native duplicate rules or measured matching accuracy.
+No runtime code or CRM records changed during this qualification pass.

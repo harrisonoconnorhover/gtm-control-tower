@@ -23,7 +23,7 @@ the repository.
 4. Inspect the [possible CRM match walkthrough](docs/approximate-import-matches.md): choose imported fields, compare a dated snapshot, and examine ranked suggestions and conflicts. The scores are review signals, not identity probabilities or permission to sync.
 5. For the separate Salesforce development work, read the [approval, stale-write, and partial-success test contract](docs/salesforce-apex-routing.md). Its dated native results are historical evidence, separate from the browser demonstration and the current CI run.
 
-These are independent development workflows using synthetic records. The browser example performs no CRM writes; the operator workspace requires your own configuration for connected operations.
+These are independent development workflows using synthetic records. The browser example performs no CRM writes; the operator workspace requires your own configuration for connected operations. A [dated native read check](docs/import-matching-native-check.md) verifies import-match suggestions and exact-email preview proposals against existing fictional HubSpot and Salesforce records; no proposed CRM changes were executed.
 
 ## What it does
 

@@ -60,6 +60,24 @@ This screenshot uses fictional records in a disposable local database, through
 the actual import, snapshot API, matcher, and review screen. With all five fields
 selected, Ada scores 72/100 and Grace 38/100. No live CRM was queried or changed.
 
+## Native read check — September 27, 2026
+
+At 19:26 UTC, a separate read-only check used the actual CSV parser, route
+handlers, SQLite scan storage, and comparison endpoint against the configured
+accounts: 17 HubSpot Contacts in one page and 130 Salesforce unconverted Leads
+and Contacts in two object pages. Both snapshots reached provider completion.
+Existing labeled fixtures produced exact matches at 100/100, changed-email
+matches with corroborating name/phone/company at 47/100, and same-name coworker
+suggestions at 32/100. Unrelated imports produced no suggestions. Salesforce's
+secondary mobile phone contributed matching evidence; a HubSpot phone shared by
+four records produced a warning and no suggestion when used alone. No CRM writes
+were made.
+
+This check did not exercise the browser with a live provider, continuation
+cursors, or populated state/additional-email values. The scores remain
+uncalibrated. See the [dated native-check evidence and limits](import-matching-native-check.md);
+the illustrated walkthrough above remains a separate local fixture exercise.
+
 ## Coverage and limits
 
 Read the snapshot's dates, record count, and complete/partial status. Provider

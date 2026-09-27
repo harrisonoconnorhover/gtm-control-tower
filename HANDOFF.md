@@ -2,38 +2,37 @@
 
 ## Finished
 
-- Added read-only import-to-CRM suggestions with selectable name, email, phone, state and company fields, proposed from usable import values.
-- Ranked up to three native CRM records per imported person, showing score, supporting values, conflicts and missing fields. Existing exact-email write protections remain separate.
-- Reused durable paged CRM snapshots with visible dates and coverage. HubSpot reads additional emails and state; Salesforce reads Lead State and Contact MailingState.
-- Added a fictional walkthrough and inspected screenshot. No CRM records were read or written in live accounts during qualification.
-- Published source `01dae32`, the guide and screenshot, and portfolio-site update `ef46539`. Published artifacts and canonical site HTML match reviewed bytes.
+- Verified actual CRM reads through the application's scan, storage and import-matching handlers: 17 HubSpot Contacts; 94 Salesforce unconverted Leads and 36 Contacts. Both scans completed.
+- Existing fictional fixtures produced expected exact-email, changed-email, same-name, shared-phone and unrelated-person suggestions. Salesforce secondary mobile-phone matching also worked.
+- Verified exact-email preview proposals: HubSpot unchanged/update/create; Salesforce Contact hold, Lead unchanged and create. Existing native IDs matched the stored fixtures.
+- Added a dated native-check report and redacted results; updated both walkthroughs to distinguish native reads from simulated browser evidence.
+- Made no CRM writes, new features or runtime-code changes.
 
 ## Try It
 
-1. Start the self-hosted app using the README, configure a direct CRM connection, and open `/app/lab`.
-2. Import the CSV in `docs/approximate-import-matches.md`, select the CRM destination, and inspect **Find possible CRM matches**.
-3. Select fields, read a CRM snapshot, find suggestions, and download the review JSON. The public static demo has no CRM connection.
+1. Read `docs/import-matching-native-check.md` for observed cases, request statuses and remaining limits.
+2. In a configured self-hosted `/app/lab`, import a fictional CSV and use **Find possible CRM matches** against a fresh snapshot.
+3. Use the separate **Compare N with CRM** preview to inspect exact-email proposals. Review does not execute them.
 
 ## Checks
 
-- All 210 tests across 23 suites passed. TypeScript, full lint, secret scan, diff check, operator build and public build passed. The development mirror passed 103 focused tests and TypeScript, preserving its inbound-routing link.
-- Browser checks passed against a disposable local D1 database: real import/API/scoring, field changes, stale-response rejection, 101-row paging, partial coverage and matching JSON export. Synthetic scan-control responses verified pause/resume and cursor-cycle handling.
-- Desktop and 390px app and live-site checks passed with no page errors or overflow. Fixture scores were 72/100, 38/100 and no suggestion. Both published guide links returned HTTP 200; the site Pages deployment passed.
-- [Published runtime CI for `01dae32`](https://github.com/harrisonoconnorhover/gtm-control-tower/actions/runs/36343392025) passed tests, lint, secret/dependency checks, both builds and isolated fresh-install smoke.
+- Native run on September 27, 2026 at 19:26–19:28 UTC: three scan reads and four identity reads; expected scores, fixture membership, missing-field handling and preview operations passed assertions.
+- HubSpot's mixed batch read returned 207; an individual 404 confirmed the missing fictional email. Salesforce Developer Edition and existing CLI session were verified.
+- Prior runtime release passed 210 tests, lint, TypeScript, both builds, simulated/local browser checks and fresh-install CI. This pass changes documentation/evidence only; Markdown links/fences, redacted JSON, credential/contact-detail exclusion and diff checks passed.
 
 ## Decisions
 
-- Scores rank evidence; they are not calibrated probabilities. Missing values never count as matches, and broad search limits remain visible.
-- Suggestions do not link, merge, update or change write eligibility. Investigate possible duplicates before using the separate exact-email write preview.
-- Reuse storage and normalizers, with no schema or dependency changes. State is separate from sales territory.
+- Retain scores out of 100 as uncalibrated review signals; 100/100 does not mean certainty.
+- Publish counts and fictional case outcomes; keep account IDs, native record IDs, credentials and contact details out of the evidence artifact.
+- Native reads and preview proposals do not qualify writes or replace the earlier browser-test boundary.
 
 ## Remaining
 
-- Development mirror `ab48dd8` remains local; no private deployment occurred.
-- Qualify against live development accounts before relying on provider-specific visibility, permissions or duplicate rules. Snapshot age, caps and concurrent CRM changes limit coverage; no suggestion does not establish absence.
+- Publish the report and updated website evidence sentence. Documentation is mirrored into the local development checkout, preserving private development differences.
+- Native populated state/additional-email cases, continuation cursors, converted Leads, write execution, duplicate rules and rollback remain outside this run. No measured precision/recall claim.
 
 ## Review First
 
-- `lib/import-match.ts` and `tests/import-match.test.ts` for scoring and limits.
-- `components/import-match-review.tsx` and `app/api/control-tower/import-matches/route.ts` for the review flow.
-- `docs/approximate-import-matches.md` for the fictional walkthrough and boundaries.
+- `docs/import-matching-native-check.md` and its redacted JSON evidence.
+- `docs/approximate-import-matches.md` and `docs/import-crm-comparison.md` verification sections.
+- The existing **Compare with CRM** paragraph on the personal site.
