@@ -364,3 +364,15 @@ the no-follow behavior using the documented
 [manual redirect mode](https://developers.cloudflare.com/workers/runtime-apis/request/#properties).
 Check Salesforce response status before parsing JSON so an empty redirect body
 produces the intended status error. No new redirect helper or fallback is needed.
+
+## September 27, 2026 — Retain direct CRM outcomes across batches
+
+Direct execution replaced the previous batch's display receipt, which caused
+completed rows to return to the pending list after a second batch. Converting
+that receipt to legacy sync statuses also mislabeled unchanged Salesforce rows
+as updates and held rows as failures. Keep a separate in-session progress summary
+of original direct receipt records, with the latest result per contact ID. Only
+created, updated and unchanged rows count as completed. Preserve native run IDs
+and rollback data on individual saved runs rather than inventing one combined
+execution receipt. Reuse existing import/correction/repair/undo/reset invalidation;
+add no storage migration or connector/API behavior change.

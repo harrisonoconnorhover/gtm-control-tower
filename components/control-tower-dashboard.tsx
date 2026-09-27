@@ -53,7 +53,7 @@ import {
 } from '@/lib/live-control-tower';
 import type { MappingPreset, SavedWorkspace, WorkspaceState } from '@/lib/workspace';
 import type { ConnectorRunDetails } from '@/lib/connector-run';
-import type { CrmWritePlan, CrmWritebackReceipt, PortableCrmContact } from '@/lib/crm-workflow';
+import { combineCrmWritebackProgress, isSuccessfulCrmWritebackRecord, type CrmWritePlan, type CrmWritebackReceipt, type CrmWritebackProgress, type PortableCrmContact } from '@/lib/crm-workflow';
 
 const dbtTests = [
   ['unique_account_domain', '2 duplicates contained'],
@@ -181,11 +181,13 @@ export function ControlTowerDashboard() {
   const [csvError, setCsvError] = useState<string | null>(null);
   const [hubSpotSyncStatus, setHubSpotSyncStatus] = useState<'idle' | 'sending' | 'complete' | 'partial' | 'error'>('idle');
   const [hubSpotSyncReceipt, setHubSpotSyncReceipt] = useState<HubSpotSyncReceipt | null>(null);
+  const [hubSpotWritebackProgress, setHubSpotWritebackProgress] = useState<CrmWritebackProgress | null>(null);
   const [hubSpotSyncError, setHubSpotSyncError] = useState<string | null>(null);
   const [hubSpotSyncKey, setHubSpotSyncKey] = useState(() => typeof window === 'undefined' ? '' : window.sessionStorage.getItem('gtm-control-tower-operator-key') ?? '');
   const [hubSpotPlan, setHubSpotPlan] = useState<CrmWritePlan | null>(null);
   const [salesforceSyncStatus, setSalesforceSyncStatus] = useState<'idle' | 'sending' | 'complete' | 'partial' | 'error'>('idle');
   const [salesforceSyncReceipt, setSalesforceSyncReceipt] = useState<SalesforceSyncReceipt | null>(null);
+  const [salesforceWritebackProgress, setSalesforceWritebackProgress] = useState<CrmWritebackProgress | null>(null);
   const [salesforceSyncError, setSalesforceSyncError] = useState<string | null>(null);
   const [salesforceSyncKey, setSalesforceSyncKey] = useState(() => typeof window === 'undefined' ? '' : window.sessionStorage.getItem('gtm-control-tower-operator-key') ?? '');
   const [salesforcePlan, setSalesforcePlan] = useState<CrmWritePlan | null>(null);
@@ -200,8 +202,11 @@ export function ControlTowerDashboard() {
   const [persistenceStatus, setPersistenceStatus] = useState<'loading' | 'saved' | 'saving' | 'disabled' | 'error'>('loading');
   const hubSpotEligibleContacts = useMemo(() => csvContacts.filter(isHubSpotEligible), [csvContacts]);
   const syncedHubSpotContactIds = useMemo(
-    () => new Set(hubSpotSyncReceipt?.records.filter((record) => record.status === 'synced').map((record) => record.contactId) ?? []),
-    [hubSpotSyncReceipt],
+    () => new Set([
+      ...(hubSpotSyncReceipt?.records.filter((record) => record.status === 'synced').map((record) => record.contactId) ?? []),
+      ...(hubSpotWritebackProgress?.records.filter(isSuccessfulCrmWritebackRecord).map((record) => record.contactId) ?? []),
+    ]),
+    [hubSpotSyncReceipt, hubSpotWritebackProgress],
   );
   const pendingHubSpotContacts = useMemo(
     () => hubSpotEligibleContacts.filter((contact) => !syncedHubSpotContactIds.has(contact.contactId)),
@@ -209,8 +214,11 @@ export function ControlTowerDashboard() {
   );
   const salesforceEligibleContacts = useMemo(() => csvContacts.filter(isSalesforceEligible), [csvContacts]);
   const syncedSalesforceContactIds = useMemo(
-    () => new Set(salesforceSyncReceipt?.records.filter((record) => record.status !== 'failed').map((record) => record.contactId) ?? []),
-    [salesforceSyncReceipt],
+    () => new Set([
+      ...(salesforceSyncReceipt?.records.filter((record) => record.status !== 'failed').map((record) => record.contactId) ?? []),
+      ...(salesforceWritebackProgress?.records.filter(isSuccessfulCrmWritebackRecord).map((record) => record.contactId) ?? []),
+    ]),
+    [salesforceSyncReceipt, salesforceWritebackProgress],
   );
   const pendingSalesforceContacts = useMemo(
     () => salesforceEligibleContacts.filter((contact) => !syncedSalesforceContactIds.has(contact.contactId)),
@@ -514,7 +522,9 @@ export function ControlTowerDashboard() {
     setHubSpotPlan(null);
     setSalesforcePlan(null);
     setHubSpotSyncReceipt(null);
+    setHubSpotWritebackProgress(null);
     setSalesforceSyncReceipt(null);
+    setSalesforceWritebackProgress(null);
     setHubSpotSyncStatus('idle');
     setSalesforceSyncStatus('idle');
     setHubSpotSyncError(null);
@@ -727,13 +737,15 @@ export function ControlTowerDashboard() {
         plan, writeback: result,
       }, result.rollback);
       if (connectorId === 'hubspot') {
-        const records = result.records.map((record) => ({ contactId: record.contactId, email: record.email, status: record.status === 'failed' || record.status === 'held' ? 'failed' as const : 'synced' as const, hubSpotId: record.nativeId, created: record.status === 'created', error: record.error }));
-        const combined: HubSpotSyncReceipt = { accepted: true, status: result.failed || result.held ? 'partial' : 'complete', syncId: result.runId, requested: records.length, synced: records.filter((record) => record.status === 'synced').length, failed: records.filter((record) => record.status === 'failed').length, records, completedAt: result.completedAt };
-        setHubSpotSyncReceipt(combined); setHubSpotSyncStatus(combined.status); setHubSpotPlan(null);
+        const progress = combineCrmWritebackProgress(hubSpotWritebackProgress, result);
+        setHubSpotWritebackProgress(progress);
+        setHubSpotSyncStatus(progress.failed || progress.held ? 'partial' : 'complete');
+        setHubSpotPlan(null);
       } else {
-        const records = result.records.map((record) => ({ contactId: record.contactId, email: record.email, status: record.status === 'created' ? 'created' as const : record.status === 'failed' || record.status === 'held' ? 'failed' as const : 'updated' as const, salesforceId: record.nativeId, error: record.error }));
-        const combined: SalesforceSyncReceipt = { accepted: true, status: result.failed || result.held ? 'partial' : 'complete', syncId: result.runId, requested: records.length, created: records.filter((record) => record.status === 'created').length, updated: records.filter((record) => record.status === 'updated').length, failed: records.filter((record) => record.status === 'failed').length, records, completedAt: result.completedAt };
-        setSalesforceSyncReceipt(combined); setSalesforceSyncStatus(combined.status); setSalesforcePlan(null);
+        const progress = combineCrmWritebackProgress(salesforceWritebackProgress, result);
+        setSalesforceWritebackProgress(progress);
+        setSalesforceSyncStatus(progress.failed || progress.held ? 'partial' : 'complete');
+        setSalesforcePlan(null);
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'CRM write-back failed.';
@@ -972,6 +984,7 @@ export function ControlTowerDashboard() {
           hubSpotPendingCount={pendingHubSpotContacts.length}
           hubSpotSyncStatus={hubSpotSyncStatus}
           hubSpotSyncReceipt={hubSpotSyncReceipt}
+          hubSpotWritebackProgress={hubSpotWritebackProgress}
           hubSpotSyncError={hubSpotSyncError}
           hubSpotSyncKey={hubSpotSyncKey}
           hubSpotConfigured={hubSpotConfigured && destinationType === 'hubspot'}
@@ -981,6 +994,7 @@ export function ControlTowerDashboard() {
           salesforcePendingCount={pendingSalesforceContacts.length}
           salesforceSyncStatus={salesforceSyncStatus}
           salesforceSyncReceipt={salesforceSyncReceipt}
+          salesforceWritebackProgress={salesforceWritebackProgress}
           salesforceSyncError={salesforceSyncError}
           salesforceSyncKey={salesforceSyncKey}
           salesforceConfigured={salesforceConfigured && destinationType === 'salesforce'}
@@ -1211,6 +1225,7 @@ function FunkyCrmLab({
   hubSpotPendingCount,
   hubSpotSyncStatus,
   hubSpotSyncReceipt,
+  hubSpotWritebackProgress,
   hubSpotSyncError,
   hubSpotSyncKey,
   hubSpotConfigured,
@@ -1220,6 +1235,7 @@ function FunkyCrmLab({
   salesforcePendingCount,
   salesforceSyncStatus,
   salesforceSyncReceipt,
+  salesforceWritebackProgress,
   salesforceSyncError,
   salesforceSyncKey,
   salesforceConfigured,
@@ -1250,6 +1266,7 @@ function FunkyCrmLab({
   hubSpotPendingCount: number;
   hubSpotSyncStatus: 'idle' | 'sending' | 'complete' | 'partial' | 'error';
   hubSpotSyncReceipt: HubSpotSyncReceipt | null;
+  hubSpotWritebackProgress: CrmWritebackProgress | null;
   hubSpotSyncError: string | null;
   hubSpotSyncKey: string;
   hubSpotConfigured: boolean;
@@ -1259,6 +1276,7 @@ function FunkyCrmLab({
   salesforcePendingCount: number;
   salesforceSyncStatus: 'idle' | 'sending' | 'complete' | 'partial' | 'error';
   salesforceSyncReceipt: SalesforceSyncReceipt | null;
+  salesforceWritebackProgress: CrmWritebackProgress | null;
   salesforceSyncError: string | null;
   salesforceSyncKey: string;
   salesforceConfigured: boolean;
@@ -1281,8 +1299,14 @@ function FunkyCrmLab({
 }) {
   const active = contacts.filter((contact) => contact.recordStatus === 'active').length;
   const merged = contacts.filter((contact) => contact.recordStatus === 'merged').length;
-  const hubSpotResultByContact = new Map(hubSpotSyncReceipt?.records.map((record) => [record.contactId, record]) ?? []);
-  const salesforceResultByContact = new Map(salesforceSyncReceipt?.records.map((record) => [record.contactId, record]) ?? []);
+  const hubSpotResultByContact = new Map<string, { status: string; nativeId: string | null }>([
+    ...(hubSpotSyncReceipt?.records.map((record) => [record.contactId, { status: record.status, nativeId: record.hubSpotId }] as const) ?? []),
+    ...(hubSpotWritebackProgress?.records.map((record) => [record.contactId, record] as const) ?? []),
+  ]);
+  const salesforceResultByContact = new Map<string, { status: string; nativeId: string | null }>([
+    ...(salesforceSyncReceipt?.records.map((record) => [record.contactId, { status: record.status, nativeId: record.salesforceId }] as const) ?? []),
+    ...(salesforceWritebackProgress?.records.map((record) => [record.contactId, record] as const) ?? []),
+  ]);
   return (
     <section className="mb-6 overflow-hidden rounded-[30px] border border-white/10 bg-[#0c1d17]" aria-label="Funky CRM contact lab">
       <div className="flex flex-wrap items-start justify-between gap-4 border-b border-white/10 px-5 py-5 sm:px-6">
@@ -1321,6 +1345,7 @@ function FunkyCrmLab({
             pendingCount={hubSpotPendingCount}
             status={hubSpotSyncStatus}
             receipt={hubSpotSyncReceipt}
+            writebackProgress={hubSpotWritebackProgress}
             error={hubSpotSyncError}
             accessKey={hubSpotSyncKey}
             safeMode={hubSpotSafeWriteback}
@@ -1336,6 +1361,7 @@ function FunkyCrmLab({
             pendingCount={salesforcePendingCount}
             status={salesforceSyncStatus}
             receipt={salesforceSyncReceipt}
+            writebackProgress={salesforceWritebackProgress}
             error={salesforceSyncError}
             accessKey={salesforceSyncKey}
             safeMode={salesforceSafeWriteback}
@@ -1386,13 +1412,13 @@ function FunkyCrmLab({
                   <p className="mt-1 font-mono text-[9px] text-[#71877c]">{contact.lastAction.replaceAll('_', ' ')}</p>
                   {contact.canonicalContactId && <p className="mt-1 font-mono text-[9px] text-[#83bcff]">→ {contact.canonicalContactId}</p>}
                   {hubSpotResultByContact.get(contact.contactId) && (
-                    <p className={`mt-2 font-mono text-[9px] ${hubSpotResultByContact.get(contact.contactId)?.status === 'synced' ? 'text-[#cdfc54]' : 'text-[#ff9d7f]'}`}>
-                      HubSpot {hubSpotResultByContact.get(contact.contactId)?.status}{hubSpotResultByContact.get(contact.contactId)?.hubSpotId ? ` · ${hubSpotResultByContact.get(contact.contactId)?.hubSpotId}` : ''}
+                    <p className={`mt-2 font-mono text-[9px] ${['synced', 'created', 'updated', 'unchanged'].includes(hubSpotResultByContact.get(contact.contactId)?.status ?? '') ? 'text-[#cdfc54]' : 'text-[#ff9d7f]'}`}>
+                      HubSpot {hubSpotResultByContact.get(contact.contactId)?.status}{hubSpotResultByContact.get(contact.contactId)?.nativeId ? ` · ${hubSpotResultByContact.get(contact.contactId)?.nativeId}` : ''}
                     </p>
                   )}
                   {salesforceResultByContact.get(contact.contactId) && (
-                    <p className={`mt-1 font-mono text-[9px] ${salesforceResultByContact.get(contact.contactId)?.status !== 'failed' ? 'text-[#83bcff]' : 'text-[#ff9d7f]'}`}>
-                      Salesforce {salesforceResultByContact.get(contact.contactId)?.status}{salesforceResultByContact.get(contact.contactId)?.salesforceId ? ` · ${salesforceResultByContact.get(contact.contactId)?.salesforceId}` : ''}
+                    <p className={`mt-1 font-mono text-[9px] ${['created', 'updated', 'unchanged'].includes(salesforceResultByContact.get(contact.contactId)?.status ?? '') ? 'text-[#83bcff]' : 'text-[#ff9d7f]'}`}>
+                      Salesforce {salesforceResultByContact.get(contact.contactId)?.status}{salesforceResultByContact.get(contact.contactId)?.nativeId ? ` · ${salesforceResultByContact.get(contact.contactId)?.nativeId}` : ''}
                     </p>
                   )}
                 </td>
@@ -1428,6 +1454,7 @@ function HubSpotSyncPanel({
   pendingCount,
   status,
   receipt,
+  writebackProgress,
   error,
   accessKey,
   safeMode,
@@ -1442,6 +1469,7 @@ function HubSpotSyncPanel({
   pendingCount: number;
   status: 'idle' | 'sending' | 'complete' | 'partial' | 'error';
   receipt: HubSpotSyncReceipt | null;
+  writebackProgress: CrmWritebackProgress | null;
   error: string | null;
   accessKey: string;
   safeMode: boolean;
@@ -1451,7 +1479,8 @@ function HubSpotSyncPanel({
   onPreview: () => Promise<void>;
   onExecute: () => Promise<void>;
 }) {
-  const failedRecords = receipt?.records.filter((record) => record.status === 'failed') ?? [];
+  const failedRecords = writebackProgress?.records.filter((record) => record.status === 'failed' || record.status === 'held')
+    ?? receipt?.records.filter((record) => record.status === 'failed') ?? [];
   const batchCount = Math.min(100, pendingCount);
   return (
     <div className="border-b border-white/10 bg-[#07130f]/55 px-5 py-5 sm:px-6">
@@ -1481,13 +1510,14 @@ function HubSpotSyncPanel({
             disabled={status === 'sending' || pendingCount === 0}
             className="rounded-full bg-[#cdfc54] px-5 py-3 text-xs font-bold text-[#07130f] transition hover:bg-[#dcff83] disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {status === 'sending' ? (plan ? 'Writing approved plan…' : 'Inspecting HubSpot…') : pendingCount ? safeMode ? plan ? (plan.creates + plan.updates ? `Execute ${plan.creates + plan.updates} approved changes` : 'Record comparison result') : `Compare ${batchCount} with CRM` : `Sync ${batchCount}${pendingCount > 100 ? ` of ${pendingCount}` : ''} to HubSpot` : eligibleCount ? 'All clean contacts synced' : 'Fix held records first'}
+            {status === 'sending' ? (plan ? 'Writing approved plan…' : 'Inspecting HubSpot…') : pendingCount ? safeMode ? plan ? (plan.creates + plan.updates ? `Execute ${plan.creates + plan.updates} approved changes` : 'Record comparison result') : `Compare ${batchCount} with CRM` : `Sync ${batchCount}${pendingCount > 100 ? ` of ${pendingCount}` : ''} to HubSpot` : eligibleCount ? safeMode ? 'All clean contacts processed' : 'All clean contacts synced' : 'Fix held records first'}
           </button>
         </div>
       </div>
       {safeMode && plan && <ChangePlanCard plan={plan} onRefresh={onPreview} />}
       <div aria-live="polite" className="mt-4">
-        {receipt && (
+        {writebackProgress && <CrmWritebackProgressCard label="HubSpot" progress={writebackProgress} pendingCount={pendingCount} />}
+        {!writebackProgress && receipt && (
           <div className={`rounded-2xl border px-4 py-3 text-xs ${receipt.failed ? 'border-[#e6bd68]/25 bg-[#e6bd68]/[0.06] text-[#e6cf95]' : 'border-[#cdfc54]/20 bg-[#cdfc54]/[0.06] text-[#bfe57d]'}`}>
             <span className="font-semibold">HubSpot receipt:</span> {receipt.synced} synced · {receipt.failed} failed · {pendingCount} still pending
             <span className="ml-2 font-mono text-[9px] text-[#71877c]">{receipt.syncId}</span>
@@ -1510,6 +1540,7 @@ function SalesforceSyncPanel({
   pendingCount,
   status,
   receipt,
+  writebackProgress,
   error,
   accessKey,
   safeMode,
@@ -1524,6 +1555,7 @@ function SalesforceSyncPanel({
   pendingCount: number;
   status: 'idle' | 'sending' | 'complete' | 'partial' | 'error';
   receipt: SalesforceSyncReceipt | null;
+  writebackProgress: CrmWritebackProgress | null;
   error: string | null;
   accessKey: string;
   safeMode: boolean;
@@ -1533,7 +1565,8 @@ function SalesforceSyncPanel({
   onPreview: () => Promise<void>;
   onExecute: () => Promise<void>;
 }) {
-  const failedRecords = receipt?.records.filter((record) => record.status === 'failed') ?? [];
+  const failedRecords = writebackProgress?.records.filter((record) => record.status === 'failed' || record.status === 'held')
+    ?? receipt?.records.filter((record) => record.status === 'failed') ?? [];
   const batchCount = Math.min(100, pendingCount);
   return (
     <div className="bg-[#07130f]/55 px-5 py-5 sm:px-6">
@@ -1562,13 +1595,14 @@ function SalesforceSyncPanel({
             disabled={status === 'sending' || pendingCount === 0}
             className="rounded-full bg-[#83bcff] px-5 py-3 text-xs font-bold text-[#07130f] transition hover:bg-[#a7d0ff] disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {status === 'sending' ? (plan ? 'Writing approved plan…' : 'Inspecting Salesforce…') : pendingCount ? safeMode ? plan ? (plan.creates + plan.updates ? `Execute ${plan.creates + plan.updates} approved changes` : 'Record comparison result') : `Compare ${batchCount} with CRM` : `Sync ${batchCount}${pendingCount > 100 ? ` of ${pendingCount}` : ''} to Salesforce` : eligibleCount ? 'All clean Leads synced' : 'Fix held records first'}
+            {status === 'sending' ? (plan ? 'Writing approved plan…' : 'Inspecting Salesforce…') : pendingCount ? safeMode ? plan ? (plan.creates + plan.updates ? `Execute ${plan.creates + plan.updates} approved changes` : 'Record comparison result') : `Compare ${batchCount} with CRM` : `Sync ${batchCount}${pendingCount > 100 ? ` of ${pendingCount}` : ''} to Salesforce` : eligibleCount ? safeMode ? 'All clean Leads processed' : 'All clean Leads synced' : 'Fix held records first'}
           </button>
         </div>
       </div>
       {safeMode && plan && <ChangePlanCard plan={plan} onRefresh={onPreview} />}
       <div aria-live="polite" className="mt-4">
-        {receipt && (
+        {writebackProgress && <CrmWritebackProgressCard label="Salesforce" progress={writebackProgress} pendingCount={pendingCount} />}
+        {!writebackProgress && receipt && (
           <div className={`rounded-2xl border px-4 py-3 text-xs ${receipt.failed ? 'border-[#e6bd68]/25 bg-[#e6bd68]/[0.06] text-[#e6cf95]' : 'border-[#83bcff]/20 bg-[#83bcff]/[0.06] text-[#a7d0ff]'}`}>
             <span className="font-semibold">Salesforce receipt:</span> {receipt.created} created · {receipt.updated} updated · {receipt.failed} failed · {pendingCount} pending
             <span className="ml-2 font-mono text-[9px] text-[#71877c]">{receipt.syncId}</span>
@@ -1581,6 +1615,14 @@ function SalesforceSyncPanel({
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+function CrmWritebackProgressCard({ label, progress, pendingCount }: { label: string; progress: CrmWritebackProgress; pendingCount: number }) {
+  return (
+    <div className={`rounded-2xl border px-4 py-3 text-xs ${progress.failed || progress.held ? 'border-[#e6bd68]/25 bg-[#e6bd68]/[0.06] text-[#e6cf95]' : 'border-[#cdfc54]/20 bg-[#cdfc54]/[0.06] text-[#bfe57d]'}`}>
+      <span className="font-semibold">{label} receipt:</span> {progress.created} created · {progress.updated} updated · {progress.unchanged} unchanged · {progress.held} held · {progress.failed} failed · {pendingCount} pending
     </div>
   );
 }
