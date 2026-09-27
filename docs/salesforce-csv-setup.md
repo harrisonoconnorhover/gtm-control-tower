@@ -5,6 +5,11 @@ Leads and Contacts for duplicate people. `/app/lab` parses and diagnoses CSV
 data and can write governed rows to Salesforce Leads. Only allow-listed standard
 Lead fields cross the network boundary during that separate write workflow.
 
+For selected name, email, phone, state, and company evidence, `/app/lab` also
+offers a [read-only possible-match review](approximate-import-matches.md).
+Suggestions come from a dated scan, are exportable as JSON, and do not choose
+write targets or authorize a sync.
+
 ## Lead mapping and gate
 
 | CSV value | Salesforce Lead field |
@@ -41,7 +46,8 @@ company. See [comparison cases and limits](import-crm-comparison.md).
 
 The configured user needs read access to Leads and their compared fields, plus
 Contact IDs and emails, and write access to the mapped Lead fields. Contact
-matches are held, so the lookup does not read Account or other Contact fields.
+matches are held, so the exact-email write lookup does not read Account or other
+Contact fields.
 A successful Lead-only source read does not qualify the Contact lookup.
 
 ## Whole-account Lead and Contact audit
@@ -51,6 +57,12 @@ scanner follows `nextRecordsUrl` through every unconverted Lead and then
 every Contact visible to the configured user. For Contacts, Account name and
 website supply company context. Both `Phone` and `MobilePhone` are considered
 when available.
+
+The scan also reads Lead `State` and Contact `MailingState` for imported-row
+review; the configured user needs read access to these fields alongside the
+existing scan fields. This is separate from the narrower exact-email write
+lookup above. CSV **State / province** is distinct from sales **Region**.
+Refresh older snapshots to collect state before using it as matching evidence.
 
 Every provider page and next cursor is committed to SQLite/D1, so the scan can
 pause after a page and resume later. The ceiling is 25,000 unique provider

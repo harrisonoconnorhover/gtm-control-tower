@@ -25,6 +25,7 @@ export type LiveContactState = {
   phone?: string | null;
   jobTitle?: string | null;
   website?: string | null;
+  state?: string | null;
   region: string;
   segment: string;
   lifecycleStage: string;

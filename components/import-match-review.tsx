@@ -1,0 +1,308 @@
+'use client';
+
+import { useEffect, useMemo, useRef, useState } from 'react';
+import type { DuplicateScanView } from '@/lib/duplicate-scan-store';
+import {
+  suggestMatchFields,
+  type ImportMatchInput,
+  type ImportMatchReport,
+  type MatchField,
+} from '@/lib/import-match';
+import type { LiveContactState } from '@/lib/live-control-tower';
+
+type Props = {
+  contacts: LiveContactState[];
+  connectorId: 'hubspot' | 'salesforce';
+  workspaceId: string | null;
+  accessKey: string;
+  disabled?: boolean;
+};
+
+type MatchResponse = {
+  report: ImportMatchReport;
+  scan: Pick<DuplicateScanView, 'id' | 'connectorId' | 'recordsScanned' | 'sourceComplete' | 'startedAt' | 'completedAt' | 'analysisWarnings'>;
+};
+
+const pageSize = 100;
+const secondaryButton = 'rounded-full border border-white/20 px-4 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-40';
+const fieldLabels: Record<MatchField, string> = { name: 'Name', email: 'Email', phone: 'Phone', state: 'State', company: 'Company' };
+
+export function ImportMatchReview({ contacts, ...props }: Props) {
+  const inputs = useMemo<ImportMatchInput[]>(() => contacts.filter((contact) => contact.recordStatus === 'active').map((contact) => ({
+    contactId: contact.contactId,
+    fullName: contact.fullName.trim() === contact.contactId.trim() ? '' : contact.fullName,
+    email: contact.normalizedEmail || contact.rawEmail,
+    phone: contact.phone || '',
+    state: contact.state || '',
+    company: contact.company || '',
+  })), [contacts]);
+
+  // A different import, provider, workspace, or authorization discards the old
+  // review and aborts its pending requests instead of showing stale suggestions.
+  const reviewKey = JSON.stringify([props.connectorId, props.workspaceId, props.accessKey, inputs]);
+  return <MatchReview key={reviewKey} {...props} inputs={inputs} />;
+}
+
+function MatchReview({ inputs, connectorId, workspaceId, accessKey, disabled = false }: Omit<Props, 'contacts'> & { inputs: ImportMatchInput[] }) {
+  const suggestions = useMemo(() => suggestMatchFields(inputs), [inputs]);
+  const [fields, setFields] = useState<MatchField[]>(() => suggestions.filter((field) => field.recommended).map((field) => field.field));
+  const [page, setPage] = useState(0);
+  const [scan, setScan] = useState<DuplicateScanView | null>(null);
+  const [loadingScan, setLoadingScan] = useState(Boolean(workspaceId));
+  const [scanning, setScanning] = useState(false);
+  const [stopping, setStopping] = useState(false);
+  const [matching, setMatching] = useState(false);
+  const [result, setResult] = useState<MatchResponse | null>(null);
+  const [error, setError] = useState('');
+  const scanRequest = useRef<AbortController | null>(null);
+  const matchRequest = useRef<AbortController | null>(null);
+  const pauseRequested = useRef(false);
+  const connectorName = connectorId === 'hubspot' ? 'HubSpot' : 'Salesforce';
+  const start = page * pageSize;
+  const batch = inputs.slice(start, start + pageSize);
+  const end = start + batch.length;
+
+  useEffect(() => {
+    if (!workspaceId) return;
+    const controller = new AbortController();
+    scanRequest.current = controller;
+    async function loadSnapshot() {
+      try {
+        const response = await requestJson<{ scan: DuplicateScanView | null }>(
+          `/api/control-tower/duplicate-scan?workspaceId=${encodeURIComponent(workspaceId!)}&connectorId=${connectorId}`,
+          accessKey, controller.signal,
+        );
+        if (!controller.signal.aborted) setScan(response.scan);
+      } catch (failure) {
+        if (!controller.signal.aborted) setError(errorMessage(failure));
+      } finally {
+        if (!controller.signal.aborted) setLoadingScan(false);
+      }
+    }
+    void loadSnapshot();
+    return () => controller.abort();
+  }, [accessKey, connectorId, workspaceId]);
+
+  useEffect(() => () => {
+    pauseRequested.current = true;
+    scanRequest.current?.abort();
+    matchRequest.current?.abort();
+  }, []);
+
+  useEffect(() => {
+    if (disabled) pauseRequested.current = true;
+  }, [disabled]);
+
+  function clearResult() {
+    matchRequest.current?.abort();
+    setMatching(false);
+    setResult(null);
+    setError('');
+  }
+
+  async function readSnapshot(restart: boolean) {
+    if (!workspaceId || disabled || scanning) return;
+    clearResult();
+    scanRequest.current?.abort();
+    const controller = new AbortController();
+    scanRequest.current = controller;
+    pauseRequested.current = false;
+    setLoadingScan(false);
+    setScanning(true);
+    setStopping(false);
+    try {
+      let current = (await requestJson<{ scan: DuplicateScanView }>('/api/control-tower/duplicate-scan', accessKey, controller.signal, {
+        workspaceId, connectorId, action: restart ? 'restart' : 'start',
+      })).scan;
+      if (controller.signal.aborted) return;
+      setScan(current);
+      const seenCursors = new Set<string>();
+      while (current.status === 'scanning' && !pauseRequested.current) {
+        const cursor = JSON.stringify(current.cursor);
+        if (seenCursors.has(cursor)) throw new Error('The CRM scan repeated a page cursor. Scanning stopped; start a fresh snapshot instead of treating this as complete.');
+        seenCursors.add(cursor);
+        current = (await requestJson<{ scan: DuplicateScanView }>('/api/control-tower/duplicate-scan', accessKey, controller.signal, {
+          workspaceId, connectorId, action: 'step', scanId: current.id,
+        })).scan;
+        if (controller.signal.aborted) return;
+        setScan(current);
+      }
+      if (current.status === 'failed') throw new Error('The CRM snapshot failed. Start a fresh snapshot to try again.');
+    } catch (failure) {
+      if (!controller.signal.aborted) setError(errorMessage(failure));
+    } finally {
+      if (!controller.signal.aborted) {
+        setScanning(false);
+        setStopping(false);
+      }
+    }
+  }
+
+  async function findSuggestions() {
+    if (!workspaceId || !scan?.complete || !batch.length || !fields.length || disabled || scanning || matching) return;
+    clearResult();
+    const controller = new AbortController();
+    matchRequest.current = controller;
+    setMatching(true);
+    try {
+      const response = await requestJson<MatchResponse>('/api/control-tower/import-matches', accessKey, controller.signal, {
+        workspaceId, connectorId, scanId: scan.id, contacts: batch, fields,
+      });
+      if (!controller.signal.aborted) setResult(response);
+    } catch (failure) {
+      if (!controller.signal.aborted) setError(errorMessage(failure));
+    } finally {
+      if (!controller.signal.aborted) setMatching(false);
+    }
+  }
+
+  function exportReport() {
+    if (!result) return;
+    const report = {
+      exportedAt: new Date().toISOString(),
+      purpose: 'Read-only import-to-CRM suggestions; no records are linked, merged, or written.',
+      scoreMeaning: 'Uncalibrated ranking score out of 100, not a probability of identity.',
+      coverageMeaning: 'Results describe the dated scan only. No suggestion is not evidence that a record is safe to create.',
+      importedRows: { first: start + 1, last: end, total: inputs.length },
+      ...result,
+    };
+    const url = URL.createObjectURL(new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' }));
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `gtm-${connectorId}-import-match-review-${start + 1}-${end}.json`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }
+
+  return (
+    <section aria-label="Approximate CRM matches" className="mb-6 rounded-[28px] border border-white/10 bg-[#0c1d17] p-5 sm:p-6">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-xs font-semibold uppercase tracking-wider text-[#83bcff]">Read-only review · {connectorName}</p>
+          <h3 className="mt-2 text-xl font-semibold">Find possible CRM matches</h3>
+          <p className="mt-2 max-w-3xl text-xs leading-5 text-[#9db1a7]">Choose which imported fields to compare with a dated CRM snapshot. Review suggestions; resolve possible duplicates before using the separate CRM write preview. These suggestions do not link records or change write eligibility.</p>
+        </div>
+        <span className="text-xs text-[#cdfc54]">{inputs.length} active imported records</span>
+      </div>
+
+      {!inputs.length ? <p className="mt-4 text-sm text-[#9db1a7]">Import a CSV with active records to review possible matches.</p> : (
+        <>
+          <fieldset disabled={disabled || scanning} className="mt-5 disabled:opacity-60">
+            <legend className="text-sm font-semibold">Matching fields</legend>
+            <p className="mt-1 text-xs text-[#9db1a7]">Suggested fields reflect coverage in your imported file. You can change the selection.</p>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              {suggestions.map((suggestion) => (
+                <label key={suggestion.field} className="flex min-w-0 cursor-pointer items-start gap-3 rounded-xl border border-white/10 bg-[#07130f]/60 p-3">
+                  <input type="checkbox" checked={fields.includes(suggestion.field)} onChange={(event) => {
+                    clearResult();
+                    setFields((current) => event.target.checked ? [...current, suggestion.field] : current.filter((field) => field !== suggestion.field));
+                  }} className="mt-1 accent-[#cdfc54]" />
+                  <span className="min-w-0 text-xs leading-5"><span className="font-semibold text-[#edf8f2]">{suggestion.label}</span><span className="ml-2 text-[#9db1a7]">{suggestion.populated}/{suggestion.total} populated{suggestion.recommended ? ' · suggested' : ''}</span><span className="block text-[#9db1a7]">{suggestion.reason}</span></span>
+                </label>
+              ))}
+            </div>
+          </fieldset>
+
+          <div className="mt-5 rounded-2xl border border-white/10 bg-[#07130f]/60 p-4">
+            <h4 className="text-sm font-semibold">CRM snapshot</h4>
+            <div aria-live="polite" className="mt-2 text-xs leading-5 text-[#9db1a7]">
+              {loadingScan ? <p>Loading saved snapshot details…</p> : scan ? (
+                <>
+                  <p>{scan.recordsScanned.toLocaleString()} records · {scan.pagesScanned} pages · {scanning ? 'Reading CRM pages…' : scan.status === 'scanning' ? 'Paused before completion' : scan.status === 'failed' ? 'Failed snapshot' : scan.sourceComplete ? 'Provider pagination complete' : 'Partial snapshot'}</p>
+                  <p>Read started {dateLabel(scan.startedAt)}{scan.completedAt ? ` · Finished ${dateLabel(scan.completedAt)}` : ''}.</p>
+                  <p className={scan.sourceComplete ? '' : 'text-[#e6bd68]'}>{scan.sourceComplete ? 'Coverage describes the records visible during this scan, not the current CRM state.' : 'Coverage is incomplete. Missing candidates cannot establish that a person is absent.'}</p>
+                  {scan.analysisWarnings.map((warning, index) => <p key={index} className="mt-1 text-[#e6bd68]">{warning}</p>)}
+                </>
+              ) : <p>No saved snapshot. Read CRM records to build one.</p>}
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {scanning ? <button type="button" disabled={stopping} onClick={() => { pauseRequested.current = true; setStopping(true); }} className={secondaryButton}>{stopping ? 'Stopping after this page…' : 'Stop after current page'}</button> : (
+                <>
+                  {(!scan || scan.status === 'scanning') && <button type="button" disabled={disabled || !workspaceId || loadingScan} onClick={() => void readSnapshot(false)} className={secondaryButton}>{scan ? 'Resume scan' : 'Read CRM snapshot'}</button>}
+                  {scan && <button type="button" disabled={disabled || !workspaceId || loadingScan} onClick={() => void readSnapshot(true)} className={secondaryButton}>Read fresh snapshot</button>}
+                </>
+              )}
+            </div>
+            <p className="mt-2 text-xs leading-5 text-[#9db1a7]">Reading a snapshot makes CRM read requests and saves pages in this workspace. It does not write CRM records. Stop takes effect after the current page.</p>
+            {!workspaceId && <p className="mt-2 text-xs text-[#e6bd68]">Save this workspace before reading a CRM snapshot.</p>}
+          </div>
+
+          <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-sm">Imported rows {start + 1}–{end} of {inputs.length}</span>
+              {inputs.length > pageSize && <>
+                <button type="button" disabled={disabled || scanning || page === 0} onClick={() => { clearResult(); setPage(page - 1); }} className={secondaryButton}>Previous 100</button>
+                <button type="button" disabled={disabled || scanning || end === inputs.length} onClick={() => { clearResult(); setPage(page + 1); }} className={secondaryButton}>Next 100</button>
+              </>}
+            </div>
+            <button type="button" onClick={() => void findSuggestions()} disabled={disabled || scanning || loadingScan || matching || !workspaceId || !scan?.complete || !fields.length} className="rounded-full bg-[#cdfc54] px-5 py-3 text-sm font-semibold text-[#10221a] disabled:cursor-not-allowed disabled:opacity-40">{matching ? 'Comparing snapshot…' : 'Find suggestions for these rows'}</button>
+          </div>
+          {!fields.length && <p className="mt-2 text-xs text-[#e6bd68]">Select at least one matching field.</p>}
+          <p className="mt-2 text-xs leading-5 text-[#9db1a7]">A score out of 100 ranks evidence; it is uncalibrated and is not a probability that two records are the same person. No suggestion means no candidate within this scan and these rules, not permission to create a CRM record.</p>
+        </>
+      )}
+
+      {error && <p role="alert" className="mt-4 rounded-xl border border-[#ff9c82]/20 bg-[#ff9c82]/5 p-3 text-sm text-[#ffb19a]">{error}</p>}
+      <p role="status" className="mt-3 text-xs text-[#9db1a7]">{matching ? 'Finding suggestions for the selected imported rows.' : result ? `Review ready for ${result.report.rows.length} imported records.` : ''}</p>
+      {result && (
+        <div className="mt-4 border-t border-white/10 pt-5">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h4 className="font-semibold">Ranked suggestions · rows {start + 1}–{end}</h4>
+            <button type="button" onClick={exportReport} className={secondaryButton}>Download this review (JSON)</button>
+          </div>
+          <p className="mt-2 break-words text-xs leading-5 text-[#9db1a7]">Rules {result.report.ruleVersion} · Snapshot {result.scan.id} · {result.scan.recordsScanned.toLocaleString()} records · {result.scan.sourceComplete ? 'Provider pagination complete' : 'Partial coverage'} · Finished {dateLabel(result.scan.completedAt)}. Up to three suggestions per imported record.</p>
+          {[...result.scan.analysisWarnings, ...result.report.warnings].map((warning, index) => <p key={index} className="mt-2 text-xs leading-5 text-[#e6bd68]">{warning}</p>)}
+          <div className="mt-4 space-y-3">
+            {result.report.rows.map((row, rowIndex) => (
+              <details key={row.contactId} open={rowIndex === 0} className="min-w-0 rounded-2xl border border-white/10 bg-[#07130f]/60 p-4">
+                <summary className="cursor-pointer break-words text-sm font-semibold">{row.input.fullName || row.input.email || row.contactId} <span className="font-normal text-[#9db1a7]">· {row.contactId} · {row.candidates.length ? `${row.candidates.length} of ${row.candidateCount} suggestions shown` : 'No suggestion'}</span></summary>
+                {row.warnings.map((warning, index) => <p key={index} className="mt-3 text-xs leading-5 text-[#e6bd68]">{warning}</p>)}
+                {!row.candidates.length && <p className="mt-3 text-xs leading-5 text-[#9db1a7]">No candidate met the selected rules within this snapshot. This does not prove the person is new or safe to create.</p>}
+                <div className="mt-3 space-y-3">
+                  {row.candidates.slice(0, 3).map((candidate, index) => (
+                    <article key={candidate.record.recordKey} className="min-w-0 rounded-xl border border-white/10 p-3 sm:p-4">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="min-w-0"><h5 className="break-words text-sm font-semibold">{index + 1}. {candidate.record.fullName || candidate.record.email || 'Unnamed CRM record'}</h5><p className="mt-1 break-all font-mono text-xs text-[#9db1a7]">{connectorName} {candidate.record.objectType} · {candidate.record.nativeId}</p></div>
+                        <span className="rounded-full bg-[#83bcff]/10 px-3 py-1 text-xs font-semibold text-[#b6d7ff]">Score {candidate.score}/100</span>
+                      </div>
+                      <ul className="mt-3 space-y-1 text-xs leading-5">{candidate.evidence.map((evidence, evidenceIndex) => <li key={evidenceIndex} className={evidence.tone === 'conflict' ? 'text-[#ffb19a]' : evidence.tone === 'warning' ? 'text-[#e6bd68]' : 'text-[#b5c6bd]'}>{evidence.label} ({evidence.weight > 0 ? '+' : ''}{evidence.weight})</li>)}</ul>
+                      <div className="mt-3 divide-y divide-white/10">
+                        {candidate.comparisons.map((comparison) => (
+                          <div key={comparison.field} className="py-3">
+                            <p className="text-xs font-semibold">{fieldLabels[comparison.field]} <span className={comparison.status === 'conflict' ? 'text-[#ffb19a]' : 'text-[#9db1a7]'}>· {comparison.status}</span></p>
+                            <dl className="mt-2 grid min-w-0 grid-cols-2 gap-3 text-xs leading-5">
+                              <div className="min-w-0"><dt className="text-[#71877c]">Imported</dt><dd className="[overflow-wrap:anywhere]">{comparison.imported || 'Empty'}</dd></div>
+                              <div className="min-w-0"><dt className="text-[#71877c]">CRM snapshot</dt><dd className="[overflow-wrap:anywhere]">{comparison.existing || 'Empty'}</dd></div>
+                            </dl>
+                          </div>
+                        ))}
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              </details>
+            ))}
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+async function requestJson<T>(url: string, accessKey: string, signal: AbortSignal, body?: object): Promise<T> {
+  const headers = new Headers();
+  if (accessKey) headers.set('x-control-tower-key', accessKey);
+  if (body) headers.set('content-type', 'application/json');
+  const response = await fetch(url, { method: body ? 'POST' : 'GET', headers, signal, cache: 'no-store', body: body ? JSON.stringify(body) : undefined });
+  const result = await response.json() as T & { error?: unknown };
+  if (!response.ok) throw new Error(typeof result?.error === 'string' ? result.error : 'The match review request failed.');
+  return result;
+}
+
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : 'The match review could not complete.';
+}
+
+function dateLabel(value: string | null) {
+  return value ? new Date(value).toLocaleString() : 'not finished';
+}

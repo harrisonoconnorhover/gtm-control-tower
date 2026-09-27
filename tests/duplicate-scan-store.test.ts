@@ -16,6 +16,7 @@ describe('durable duplicate scans', () => {
     const {
       appendDuplicateScanPage,
       getLatestDuplicateScan,
+      getDuplicateScanRecords,
       resumeDuplicateScanFinalization,
       saveDuplicateReviewDecision,
       startDuplicateScan,
@@ -47,6 +48,7 @@ describe('durable duplicate scans', () => {
     expect(terminalPage).toMatchObject({ pagesScanned: 2, recordsScanned: 3, sourceComplete: true, status: 'scanning', cursor: null });
     const completed = await resumeDuplicateScanFinalization(started.id);
     expect(completed).toMatchObject({ pagesScanned: 2, recordsScanned: 3, sourceComplete: true, status: 'complete', clusterCount: 1 });
+    expect((await getDuplicateScanRecords(started.id)).map((item) => item.nativeId)).toEqual(['1', '2', '3']);
     const cluster = completed.clusters[0];
     expect(cluster.members).toHaveLength(2);
 

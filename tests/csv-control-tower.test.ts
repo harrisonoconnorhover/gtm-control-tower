@@ -22,6 +22,16 @@ C-3,Mia Santos,mia.santos @ gmail.com,,,West,SMB,lead,lead,
 C-4,Robin Cho,robin@oak.co,,Oak Co,Northeast,Mid-Market,mql,sql,NE-MM`;
 
 describe('CSV control tower', () => {
+  it('maps state separately from territory and preserves it in exported CSV', () => {
+    const csv = 'contact_id,full_name,email,state_province,region,company,owner_id\nSTATE-1,Alex Example,alex@example.test,Texas,South,Example,owner-1';
+    const preview = previewContactsCsv(csv);
+    expect(preview.suggestedMapping).toMatchObject({ state: 'state_province', region: 'region' });
+    const [contact] = importContactsCsv(csv).contacts;
+    expect(contact).toMatchObject({ state: 'Texas', region: 'South' });
+    expect(importContactsCsv(exportContactsCsv([contact])).contacts[0]).toMatchObject({ state: 'Texas', region: 'South' });
+    expect(importContactsCsv('full_name,email,region\nBlair Example,blair@example.test,West').contacts[0].state).toBeNull();
+  });
+
   it('imports common contact fields and infers quality flags', () => {
     const result = importContactsCsv(funkyCsv);
     expect(result.sourceRows).toBe(4);

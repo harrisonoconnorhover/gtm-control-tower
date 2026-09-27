@@ -12,7 +12,9 @@ export type IdentityRecord = {
   lastName: string;
   fullName: string;
   email: string;
+  additionalEmails?: string[];
   company: string;
+  state?: string;
   phone: string;
   secondaryPhone?: string;
   jobTitle: string;
@@ -332,7 +334,7 @@ function normalizeIdentity(record: IdentityRecord): NormalizedIdentity {
   };
 }
 
-function normalizeEmail(value: string): string | null {
+export function normalizeEmail(value: string): string | null {
   const cleaned = value.trim().toLowerCase();
   const match = /^([^@\s]+)@([^@\s]+)$/u.exec(cleaned);
   if (!match || !match[2].includes('.')) return null;
@@ -358,7 +360,7 @@ function memberPairs(records: IdentityRecord[]): Array<[IdentityRecord, Identity
   return pairs;
 }
 
-function normalizePhone(value: string): string | null {
+export function normalizePhone(value: string): string | null {
   const withoutExtension = value.toLowerCase().replace(/(?:ext\.?|extension|x)\s*\d+\s*$/u, '');
   let digits = withoutExtension.replace(/\D/gu, '');
   if (digits.length === 10) digits = `1${digits}`;
@@ -366,12 +368,12 @@ function normalizePhone(value: string): string | null {
   return digits;
 }
 
-function normalizeName(value: string): string | null {
+export function normalizeName(value: string): string | null {
   const tokens = asciiWords(value).filter((token) => !namePrefixes.has(token) && !nameSuffixes.has(token));
   return tokens.length ? tokens.join(' ') : null;
 }
 
-function normalizeCompany(value: string): string | null {
+export function normalizeCompany(value: string): string | null {
   const tokens = asciiWords(value).filter((token) => !companySuffixes.has(token));
   return tokens.length ? tokens.join(' ') : null;
 }
@@ -401,7 +403,7 @@ function firstNamesCompatible(left: string, right: string): boolean {
   return left === right || left[0] === right[0] && nameSimilarity(left, right) >= 0.55;
 }
 
-function nameSimilarity(left: string, right: string): number {
+export function nameSimilarity(left: string, right: string): number {
   if (left === right) return 1;
   const a = bigrams(left);
   const b = bigrams(right);
