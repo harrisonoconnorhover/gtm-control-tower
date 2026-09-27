@@ -45,6 +45,7 @@ const blockingFlags = new Set([
 
 export function isHubSpotEligible(contact: LiveContactState): boolean {
   return contact.recordStatus === 'active'
+    && !contact.importExclusion
     && Boolean(contact.normalizedEmail)
     && !contact.qualityFlags.some((flag) => blockingFlags.has(flag));
 }

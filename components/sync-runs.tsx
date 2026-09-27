@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { ConnectorId, ConnectorReceipt } from '@/lib/connector-contract';
 import type { ConnectorRun } from '@/lib/connector-run';
 import type { CrmWritebackReceipt } from '@/lib/crm-workflow';
+import { downloadCrmReviewCsv } from '@/lib/crm-review-export';
 import { saveConnectorRunReceipt, type PendingConnectorRun } from '@/lib/save-connector-run';
 import { UnsavedRuns } from '@/components/unsaved-runs';
 
@@ -141,6 +142,7 @@ function RunCard({ run, rolledBack, receiptUnsaved, rollingBack, onRollback }: {
       {(plan || writeback) && <div className="mt-4 grid gap-2 border-t border-white/[0.06] pt-4 sm:grid-cols-3 lg:grid-cols-6">
         <Mini label="Input" value={plan?.requested ?? writeback?.requested ?? 0} /><Mini label="Create" value={writeback?.created ?? plan?.creates ?? 0} /><Mini label="Update" value={writeback?.updated ?? plan?.updates ?? 0} /><Mini label="Unchanged" value={writeback?.unchanged ?? plan?.unchanged ?? 0} /><Mini label="Held" value={writeback?.held ?? plan?.held ?? 0} /><Mini label="Failed" value={writeback?.failed ?? 0} />
       </div>}
+      {(plan || writeback) && <div className="mt-3 flex flex-wrap items-center gap-3"><button onClick={() => downloadCrmReviewCsv({ plan, writeback })} className="rounded-full border border-white/15 px-4 py-2 text-xs font-semibold text-[#a8bbb1]">{writeback ? 'Download results CSV' : 'Download comparison CSV'}</button><p className="text-[10px] text-[#71877c]">This batch only · one row per contact · {writeback ? 'actual recorded outcomes' : 'comparison, not execution'}</p></div>}
       {scan && <div className="mt-4 grid gap-2 border-t border-white/[0.06] pt-4 sm:grid-cols-3 lg:grid-cols-6"><Mini label="Scanned" value={run.receipt.recordsRead ?? 0} /><Mini label="Groups" value={scan.clusterCount} /><Mini label="High" value={scan.highConfidenceClusters} /><Mini label="Review" value={scan.reviewClusters} /><Mini label="Possible" value={scan.possibleClusters} /><Mini label="Pages" value={scan.pagesScanned} /></div>}
       {plan?.records.some((record) => record.changes.length) && <details className="mt-4 rounded-xl bg-[#06100d]/60 p-3"><summary className="cursor-pointer text-xs font-semibold text-[#a8bbb1]">Review field-level changes</summary><div className="mt-3 max-h-64 space-y-2 overflow-y-auto">{plan.records.filter((record) => record.changes.length).slice(0, 25).map((record) => <div key={record.contactId} className="font-mono text-[9px] leading-5 text-[#71877c]"><span className="text-[#a8bbb1]">{record.email}</span> · {record.changes.map((change) => `${change.field}: ${change.before ?? '∅'} → ${change.after ?? '∅'}`).join(' · ')}</div>)}</div></details>}
     </article>

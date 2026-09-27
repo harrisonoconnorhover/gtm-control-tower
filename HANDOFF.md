@@ -2,38 +2,37 @@
 
 ## Finished
 
-- Held possible duplicate creates across the full saved import, including rows outside the current batch, for HubSpot and Salesforce.
-- Kept import-row IDs and supporting evidence separate from native CRM matches; neither unresolved row is automatically chosen to create.
-- Excluded self and locally merged rows before matching; retained useful identity evidence from active rows with invalid emails.
-- Rechecked saved-import evidence at execution, rejecting a preview when another matching identity is added or changed.
-- Added route and browser regressions and updated the public walkthrough with the automated-test evidence boundary.
+- Added saved row skip/restore decisions with reasons, CSV round-trip, workspace undo, and server checks that reject stale previews.
+- Added fill-empty and selected-field replacement policies, with separate blank-clearing permission. Updates and rollback include only approved changed fields.
+- Added comparison and saved-results CSV downloads, joining receipts by row ID and keeping proposals, missing receipts, and actual outcomes distinct.
+- Documented the controls with reviewed local screenshots and updated the public walkthrough while preserving dated native evidence.
 
 ## Try It
 
-1. In the configured self-hosted `/app/lab`, load two fictional rows with different emails but the same name, phone and company, plus an unrelated person.
-2. Read a fresh complete CRM snapshot and compare. The two possible duplicates should be held with the other import row's ID and evidence. Correct or remove unresolved rows in the source, reload and compare again.
-3. For a disposable local app, run `CONTROL_TOWER_BROWSER_BASE_URL=http://127.0.0.1:3000 npm run test:import-holds`. Set `CHROMIUM_PATH` if needed.
+1. In the configured self-hosted `/app/lab`, import fictional contacts and open **Choose rows to import**. Skip a row, reload, and restore it.
+2. Select a governed HubSpot or Salesforce destination. Choose the permitted update fields, read a fresh CRM snapshot, compare, and download the comparison CSV before approving a write.
+3. Open `/runs` for saved results CSVs. See [operator controls](docs/import-operator-controls.md) for details and the disposable local browser check.
 
 ## Checks
 
-- 253 tests across 25 suites passed. Eight route regressions failed before the correction and passed afterward, including both providers and stale-preview rejection.
-- Both-provider browser checks passed: distinct import evidence, only the unrelated create approved, real local receipt persistence, pending holds, and 390px layout. Provider responses were simulated; zero live CRM requests.
+- 310 tests across 27 suites passed, including both-provider route checks, real SQLite persistence, skip/restore, changed-field payloads, stale policy/row rejection, and CSV outcomes.
+- Both-provider browser checks passed with real local workspace/run storage and simulated CRM responses: failed saves, reload, pending operations, downloads, and 390px layout. Zero native CRM requests.
 - TypeScript, lint, both builds, script syntax, secret scan and diff checks passed.
 
 ## Decisions
 
-- Reuse existing deterministic scoring and holds; scores are evidence rankings, not probabilities.
-- Check all active saved rows, including ineligible neighbors, without selecting a winner or inferring an update target.
-- Keep the dated native CRM evidence unchanged; this correction is qualified by local automated checks.
+- Preserve populated CRM values by default; require explicit replacement and separate permission to clear blanks.
+- Keep skipped rows as source data and recheck saved selection and policy before governed execution.
+- Export observed outcomes without treating previews or missing receipts as success. New controls have local automated evidence; prior native results retain their scope.
 
 ## Remaining
 
-- Detection is limited to the current saved import and the visible, recent CRM snapshot. It does not coordinate simultaneous imports in other workspaces.
-- Sparse or conflicting identities may evade the rules; conservative holds may flag different people.
-- Legacy direct-sync and webhook routes do not use this governed create guard.
+- Missing columns and blank cells both count as blank for explicit clearing; inspect the preview.
+- Identity checks depend on the visible CRM snapshot and current saved import, and do not lock out concurrent writers.
+- Legacy direct-sync/webhook routes do not enforce this saved-workspace contract.
 
 ## Review First
 
-- `lib/import-create-review.ts` and `lib/import-match.ts`.
-- `tests/crm-import-comparison.test.ts` and `tests/import-create-review.test.ts`.
-- `components/control-tower-dashboard.tsx`, `scripts/check-import-holds.mjs`, and `docs/import-crm-comparison.md`.
+- `app/api/control-tower/crm-writeback/route.ts` and `lib/crm-workflow.ts`.
+- `lib/import-exclusions.ts`, `lib/crm-review-export.ts`, and their tests.
+- `scripts/check-import-controls.mjs` and `docs/import-operator-controls.md`.

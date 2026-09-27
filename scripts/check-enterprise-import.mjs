@@ -83,6 +83,25 @@ async function load(file, buffer) {
     await page.getByRole('button', { name: 'Validate + load', exact: true }).click();
     await page.getByText(/SQLite r\d+ · saved/).waitFor();
 }
+async function selectFixtureUpdatePolicy() {
+    async function savePolicyChange(change, clearBlanks) {
+        const response = page.waitForResponse(r => {
+            if (!r.url().endsWith('/workspace') || r.request().method() !== 'POST') return false;
+            const body = r.request().postDataJSON();
+            return body.action === 'save' && body.reason === 'crm_update_policy_changed';
+        });
+        await change();
+        const saved = await response;
+        assert.equal(saved.status(), 200, 'The intentional update policy must be saved before comparison.');
+        const policy = (await saved.json()).workspace.state.crmUpdatePolicy;
+        assert.equal(policy.mode, 'replace');
+        assert.equal(policy.clearBlanks, clearBlanks);
+        assert.deepEqual(policy.fields, ['firstName', 'lastName', 'company', 'phone', 'jobTitle', 'website']);
+        await page.getByText(/SQLite r\d+ · saved/).waitFor();
+    }
+    await savePolicyChange(() => page.getByLabel('Update existing CRM records', { exact: true }).selectOption('replace'), false);
+    await savePolicyChange(() => page.getByLabel('Allow blank values to clear selected fields', { exact: true }).check(), true);
+}
 async function preview(refresh = false) {
     const response = page.waitForResponse(r => r.url().endsWith('/crm-writeback') && r.request().postDataJSON()?.action === 'preview');
     await page.getByRole('button', { name: refresh ? 'Refresh comparison' : /^Compare \d+ with CRM$/ }).click();
@@ -261,9 +280,14 @@ try {
     await jordan.screenshot({ path: images + '/' + provider + '-coworkers.png', mask: [jordan.locator('p.font-mono')], maskColor: '#182d25' });
     // The second CSV records the operator's resolved subset; create candidates also pass the independent snapshot review guard.
     await load('enterprise-import-approved.csv');
+    // Marcus's replacement values and Tess's blank website are intentional.
+    // The safe default only fills empty fields, so this fixture explicitly opts in.
+    await selectFixtureUpdatePolicy();
     stage = 'execute';
     const plan = await preview();
     checkpoint('plan', plan);
+    assert.equal(plan.updatePolicy.mode, 'replace');
+    assert.equal(plan.updatePolicy.clearBlanks, true);
     assert.equal(plan.creates, 1);
     assert.equal(plan.updates, 2);
     assert.equal(plan.held, provider === 'salesforce' ? 1 : 0);
@@ -310,6 +334,7 @@ try {
     await load('enterprise-import-approved.csv');
     const repeat = await preview();
     checkpoint('repeat-plan', repeat);
+    assert.deepEqual(repeat.updatePolicy, plan.updatePolicy);
     assert.equal(repeat.creates, 0);
     assert.equal(repeat.updates, 0);
     assert.equal(repeat.unchanged, provider === 'hubspot' ? 5 : 4);

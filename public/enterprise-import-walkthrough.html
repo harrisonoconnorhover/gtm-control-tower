@@ -71,6 +71,7 @@
         </figure>
         <p class="small">The original write, repeat, and rollback run below used a prepared five-row file that manually excluded these identities. The new hold check was verified separately against the retained development records.</p>
         <p class="small">The current guard also checks other active rows in the saved import, including later batches. Two new rows can be held as possible duplicates even when neither is in the CRM yet. This additional check is covered by automated local tests; it is separate from the dated native evidence shown here.</p>
+        <p class="small">In the current self-hosted workspace, you can skip a row with a saved reason and restore it later. Skipping one duplicate in the file lets you review the retained row without editing the source file; a possible match already in the CRM still holds it.</p>
         <a class="button" href="./enterprise-import-approved.csv" download>Download the 5 approved rows</a>
       </section>
 
@@ -78,6 +79,7 @@
         <p class="step-label">03 · Preview and execute</p>
         <h2 id="write-title">Write only the intended changes.</h2>
         <p class="copy">Create Nina. Update Marcus’s title and phone. Clear Tess’s website deliberately. Elena stays unchanged. Denise is unchanged in HubSpot; Salesforce holds her existing Contact, outside the Lead write path.</p>
+        <p class="small">Current controls protect populated CRM values by default. Repeating these intentional changes requires selecting replacement fields and explicitly permitting blank clearing for Tess. Comparison and saved-results CSVs make each batch reviewable in a spreadsheet. These newer controls passed local server and browser tests with simulated providers; the native results below retain their original date and scope. <a href="https://github.com/harrisonoconnorhover/gtm-control-tower/blob/main/docs/import-operator-controls.md">Inspect the controls and repeat the tests.</a></p>
         <div class="table-wrap" role="region" aria-label="Initial import outcomes by CRM" tabindex="0">
           <table>
             <caption>Initial approved import · five rows per CRM</caption>

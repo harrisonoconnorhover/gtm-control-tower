@@ -38,6 +38,32 @@ export type CrmCreateReviewResult = {
 export const portableCrmFieldNames = ['firstName', 'lastName', 'company', 'phone', 'jobTitle', 'website'] as const;
 export type PortableCrmFieldName = (typeof portableCrmFieldNames)[number];
 
+export type CrmUpdatePolicy = {
+  mode: 'fill-empty' | 'replace';
+  fields: PortableCrmFieldName[];
+  clearBlanks: boolean;
+};
+
+export function defaultCrmUpdatePolicy(): CrmUpdatePolicy {
+  return { mode: 'fill-empty', fields: [...portableCrmFieldNames], clearBlanks: false };
+}
+
+export function isCrmUpdatePolicy(value: unknown): value is CrmUpdatePolicy {
+  return isRecord(value) && !Array.isArray(value)
+    && (value.mode === 'fill-empty' || value.mode === 'replace')
+    && typeof value.clearBlanks === 'boolean'
+    && !(value.mode === 'fill-empty' && value.clearBlanks)
+    && Array.isArray(value.fields)
+    && value.fields.every((field) => portableCrmFieldNames.includes(field as PortableCrmFieldName))
+    && new Set(value.fields).size === value.fields.length;
+}
+
+export function normalizeCrmUpdatePolicy(value: unknown = undefined): CrmUpdatePolicy {
+  if (value === undefined) return defaultCrmUpdatePolicy();
+  if (!isCrmUpdatePolicy(value)) throw new TypeError('Invalid CRM update policy. Select a supported mode and fields; clearing blanks requires replace mode.');
+  return { mode: value.mode, fields: portableCrmFieldNames.filter((field) => value.fields.includes(field)), clearBlanks: value.clearBlanks };
+}
+
 export type PortableCrmContact = {
   contactId: string;
   email: string;
@@ -93,6 +119,8 @@ export type CrmWritePlan = {
   unchanged: number;
   held: number;
   records: CrmPlanRecord[];
+  // Historic receipts may predate configurable update policies.
+  updatePolicy?: CrmUpdatePolicy;
 };
 
 export type CrmRollbackRecord = {
@@ -170,10 +198,14 @@ export function buildCrmWritePlan(
   existingByEmail: Map<string, NativeCrmRecord[]>,
   now = new Date(),
   createReviews?: Map<string, CrmCreateReviewResult>,
+  updatePolicy?: CrmUpdatePolicy,
+  excludedRows?: Map<string, string>,
 ): CrmWritePlan {
+  const policy = normalizeCrmUpdatePolicy(updatePolicy);
   const matchedInputs = new Map<string, Set<string>>();
   const recordKey = (record: NativeCrmRecord) => `${record.objectType}:${record.nativeId}`;
   for (const contact of proposed) {
+    if (excludedRows?.has(contact.contactId)) continue;
     for (const match of existingByEmail.get(contact.email.toLowerCase()) ?? []) {
       const key = recordKey(match);
       const inputs = matchedInputs.get(key) ?? new Set<string>();
@@ -189,6 +221,8 @@ export function buildCrmWritePlan(
       contactId: contact.contactId, email: contact.email, nativeId: null, operation: 'hold',
       matches, before: null, after, changes: [], reason,
     });
+    const exclusion = excludedRows?.get(contact.contactId);
+    if (exclusion !== undefined) return hold(exclusion);
     if (matches.length > 1) {
       return hold(`${matches.length} CRM records match this email. Review the existing records before importing.`);
     }
@@ -214,20 +248,31 @@ export function buildCrmWritePlan(
         ? 'An existing Salesforce Contact has this email. Review that Contact instead of creating a Lead.'
         : 'An existing converted Salesforce Lead has this email. Review its conversion instead of creating another Lead.');
     }
+    const effectiveAfter = { ...match.fields };
     const changes = portableCrmFieldNames.flatMap((field) => {
       const before = cleanValue(match.fields[field]);
       const next = cleanValue(after[field]);
-      return before === next ? [] : [{ field, before, after: next }];
+      if (!policy.fields.includes(field) || (policy.mode === 'fill-empty' && before !== null)
+        || (next === null && !policy.clearBlanks) || before === next) return [];
+      effectiveAfter[field] = next;
+      return [{ field, before, after: next }];
     });
     return {
       contactId: contact.contactId, email: contact.email, nativeId: match.nativeId,
       operation: changes.length ? 'update' : 'unchanged', matches,
-      before: match.fields, after, changes, reason: null,
+      before: match.fields, after: effectiveAfter, changes,
+      reason: changes.length ? null : policy.fields.length === 0
+        ? 'No update fields are selected. Existing CRM values are preserved.'
+        : policy.mode === 'fill-empty'
+          ? 'No selected empty CRM fields can be filled. Existing CRM values are preserved.'
+          : policy.clearBlanks
+            ? 'Selected CRM fields already match the import, including blank values.'
+            : 'Selected CRM fields already match the nonblank import values. Blank import values leave existing CRM values untouched.',
     };
   });
   const createdAt = now.toISOString();
   const expiresAt = new Date(now.getTime() + 15 * 60_000).toISOString();
-  const fingerprint = fingerprintPlan(connectorId, records);
+  const fingerprint = fingerprintPlan(connectorId, records, policy);
   return {
     planId: `${connectorId}-${fingerprint}-${now.getTime()}`,
     fingerprint,
@@ -241,6 +286,7 @@ export function buildCrmWritePlan(
     unchanged: records.filter((record) => record.operation === 'unchanged').length,
     held: records.filter((record) => record.operation === 'hold').length,
     records,
+    updatePolicy: policy,
   };
 }
 
@@ -311,8 +357,8 @@ function cleanValue(value: string | null | undefined): string | null {
   return cleaned || null;
 }
 
-function fingerprintPlan(connectorId: string, records: CrmPlanRecord[]): string {
-  const stable = JSON.stringify([connectorId, records.map(({ contactId, email, nativeId, operation, matches, before, after, reason, possibleMatches, possibleImportMatches, createReview }) => ({ contactId, email, nativeId, operation, matches, before, after, reason, possibleMatches, possibleImportMatches, createReview }))]);
+function fingerprintPlan(connectorId: string, records: CrmPlanRecord[], updatePolicy: CrmUpdatePolicy): string {
+  const stable = JSON.stringify([connectorId, updatePolicy, records.map(({ contactId, email, nativeId, operation, matches, before, after, reason, possibleMatches, possibleImportMatches, createReview }) => ({ contactId, email, nativeId, operation, matches, before, after, reason, possibleMatches, possibleImportMatches, createReview }))]);
   let hash = 0x811c9dc5;
   for (let index = 0; index < stable.length; index += 1) {
     hash ^= stable.charCodeAt(index);

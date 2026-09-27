@@ -47,6 +47,7 @@ export function isSalesforceEligible(contact: LiveContactState): boolean {
   const name = splitFullName(contact.fullName);
   const lastName = contact.lastName?.trim() || name.lastName;
   return contact.recordStatus === 'active'
+    && !contact.importExclusion
     && Boolean(contact.normalizedEmail)
     && (contact.normalizedEmail?.length ?? 0) <= 80
     && Boolean(contact.company?.trim())
