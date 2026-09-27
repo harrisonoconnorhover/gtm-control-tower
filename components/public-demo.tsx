@@ -1,12 +1,14 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  messyLeadDemoCsv,
   previewMessyLeadDemo,
   runMessyLeadDemo,
   type DemoPipelineResult,
 } from '@/lib/messy-lead-demo';
 import type { LiveContactState } from '@/lib/live-control-tower';
+import { buildDemoDecisionReport, demoDecisionStatus, type DemoDecision, type DemoDecisionReport, type DemoDecisionStatus } from '@/lib/demo-decisions';
 import { InstantCrmAudit } from '@/components/instant-crm-audit';
 
 const steps = [
@@ -25,6 +27,17 @@ export function PublicDemo() {
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<DemoPipelineResult | null>(null);
   const complete = stage === steps.length - 1 && !running;
+  const resultsRef = useRef<HTMLElement>(null);
+  const requestedRun = useRef(false);
+  const report = useMemo(() => result ? buildDemoDecisionReport(result, messyLeadDemoCsv()) : null, [result]);
+
+  useEffect(() => {
+    if (!complete || !requestedRun.current) return;
+    requestedRun.current = false;
+    const results = resultsRef.current;
+    results?.focus({ preventScroll: true });
+    results?.scrollIntoView({ block: 'start', behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+  }, [complete, result]);
 
   useEffect(() => {
     const sectionId = window.location.hash.slice(1);
@@ -56,14 +69,21 @@ export function PublicDemo() {
   }, [running, stage]);
 
   const shownContacts = useMemo(() => {
-    if (!result || stage < 2) return preview.sample;
+    if (!result || !complete) return preview.sample;
     return result.repairedSample;
-  }, [result, stage]);
+  }, [result, complete]);
 
   function runDemo() {
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    requestedRun.current = true;
     setResult(runMessyLeadDemo());
-    setStage(0);
-    setRunning(true);
+    setStage(reduceMotion ? steps.length - 1 : 0);
+    setRunning(!reduceMotion);
+    if (!reduceMotion) {
+      const demo = document.getElementById('demo');
+      demo?.focus({ preventScroll: true });
+      demo?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    }
   }
 
   return (
@@ -105,6 +125,8 @@ export function PublicDemo() {
               </a>
               <button
                 onClick={runDemo}
+                aria-controls="demo-results"
+                aria-describedby="demo-boundary"
                 disabled={running}
                 className="rounded-full border border-[#d8ff67]/25 bg-[#d8ff67]/[0.08] px-6 py-3.5 text-sm font-bold text-[#d8ff67] transition hover:-translate-y-0.5 hover:bg-[#d8ff67]/[0.14] disabled:cursor-wait disabled:opacity-70"
                 data-testid="run-public-demo"
@@ -125,10 +147,10 @@ export function PublicDemo() {
             <div className="flex items-center justify-between gap-4 border-b border-white/10 px-5 py-4 sm:px-6">
               <div>
                 <p className="font-mono text-[9px] uppercase tracking-[0.2em] text-[#7f9a8d]">Batch lab-2026-08</p>
-                <h2 className="mt-1 text-lg font-semibold">Messy source preview</h2>
+                <h2 className="mt-1 text-lg font-semibold">{complete ? 'Six result examples' : 'Messy source preview'}</h2>
               </div>
               <span className={`rounded-full px-3 py-1.5 font-mono text-[9px] uppercase ${complete ? 'bg-[#d8ff67] text-[#06100d]' : running ? 'bg-[#e6bd68]/15 text-[#e6bd68]' : 'bg-[#ff7755]/10 text-[#ff9c82]'}`}>
-                {complete ? 'governed' : running ? 'processing' : 'untrusted'}
+                {complete ? 'complete' : running ? 'processing' : 'untrusted'}
               </span>
             </div>
             <div className="overflow-x-auto">
@@ -137,12 +159,12 @@ export function PublicDemo() {
                   <tr>
                     <th className="px-5 py-3 font-medium">Contact</th>
                     <th className="px-4 py-3 font-medium">Raw identity</th>
-                    <th className="px-4 py-3 font-medium">Broken state</th>
+                    <th className="px-4 py-3 font-medium">Flags</th>
                     <th className="px-5 py-3 font-medium">Decision</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/[0.06]">
-                  {shownContacts.map((contact) => <ContactRow key={contact.contactId} contact={contact} repaired={Boolean(result && stage >= 2)} />)}
+                  {shownContacts.map((contact) => <ContactRow key={contact.contactId} contact={contact} repaired={complete} />)}
                 </tbody>
               </table>
             </div>
@@ -155,12 +177,12 @@ export function PublicDemo() {
 
         <InstantCrmAudit />
 
-        <section id="demo" className="scroll-mt-6 pb-8" aria-label="Interactive cleanup demonstration">
+        <section id="demo" tabIndex={-1} className="scroll-mt-6 pb-8 focus-visible:outline-2 focus-visible:outline-[#d8ff67]" aria-label="Interactive cleanup demonstration">
           <div className="mb-5 flex flex-wrap items-end justify-between gap-4">
             <div>
               <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#d8ff67]">The two-minute proof</p>
               <h2 className="mt-2 text-3xl font-semibold tracking-[-0.04em] sm:text-4xl">Six controls. One auditable batch.</h2>
-              <p className="mt-3 max-w-3xl text-sm leading-6 text-[#9fb2a8]">Choose <strong>Run the 64-row cleanup</strong>, compare the source rows above with the receipt below, and inspect a held record. To try an audit first, use <a href="#audit" className="underline underline-offset-4">Try safe sample</a> and download its aggregate report.</p>
+              <p className="mt-3 max-w-3xl text-sm leading-6 text-[#9fb2a8]">Choose <strong>Run the 64-row cleanup</strong> to inspect the results below. Expand any record to compare values and rules, then download the same decisions. To try an audit first, use <a href="#audit" className="underline underline-offset-4">Try safe sample</a> and download its aggregate report.</p>
             </div>
             <p aria-live="polite" className="font-mono text-[10px] uppercase tracking-[0.15em] text-[#71877c]">
               {stage < 0 ? 'Ready to run' : running ? `Step ${stage + 1} of ${steps.length}` : 'Run complete'}
@@ -171,7 +193,7 @@ export function PublicDemo() {
               const isActive = running && stage === index;
               const isDone = stage > index || (!running && stage === index);
               return (
-                <article key={step.label} className={`min-h-[188px] rounded-2xl border p-4 transition-all duration-500 ${isActive ? '-translate-y-1 border-[#d8ff67]/55 bg-[#d8ff67]/10' : isDone ? 'border-[#4fa782]/30 bg-[#10241c]' : 'border-white/[0.08] bg-white/[0.025]'}`}>
+                <article key={step.label} className={`min-h-[188px] rounded-2xl border p-4 transition-all duration-500 motion-reduce:transition-none ${isActive ? '-translate-y-1 border-[#d8ff67]/55 bg-[#d8ff67]/10' : isDone ? 'border-[#4fa782]/30 bg-[#10241c]' : 'border-white/[0.08] bg-white/[0.025]'}`}>
                   <div className="flex items-center justify-between gap-3">
                     <span className={`grid h-7 w-7 place-items-center rounded-full font-mono text-[9px] ${isActive ? 'bg-[#d8ff67] text-[#06100d]' : isDone ? 'bg-[#4fa782]/20 text-[#7fddb6]' : 'bg-white/[0.06] text-[#6a8075]'}`}>{isDone ? '✓' : String(index + 1).padStart(2, '0')}</span>
                     <span className="font-mono text-[8px] uppercase tracking-wider text-[#63776d]">{step.system}</span>
@@ -183,10 +205,10 @@ export function PublicDemo() {
               );
             })}
           </div>
-          <p className="mt-4 max-w-4xl text-xs leading-6 text-[#9fb2a8]">This run uses fictional records and computes the result locally in your browser. The example policy sends Northeast enterprise leads to <code>CE-ENT-OVERFLOW</code>; it does not measure rep capacity. Stage replay uses the file&apos;s <code>expected_lifecycle_stage</code>, so it depends on a supplied source of truth. This page makes no CRM changes.</p>
+          <p id="demo-boundary" className="mt-4 max-w-4xl text-xs leading-6 text-[#9fb2a8]">This run uses fictional records and computes the result locally in your browser. The example policy sends Northeast enterprise leads to <code>CE-ENT-OVERFLOW</code>; it does not measure rep capacity. Stage replay uses the file&apos;s <code>expected_lifecycle_stage</code>, so it depends on a supplied source of truth. This page makes no CRM changes.</p>
         </section>
 
-        <section className="grid gap-5 py-8 lg:grid-cols-[0.9fr_1.1fr]">
+        <section id="demo-results" ref={resultsRef} tabIndex={-1} aria-label="Cleanup results" className="grid scroll-mt-6 gap-5 py-8 focus-visible:outline-2 focus-visible:outline-[#d8ff67] lg:grid-cols-[0.9fr_1.1fr]">
           <article className="rounded-[30px] border border-white/10 bg-[#0b1b16] p-5 sm:p-7">
             <p className="font-mono text-[9px] uppercase tracking-[0.2em] text-[#ff9c82]">Before</p>
             <h2 className="mt-2 text-2xl font-semibold tracking-tight">The CRM looks populated. It is not trustworthy.</h2>
@@ -218,11 +240,20 @@ export function PublicDemo() {
                   <p className="text-[#d8ff67]">BROWSER RECEIPT · DEMO-LAB-64 · LOCAL CLEANUP COMPLETE</p>
                   <p>{result.activeRows} canonical rows · {result.readyRows} pass readiness checks · {result.heldRows} held for review</p>
                   <p>{result.mergedRows} merges · {result.reroutedRows} reroutes · {result.replayedRows} lifecycle replays</p>
+                  <a href="#decisions" className="mt-2 inline-block rounded text-[#d8ff67] underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4">Inspect all {result.rawRows} record decisions ↓</a>
                 </>
               ) : <p>Run the batch to produce the deterministic execution receipt.</p>}
             </div>
           </article>
         </section>
+
+        {complete && report ? <DecisionInspector report={report} /> : (
+          <section id="decisions" aria-labelledby="decisions-heading" className="scroll-mt-6 rounded-[30px] border border-white/10 bg-[#0b1b16] p-5 sm:p-7">
+            <h2 id="decisions-heading" className="text-2xl font-semibold tracking-tight">Inspect the record decisions</h2>
+            <p className="mt-3 text-sm leading-6 text-[#9fb2a8]">Run the fictional batch to compare every record, inspect all remaining holds and download the same decisions. Nothing is sent to a CRM.</p>
+            <button type="button" onClick={runDemo} disabled={running} aria-controls="demo-results" className="mt-4 rounded-full border border-[#d8ff67]/35 bg-[#d8ff67]/10 px-5 py-3 text-sm font-semibold text-[#d8ff67] disabled:opacity-60 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#d8ff67]">{running ? 'Cleanup running…' : 'Run cleanup and inspect records'}</button>
+          </section>
+        )}
 
         <section id="salesforce-proof" className="scroll-mt-6 py-8" aria-label="Salesforce Apex and Flow architecture proof">
           <div className="overflow-hidden rounded-[34px] border border-[#83bcff]/25 bg-[#081814]">
@@ -338,20 +369,143 @@ export function PublicDemo() {
 }
 
 function ContactRow({ contact, repaired }: { contact: LiveContactState; repaired: boolean }) {
-  const issue = contact.qualityFlags[0]?.replaceAll('_', ' ') ?? 'clean';
-  const decision = !repaired
-    ? 'unreviewed'
-    : contact.recordStatus === 'merged'
-      ? `merged → ${contact.canonicalContactId}`
-      : contact.lastAction.replaceAll('_', ' ');
+  const status = demoDecisionStatus(contact);
   return (
     <tr className={contact.recordStatus === 'merged' ? 'bg-[#83bcff]/[0.04] text-[#8ca096]' : ''}>
       <td className="px-5 py-3.5"><p className="font-semibold">{contact.fullName}</p><p className="mt-1 font-mono text-[8px] text-[#64796e]">{contact.contactId}</p></td>
       <td className="max-w-[210px] px-4 py-3.5"><p className="break-all">{contact.rawEmail}</p><p className="mt-1 break-all font-mono text-[8px] text-[#72cca4]">→ {contact.normalizedEmail ?? 'invalid'}</p></td>
-      <td className="px-4 py-3.5"><span className={`rounded px-2 py-1 font-mono text-[8px] ${issue === 'clean' ? 'bg-[#d8ff67]/10 text-[#d8ff67]' : 'bg-[#ff7755]/10 text-[#ff9c82]'}`}>{issue}</span></td>
-      <td className="px-5 py-3.5 font-mono text-[8px] text-[#a8b9b0]">{decision}</td>
+      <td className="px-4 py-3.5"><div className="flex flex-wrap gap-1">{contact.qualityFlags.length ? contact.qualityFlags.map((flag) => <span key={flag} className="rounded bg-[#ff7755]/10 px-2 py-1 font-mono text-[8px] text-[#ff9c82]">{flag.replaceAll('_', ' ')}</span>) : <span className="text-[#9fb2a8]">None</span>}</div></td>
+      <td className="px-5 py-3.5 font-mono text-[9px] text-[#a8b9b0]">
+        <p>{repaired ? status : 'Not yet repaired'}</p>
+        {repaired ? <p className="mt-1 text-[8px] text-[#7f958a]">Last action: {contact.lastAction.replaceAll('_', ' ')}</p> : null}
+      </td>
     </tr>
   );
+}
+
+function DecisionInspector({ report }: { report: DemoDecisionReport }) {
+  const [filter, setFilter] = useState<'All' | DemoDecisionStatus>('All');
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const shown = report.decisions.filter((decision) => filter === 'All' || decision.status === filter);
+  const merged = report.decisions.find((decision) => decision.status === 'Merged');
+  const routed = report.decisions.find((decision) => decision.before.ownerId !== decision.after.ownerId && decision.status === 'Ready');
+  const held = report.decisions.find((decision) => decision.status === 'Held' && decision.fields.some((field) => field.changed))
+    ?? report.decisions.find((decision) => decision.status === 'Held');
+
+  function inspect(contactId: string) {
+    setFilter('All');
+    setExpandedId(contactId);
+    window.requestAnimationFrame(() => {
+      const summary = document.getElementById(`decision-${contactId}`);
+      summary?.focus({ preventScroll: true });
+      summary?.scrollIntoView({ block: 'start', behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+    });
+  }
+
+  function downloadReport() {
+    const url = URL.createObjectURL(new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'gtm-control-tower-64-row-decisions.json';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  return (
+    <section id="decisions" aria-labelledby="decisions-heading" className="scroll-mt-6 rounded-[30px] border border-[#d8ff67]/25 bg-[#0b1b16] p-5 sm:p-7">
+      <div className="flex flex-wrap items-start justify-between gap-5">
+        <div className="max-w-3xl">
+          <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#d8ff67]">Record decisions</p>
+          <h2 id="decisions-heading" className="mt-2 text-2xl font-semibold tracking-tight sm:text-3xl">See what changed and what still blocks a record.</h2>
+          <p className="mt-3 text-sm leading-6 text-[#9fb2a8]">Ready, Held and Merged are final destination states. Last action describes only the most recent repair. Expand a record for both snapshots, every remaining hold and the rules that explain its result.</p>
+        </div>
+        <button type="button" onClick={downloadReport} className="rounded-full border border-[#d8ff67]/35 bg-[#d8ff67]/10 px-5 py-3 text-sm font-semibold text-[#d8ff67] hover:bg-[#d8ff67]/20 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#d8ff67]">Download decisions JSON</button>
+      </div>
+      <p className="mt-4 text-xs leading-6 text-[#9fb2a8]">{report.summary.inputRows} original rows = {report.summary.readyRows} Ready + {report.summary.heldRows} Held + {report.summary.mergedRows} Merged. Synthetic data · browser computation · zero CRM writes. The download includes this same report and the unchanged source CSV.</p>
+      <div className="mt-5 flex flex-wrap gap-2" aria-label="Example record decisions">
+        {merged ? <InspectorButton onClick={() => inspect(merged.contactId)}>Inspect a merged pair</InspectorButton> : null}
+        {routed ? <InspectorButton onClick={() => inspect(routed.contactId)}>Inspect an owner change</InspectorButton> : null}
+        {held ? <InspectorButton onClick={() => inspect(held.contactId)}>Inspect a held record</InspectorButton> : null}
+      </div>
+      <div className="my-5 flex flex-wrap items-center justify-between gap-3">
+        <label htmlFor="decision-status-filter" className="flex items-center gap-3 text-sm text-[#b1c2b9]">Final status
+          <select id="decision-status-filter" value={filter} onChange={(event) => { setFilter(event.target.value as 'All' | DemoDecisionStatus); setExpandedId(null); }} className="rounded-lg border border-white/20 bg-[#06100d] px-3 py-2 text-[#edf8f2] focus-visible:outline-2 focus-visible:outline-[#d8ff67]">
+            {(['All', 'Ready', 'Held', 'Merged'] as const).map((status) => <option key={status} value={status}>{status}</option>)}
+          </select>
+        </label>
+        <p aria-live="polite" className="text-xs text-[#9fb2a8]">Showing {shown.length} of {report.decisions.length} records</p>
+      </div>
+      <div className="max-h-[660px] space-y-2 overflow-y-auto rounded-xl pr-1" aria-label="Record decision list">
+        {shown.map((decision) => {
+          const canonical = report.decisions.find((candidate) => candidate.contactId === decision.canonicalContactId);
+          return (
+            <details key={decision.contactId} open={expandedId === decision.contactId} onToggle={(event) => {
+              if (event.currentTarget.open) setExpandedId(decision.contactId);
+              else setExpandedId((current) => current === decision.contactId ? null : current);
+            }} className="rounded-xl border border-white/10 bg-[#06100d]/60">
+              <summary id={`decision-${decision.contactId}`} className="cursor-pointer rounded-xl px-4 py-4 focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-[#d8ff67]">
+                <span className="ml-2 inline-flex max-w-[85%] flex-wrap items-center gap-x-3 gap-y-2 align-middle">
+                  <span className="font-mono text-xs text-[#9fb2a8]">{decision.contactId}</span>
+                  <span className="text-sm font-semibold">{decision.fullName}</span>
+                  <DecisionStatus status={decision.status} />
+                  <span className="text-xs text-[#9fb2a8]">{decision.status === 'Held' ? `${decision.holdReasons.length} remaining ${decision.holdReasons.length === 1 ? 'hold' : 'holds'}` : decision.status === 'Merged' ? `→ ${decision.canonicalContactId}` : 'No remaining holds'}</span>
+                </span>
+              </summary>
+              <div className="space-y-5 border-t border-white/10 p-4 sm:p-5">
+                <p className="text-xs leading-6 text-[#9fb2a8]">Last action: <code className="break-all text-[#edf8f2]">{decision.lastAction}</code>. Final destination status: <strong>{decision.status}</strong>.</p>
+                <div className="rounded-xl border border-white/10 p-4">
+                  <h3 className="text-sm font-semibold">Email normalization at import</h3>
+                  <p className="mt-2 break-all font-mono text-xs leading-6 text-[#b1c2b9]">{decision.inputNormalization.rawEmail || '(blank)'} → {decision.inputNormalization.normalizedEmail || '(no valid identity)'}</p>
+                  <p className="mt-2 text-xs text-[#9fb2a8]">{decision.inputNormalization.changed ? 'Changed during import; the original value is retained.' : decision.inputNormalization.normalizedEmail ? 'Already normalized; no import change.' : 'Unresolved input; no email was guessed.'} The comparison below starts after import.</p>
+                </div>
+                <div>
+                  <h3 className="text-sm font-semibold">Before repair → after repair</h3>
+                  <dl className="mt-3 divide-y divide-white/10">
+                    {decision.fields.map((field) => <div key={field.field} className={`grid gap-2 py-3 sm:grid-cols-[0.8fr_1fr_1fr] ${field.changed ? 'text-[#d8ff67]' : 'text-[#9fb2a8]'}`}>
+                      <dt className="text-xs font-semibold">{field.label}{field.changed ? <span className="ml-2 rounded bg-[#d8ff67]/10 px-1.5 py-1 font-normal">Changed</span> : null}</dt>
+                      <dd className="break-all font-mono text-xs"><span className="mr-2 font-sans text-[#7f958a]">Before</span>{field.before || '(blank)'}</dd>
+                      <dd className="break-all font-mono text-xs"><span className="mr-2 font-sans text-[#7f958a]">After</span>{field.after || '(blank)'}</dd>
+                    </div>)}
+                  </dl>
+                </div>
+                <div>
+                  <h3 className="text-sm font-semibold">Why these decisions happened</h3>
+                  <ul className="mt-3 list-disc space-y-2 pl-5 text-xs leading-6 text-[#b1c2b9]">{decision.explanations.map((explanation) => <li key={explanation}>{explanation}</li>)}</ul>
+                </div>
+                <RemainingHolds decision={decision} />
+                {canonical ? <div className="rounded-xl border border-[#83bcff]/25 p-4 text-xs leading-6">
+                  <h3 className="font-semibold text-[#83bcff]">Canonical side of this pair: {canonical.contactId}</h3>
+                  <p className="mt-2 break-all text-[#b1c2b9]">{canonical.fullName} · original email {canonical.before.rawEmail} · normalized identity {canonical.after.normalizedEmail}</p>
+                  <p className="mt-1 text-[#9fb2a8]">Final status: {canonical.status}. {canonical.holdReasons.length ? `${canonical.holdReasons.length} holds remain on the canonical record.` : 'No remaining holds on the canonical record.'}</p>
+                  <div className="mt-3"><InspectorButton onClick={() => inspect(canonical.contactId)}>Inspect {canonical.contactId}</InspectorButton></div>
+                </div> : null}
+                {decision.mergedContactIds.length ? <div className="flex flex-wrap items-center gap-2 text-xs text-[#9fb2a8]"><span>Retained merge evidence:</span>{decision.mergedContactIds.map((id) => <InspectorButton key={id} onClick={() => inspect(id)}>Inspect {id}</InspectorButton>)}</div> : null}
+              </div>
+            </details>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function DecisionStatus({ status }: { status: DemoDecisionStatus }) {
+  const tone = status === 'Ready' ? 'bg-[#d8ff67]/10 text-[#d8ff67]' : status === 'Held' ? 'bg-[#ff7755]/10 text-[#ff9c82]' : 'bg-[#83bcff]/10 text-[#83bcff]';
+  return <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${tone}`}>{status}</span>;
+}
+
+function InspectorButton({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
+  return <button type="button" onClick={onClick} className="rounded-lg border border-white/20 px-3 py-2 text-xs font-semibold text-[#c8d7d0] hover:border-[#d8ff67]/40 hover:text-[#d8ff67] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#d8ff67]">{children}</button>;
+}
+
+function RemainingHolds({ decision }: { decision: DemoDecision }) {
+  return <div className="rounded-xl border border-white/10 p-4">
+    <h3 className="text-sm font-semibold">Remaining destination holds</h3>
+    {decision.status === 'Merged' ? <p className="mt-2 text-xs leading-6 text-[#9fb2a8]">This row is excluded from destination use because it was merged. Inspect its canonical record for readiness; the original flags remain in the download.</p> : decision.holdReasons.length ? <ul className="mt-3 list-disc space-y-2 pl-5 text-xs leading-6 text-[#ffb49d]">{decision.holdReasons.map((reason) => <li key={reason.flag}><strong>{reason.flag.replaceAll('_', ' ')}</strong>: {reason.explanation}</li>)}</ul> : <p className="mt-2 text-xs leading-6 text-[#9fb2a8]">None under the local rules. This does not establish factual accuracy or acceptance by a CRM.</p>}
+    {decision.informationalFlags.length ? <p className="mt-3 text-xs leading-6 text-[#9fb2a8]">Informational flags (not holds): {decision.informationalFlags.map((flag) => flag.replaceAll('_', ' ')).join(', ')}.</p> : null}
+  </div>;
 }
 
 function HeroStat({ value, label, warning = false }: { value: string; label: string; warning?: boolean }) {
@@ -392,7 +546,7 @@ function stageResult(index: number, result: DemoPipelineResult | null, active: b
   if (!done || !result) return 'queued';
   return [
     `${result.rawRows} rows accepted`,
-    `${result.rawRows - 4} emails normalized`,
+    `${result.initialContacts.filter((contact) => contact.normalizedEmail).length} valid email identities`,
     `${result.mergedRows} duplicates merged`,
     `${result.reroutedRows} owners corrected`,
     `${result.replayedRows} stages restored`,
