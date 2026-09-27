@@ -51,7 +51,7 @@ export function SetupGuide() {
           </Link>
           <nav className="flex flex-wrap gap-2 text-xs" aria-label="Primary navigation">
             <Link href="/" className="rounded-full border border-white/10 px-4 py-2 text-[#9fb2a8]">Demo</Link>
-            <Link href="/app" className="rounded-full border border-white/10 px-4 py-2 text-[#9fb2a8]">Operator workspace</Link>
+            <Link href="/app/lab" className="rounded-full border border-white/10 px-4 py-2 text-[#9fb2a8]">CSV workspace</Link>
             <Link href="/runs" className="rounded-full border border-white/10 px-4 py-2 text-[#9fb2a8]">Sync runs</Link>
             <a href="https://github.com/harrisonoconnorhover/gtm-control-tower" target="_blank" rel="noreferrer" className="rounded-full border border-[#d8ff67]/25 px-4 py-2 font-semibold text-[#d8ff67]">GitHub ↗</a>
           </nav>
@@ -72,7 +72,7 @@ export function SetupGuide() {
               <code className="overflow-x-auto text-xs text-[#d8ff67]">{command}</code>
               <button onClick={() => void copyCommand()} className="shrink-0 rounded-full border border-white/10 px-3 py-2 text-[10px] text-[#a9bbb2]">{copied ? 'Copied' : 'Copy'}</button>
             </div>
-            <p className="mt-4 text-xs leading-5 text-[#71877c]">Then open <strong className="text-[#a9bbb2]">localhost:3000/app</strong>. n8n is available at <strong className="text-[#a9bbb2]">localhost:5678</strong> only when you need a connected workflow.</p>
+            <p className="mt-4 text-xs leading-5 text-[#71877c]">Then open <Link href="/app/lab" className="text-[#a9bbb2] underline underline-offset-4">localhost:3000/app/lab</Link> to try the CSV workflow without accounts. n8n is available at <strong className="text-[#a9bbb2]">localhost:5678</strong> when you need a connected workflow.</p>
           </article>
         </section>
 
@@ -91,7 +91,7 @@ export function SetupGuide() {
             </div>
             <div className="divide-y divide-white/[0.06]">
               <HealthRow name="CSV import + export" detail="No account or connector required" ready />
-              <HealthRow name="Saved workspace" detail={catalog?.persistenceEnabled ? 'SQLite/D1 persistence is enabled here' : 'Session-only on this public demonstration'} ready={Boolean(catalog?.persistenceEnabled)} />
+              <HealthRow name="Saved workspace" detail={catalog?.persistenceEnabled ? 'SQLite/D1 persistence is enabled here' : 'Persistence is not enabled in this installation'} ready={Boolean(catalog?.persistenceEnabled)} />
               <HealthRow name="Google Sheets through n8n" detail={sheetsReady ? 'Both server-side webhook URLs are configured' : 'Attach local n8n workflows and Google credentials to enable'} ready={sheetsReady} />
               {crmConnectors.map((connector) => <HealthRow key={connector.id} name={connector.label} detail={connector.configured ? 'Server-side connector configured' : connector.setupHint ?? 'Optional connector not configured'} ready={connector.configured} />)}
             </div>
@@ -108,7 +108,7 @@ export function SetupGuide() {
               <li>• Every external run must return a receipt before it appears complete.</li>
             </ul>
             <div className="mt-6 flex flex-wrap gap-3">
-              <Link href="/app" className="rounded-full bg-[#d8ff67] px-5 py-3 text-sm font-bold text-[#06100d]">Open the workspace</Link>
+              <Link href="/app/lab" className="rounded-full bg-[#d8ff67] px-5 py-3 text-sm font-bold text-[#06100d]">Open the CSV workspace</Link>
               <a href="https://github.com/harrisonoconnorhover/gtm-control-tower/blob/main/docs/google-sheets-setup.md" target="_blank" rel="noreferrer" className="rounded-full border border-white/15 px-5 py-3 text-sm font-semibold text-[#dce9e2]">Sheets guide ↗</a>
             </div>
           </article>

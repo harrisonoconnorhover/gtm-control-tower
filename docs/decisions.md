@@ -1,5 +1,29 @@
 # Decisions
 
+## September 27, 2026: demonstrate the same rules that import real files
+
+The synthetic fixture supplies raw identities rather than precomputed normalized
+answers. Case variants still demonstrate exact duplicates; the corporate plus
+address remains distinct, and the internationalized domain uses IDNA. The new
+result is seven merges, 57 canonical contacts, 45 ready, and 12 held. These are
+measured sample outcomes, not targets for the rules to satisfy.
+
+Preview and import reject nonblank rows whose column count differs from the
+header. Silently dropping an extra cell can shift a company fragment into the
+owner field while reporting readiness. An actionable CSV row error is safer
+than guessing how to realign the input; correctly quoted commas and line breaks
+remain valid.
+
+Public record decisions are derived from the same before/after states and
+destination gate as the cleanup. They distinguish an action taken from final
+readiness, preserve every remaining hold reason, and download the same evidence
+locally. This adds visibility to the existing workflow without creating another
+repair engine or connecting the public site to a CRM.
+
+The account-free setup starts at `/app/lab`. The whole-account scanner at `/app`
+requires configured CRM access and remains a separate optional step. Historical
+connector results are labeled as dated observations rather than current health.
+
 ## BigQuery rather than Snowflake
 
 BigQuery keeps this first portfolio slice small: one SQL setup file, event-oriented storage, and straightforward dbt models. The contracts and marts are portable if a Snowflake version becomes useful later.
