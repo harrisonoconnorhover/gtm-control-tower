@@ -6,6 +6,7 @@
 - Ranked up to three native CRM records per imported person, showing score, supporting values, conflicts and missing fields. Existing exact-email write protections remain separate.
 - Reused durable paged CRM snapshots with visible dates and coverage. HubSpot reads additional emails and state; Salesforce reads Lead State and Contact MailingState.
 - Added a fictional walkthrough and inspected screenshot. No CRM records were read or written in live accounts during qualification.
+- Published source `01dae32`, the guide and screenshot, and portfolio-site update `ef46539`. Published artifacts and canonical site HTML match reviewed bytes.
 
 ## Try It
 
@@ -17,7 +18,8 @@
 
 - All 210 tests across 23 suites passed. TypeScript, full lint, secret scan, diff check, operator build and public build passed. The development mirror passed 103 focused tests and TypeScript, preserving its inbound-routing link.
 - Browser checks passed against a disposable local D1 database: real import/API/scoring, field changes, stale-response rejection, 101-row paging, partial coverage and matching JSON export. Synthetic scan-control responses verified pause/resume and cursor-cycle handling.
-- Desktop and 390px views were inspected; no page errors or horizontal overflow. Fixture scores were 72/100, 38/100 and no suggestion. No real provider requests occurred.
+- Desktop and 390px app and live-site checks passed with no page errors or overflow. Fixture scores were 72/100, 38/100 and no suggestion. Both published guide links returned HTTP 200; the site Pages deployment passed.
+- [Published runtime CI for `01dae32`](https://github.com/harrisonoconnorhover/gtm-control-tower/actions/runs/36343392025) passed tests, lint, secret/dependency checks, both builds and isolated fresh-install smoke.
 
 ## Decisions
 
@@ -27,7 +29,7 @@
 
 ## Remaining
 
-- Publish source and update the portfolio paragraph; publication checks are recorded after completion. The development mirror remains local.
+- Development mirror `ab48dd8` remains local; no private deployment occurred.
 - Qualify against live development accounts before relying on provider-specific visibility, permissions or duplicate rules. Snapshot age, caps and concurrent CRM changes limit coverage; no suggestion does not establish absence.
 
 ## Review First
