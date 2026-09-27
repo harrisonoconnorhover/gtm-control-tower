@@ -3,7 +3,8 @@
 [![CI](https://github.com/harrisonoconnorhover/gtm-control-tower/actions/workflows/ci.yml/badge.svg)](https://github.com/harrisonoconnorhover/gtm-control-tower/actions/workflows/ci.yml)
 [![MIT License](https://img.shields.io/badge/license-MIT-174b45.svg)](LICENSE)
 
-**[Audit a CRM CSV privately in your browser](https://gtm-control-tower.pages.dev/)** ·
+**[Try the synthetic cleanup](https://gtm-control-tower.pages.dev/#demo)** ·
+**[Audit a CSV privately](https://gtm-control-tower.pages.dev/#audit)** ·
 **[Self-host the operator workspace](#quick-start-one-command-no-accounts-required)**
 
 A self-hosted revenue-systems lab that turns deliberately messy CRM data into
@@ -13,6 +14,14 @@ repairs.
 It works immediately with a CSV. Teams can then add HubSpot, Salesforce, n8n,
 BigQuery, and dbt without putting credentials or organization-specific IDs in
 the repository.
+
+## Review the work in two minutes
+
+1. Run the browser cleanup and open [the record decisions](https://gtm-control-tower.pages.dev/#decisions). Inspect a duplicate pair, an owner change, and a held record. The original values, applied rules, remaining issues, and downloadable decisions come from the same local run.
+2. Inspect the shared [CSV importer and repairs](lib/csv-control-tower.ts) and [their regression tests](tests/csv-control-tower.test.ts). Exact email matching preserves corporate plus tags; internationalized domains use IDNA; malformed row widths are rejected before readiness is calculated.
+3. For the separate Salesforce development work, read the [approval, stale-write, and partial-success test contract](docs/salesforce-apex-routing.md). Its dated native results are historical evidence, separate from the browser demonstration and the current CI run.
+
+These are independent development workflows using synthetic records. The browser example performs no CRM writes; the operator workspace requires your own configuration for connected operations.
 
 ## What it does
 
@@ -92,8 +101,11 @@ source.
 The Cloudflare Pages site is a static, browser-only showroom. Visitors can run
 the deterministic 64-row cleanup or audit a local CSV without transmitting the
 file; the audit produces aggregate counts and a downloadable Markdown report.
+The cleanup's expandable record decisions and JSON download retain original
+inputs, final values, applied rules, and remaining hold reasons.
 The site does not store workspaces, run connectors, or expose the operator
-application. It also shows the verified 72-row development-system receipt.
+application. It also summarizes the dated 72-row development-system run and
+links to its historical notes; that summary is not a native receipt export.
 The working product remains
 the Docker self-host below.
 
@@ -111,12 +123,7 @@ cd gtm-control-tower
 docker compose up --build
 ```
 
-Open [http://localhost:3000/app](http://localhost:3000/app) to scan a configured
-HubSpot or Salesforce account for duplicate people. The scanner is unavailable
-until a direct CRM connector and SQLite persistence are configured.
-
-For the account-free path, open
-[http://localhost:3000/app/lab](http://localhost:3000/app/lab), choose **CSV
+Open [http://localhost:3000/app/lab](http://localhost:3000/app/lab), choose **CSV
 file**, and either load the bundled 64-row practice batch or try
 [`public/control-tower-csv-template.csv`](public/control-tower-csv-template.csv).
 For a rougher test, use the 72-row
@@ -131,6 +138,11 @@ The workspace survives browser and container restarts in
 you do not want n8n. Connector checks live at `/setup`; durable field diffs,
 provider receipts, failures, evidence export, and eligible rollbacks live at
 `/runs`.
+
+After configuring a direct HubSpot or Salesforce connector, open
+[http://localhost:3000/app](http://localhost:3000/app) for the whole-account
+duplicate scanner. That optional scanner requires a connector and persistence;
+the CSV workspace above is the account-free starting point.
 
 ## Whole-account duplicate audit
 

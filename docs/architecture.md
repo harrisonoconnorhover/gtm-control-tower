@@ -97,9 +97,9 @@ Every CRM event has a stable `event_id`, lead/account identity, lifecycle stage,
 
 ## Operational path
 
-The n8n workflow accepts a lead signal, normalizes fields, derives score/segment/owner, upserts HubSpot, and appends the event to BigQuery. The local production webhook has HubSpot and BigQuery live. Its disabled Salesforce node remains an organization-specific custom-field example; the verified Salesforce path is the portable query-first CSV connector shown below.
+When configured by a self-hoster, the n8n workflow accepts a lead signal, normalizes fields, derives score/segment/owner, upserts HubSpot, and appends the event to BigQuery. Its disabled Salesforce node remains an organization-specific custom-field example; Salesforce also has a portable query-first CSV connector.
 
-The n8n and BigQuery leg has been validated end to end with synthetic leads. HubSpot is the validated n8n CRM leg. Salesforce has a separate query-first CSV Lead connector so its required fields and duplicate-email ambiguity can be handled without custom fields. Public workflow templates contain portable placeholders and no credential bindings.
+The [August 26 development run notes](https://github.com/harrisonoconnorhover/gtm-control-tower/blob/d81b57e/README.md#verified-integration-behavior) describe connected synthetic exercises. They do not establish current connector availability in another installation. Salesforce's separate query-first CSV Lead connector handles required fields and duplicate-email ambiguity without custom fields. Public workflow templates contain portable placeholders and no credential bindings.
 
 ## Analytics path
 
@@ -109,14 +109,18 @@ The n8n and BigQuery leg has been validated end to end with synthetic leads. Hub
 
 ## Failure simulations
 
-The web demo models three concrete revenue-system failures: duplicate identity, routing-capacity overload, and impossible lifecycle regression. Each proposes an allow-listed worker that requires a human click. The metrics overlay is deterministic; the contact table and its worker results are live BigQuery state queried through n8n.
+The self-hosted warehouse view models duplicate identity, routing overload, and lifecycle regression. Each proposes an allow-listed worker that requires a human click. Its metrics overlay is deterministic; when n8n and BigQuery are configured, the contact table and worker results are queried through that connection. The public static demonstration below computes its synthetic state in the browser and never queries BigQuery.
 
 ## Guided demo path
 
-The public route uses a deterministic 64-row synthetic batch with exact and
-plus-address duplicates, malformed email, missing company and owner, a Unicode
+The public route uses a deterministic 64-row synthetic batch with exact
+duplicate identities, a corporate plus address, malformed email, missing company and owner, a Unicode
 domain, routing overload, and regressive lifecycle writes. Six visible stages
 show ingest, normalization, merge, reroute, replay, and the destination receipt.
+The fixture uses the ordinary CSV importer rather than supplying normalized
+answers. Expandable decisions expose before/after state, the rule behind each
+change, and all remaining destination blockers; the same decisions can be
+downloaded locally. A changed owner does not make an otherwise invalid record ready.
 The whole-account identity audit lives at `/app`; the CSV and guided repair lab
 lives at `/app/lab`; setup and connector health live at `/setup`; durable scan
 and connector evidence lives at `/runs`. These are separate experiences in one
