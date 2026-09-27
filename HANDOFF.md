@@ -2,35 +2,37 @@
 
 ## Finished
 
-- Fixed CSV imports that accepted malformed supplied `normalized_email` values as destination-ready; supplied and raw addresses now share the existing validation and IDNA normalization.
-- Added regressions for invalid supplied values and valid internationalized domains; pinned the existing sample result at 64 input rows, 56 canonical rows, 44 ready, and 12 held.
-- Replaced the vague Quality label with Destination-ready and visible row fractions.
-- Clarified the synthetic browser run, fixed overflow rule, supplied expected lifecycle stage, and the steps for trying the existing demo.
-- Dated and separated the historical CRM and Salesforce examples, linked the original CRM run notes, and mirrored the focused patch into the development checkout.
+- CSV import rejects repeated final contact IDs, including generated-ID collisions, with row-specific errors. This prevents a duplicate repair from merging unrelated records sharing an ID.
+- Preview and direct import now share normalized-header validation; neither silently overwrites an ambiguous column.
+- Starting a replacement preview clears its predecessor. Invalid, oversized or unreadable input cannot leave an old import action available; loaded contacts remain intact.
+- The current 64-row example and previous Docker/Sheets documentation corrections remain unchanged.
 
 ## Try It
 
-In `gtm-control-tower-portfolio`, run `npm run preview:public -- --port 4195 --strictPort` and open `http://127.0.0.1:4195/`. Choose **Run the 64-row cleanup**. Use **Try safe sample** in the CSV audit to inspect and download an aggregate report.
+1. In the CSV workspace, preview a valid file, then choose a malformed or oversized replacement. Its error appears, the draft mapping disappears, and already-loaded rows stay unchanged. Choose a corrected file and validate it normally.
+2. Import a CSV with two source rows sharing a contact ID. The error identifies both rows; correct the IDs before running repairs.
+3. Run `npm test -- --run tests/csv-control-tower.test.ts tests/messy-lead-demo.test.ts tests/crm-audit.test.ts` for the focused importer/demo/audit cases.
 
 ## Checks
 
-- Both checkouts: 44 focused tests passed across CSV import, browser audit/demo, identity resolution, public-company fixture, CRM workflow, HubSpot, and Salesforce contracts.
-- Both checkouts: changed-file ESLint and `npm run build:public` passed.
-- Public-demo test with exact row-count assertions passed; `git diff --check` passed and the diff was reviewed.
-- No native CRM calls, deployments, or provider requalification were performed. Browser QA and publishing are handled by the coordinating task.
+- New importer regressions failed before correction. All 32 focused tests, changed-file ESLint, TypeScript and diff checks passed in public and development checkouts.
+- Public operator and static-site builds passed. The same UI correction was mirrored into the identical development component; development ESLint/TypeScript checks passed.
+- Isolated browser reproduced the stale-file import before correction, then verified malformed/oversized replacement rejection, retention of loaded rows and successful recovery with a valid replacement.
+- Browser verification covered session CSV state; the disposable development database was uninitialized, so persistence was not qualified by that check. No provider calls or real CRM rows were used.
 
 ## Decisions
 
-- Reuse existing email validation; retain valid supplied identities and preserve raw input.
-- Keep historical sandbox metrics as dated records, separate from browser computation and customer outcomes.
-- Release from the portfolio checkout; the development checkout retains unrelated inbound-routing work.
+- Reject ambiguous record IDs rather than silently assigning new identities.
+- Preserve imported work while invalidating a failed replacement draft.
+- Keep current local checks separate from historical provider receipts.
 
 ## Remaining
 
-- Complete browser QA, then publish only the reviewed public release through the coordinating task.
-- Existing published Agentforce preview still requires its dedicated execution user; this change does not qualify it.
+- Publish and verify the reviewed public source and static assets. Development mirrors stay local.
+- No connected-provider requalification or private-host deployment is part of this pass.
 
 ## Review First
 
 - `lib/csv-control-tower.ts` and `tests/csv-control-tower.test.ts`.
-- `components/public-demo.tsx` and `tests/messy-lead-demo.test.ts`.
+- `components/self-host-console.tsx`: draft clearing and file-read errors.
+- `docs/decisions.md`: identity and preview-state choices.
