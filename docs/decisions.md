@@ -40,6 +40,12 @@ The account-free setup starts at `/app/lab`. The whole-account scanner at `/app`
 requires configured CRM access and remains a separate optional step. Historical
 connector results are labeled as dated observations rather than current health.
 
+Fresh operator sessions start in CSV mode. Connector configuration labels and
+imported-row metrics describe the current installation. Static warehouse stage
+counters, dbt examples and replay traces are hidden from CSV mode and explicitly
+illustrative when shown; they are not current native execution evidence. Local
+repair counts and returned receipts continue to come from the existing engine.
+
 ## BigQuery rather than Snowflake
 
 BigQuery keeps this first portfolio slice small: one SQL setup file, event-oriented storage, and straightforward dbt models. The contracts and marts are portable if a Snowflake version becomes useful later.
