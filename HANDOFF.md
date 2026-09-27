@@ -6,7 +6,7 @@
 - Corrections retain before/after values. Email changes recheck duplicate holds across active records; partial corrections and unknown lifecycle values cannot silently remove unresolved holds.
 - Correction history uses existing saved snapshots, including reload and undo. Failed saves leave the correction unapplied and retain the draft for retry. Older workspaces load with empty history.
 - Changed workspace data clears current CRM previews and sync results, requiring a fresh review through the existing destination rules. Historical connector receipts remain available.
-- Added a reproducible three-row walkthrough. Mirrored the bounded change into development while preserving its separate inbound-routing link.
+- Published the feature and illustrated three-row walkthrough to public main (`f9479ee`, runtime `32eed57`). Mirrored the bounded change into development while preserving its separate inbound-routing link.
 
 ## Try It
 
@@ -21,6 +21,8 @@
 - Isolated browser/D1 checks passed: duplicate creation/resolution, partial holds, saved history after reload, undo, simulated save failure and retry, and matching exported CSV values/flags. No page errors.
 - Desktop and 390px screenshots were visually inspected; no page overflow. Only synthetic records and disposable local persistence were used; no provider writes.
 
+- [Release CI for `f9479ee`](https://github.com/harrisonoconnorhover/gtm-control-tower/actions/runs/36340341660) passed, including tests, lint, secret/dependency scans, both builds and fresh-install smoke. Public source, guide and screenshot returned HTTP 200 and matched reviewed bytes.
+
 ## Decisions
 
 - Keep IDs, expected stages and merged rows immutable; preserve supplied normalized email unless the email changes or the operator explicitly rechecks it.
@@ -29,8 +31,7 @@
 
 ## Remaining
 
-- Implementation is local; public publishing and private deployment have not been performed.
-- Real-provider requalification was outside this feature's scope.
+- Development mirrors remain local. No private deployment or real-provider requalification was part of this release; the static demonstration remains unchanged.
 
 ## Review First
 
