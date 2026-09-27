@@ -1,0 +1,6 @@
+contact_id,first_name,last_name,email,phone,state,company,job_title,website,region,segment,owner_id
+ENT-UNCHANGED,Elena,Marquez,elena.marquez@microsoft.example.com,+12065550112,Washington,Microsoft,"Director, Partner Operations",https://www.microsoft.com,West,Enterprise,fictional_demo_operator
+ENT-UPDATE,Marcus,Bell,marcus.bell@adobe.example.com,+14085550125,CA,Adobe,"Senior Director, Revenue Operations",https://www.adobe.com,West,Enterprise,fictional_demo_operator
+ENT-CREATE,Nina,Alvarez,nina.alvarez@servicenow.example.com,+12125550162,NY,ServiceNow,"Senior Manager, Revenue Enablement",https://www.servicenow.com,East,Enterprise,fictional_demo_operator
+ENT-CONTACT,Denise,Carter,denise.carter@servicenow.example.com,+12125550161,NY,ServiceNow,"Director, Enterprise Programs",https://www.servicenow.com,East,Enterprise,fictional_demo_operator
+ENT-NULL-CLEAR,Tess,Morgan,tess.morgan@microsoft.example.com,+14255550185,WA,Microsoft,"Senior Manager, Commercial Operations",,West,Enterprise,fictional_demo_operator

@@ -2,35 +2,38 @@
 
 ## Finished
 
-- Fixed pending CRM operations allowing a replacement import, reset, undo, CRM switch or comparison refresh to change their input.
-- Extended the page's existing busy state through comparison/sync and receipt saving. One immediate request guard prevents overlapping CRM starts; errors release the controls.
-- Added visible pending-request status and extended the existing credential-free batch browser regression with deliberately delayed responses.
-- Preserved batch outcomes, key handling, provider APIs, matching rules and receipt formats. No live CRM requests or writes were made in this pass.
+- Seeded realistic fictional event records in the designated HubSpot development portal and Salesforce Developer Edition, using recognizable companies, reserved example.com email subdomains and fictional phone numbers.
+- Verified the browser workflow against native APIs: each CRM created one person and updated two. Salesforce held an existing Contact. Repeat imports made zero new writes; rollback restored both updates and retained the new person.
+- Demonstrated manual exclusion of two approximate matches and both native Salesforce rule outcomes: a strong match was blocked; a sparse row passed and its test-created Lead was removed.
+- Added the illustrated walkthrough, downloadable review/approved CSVs, repeatable seeder, native check script and public evidence. Retained nine fictional people per CRM.
+- Fixed Salesforce receipts dropping the native composite statusCode; matching policy and CRM write headers are unchanged.
 
 ## Try It
 
-1. Start a disposable local app with persistence enabled and installed Chrome/Chromium.
-2. Run `CONTROL_TOWER_BROWSER_BASE_URL=http://127.0.0.1:3000 npm run test:crm-batches`; set `CHROMIUM_PATH` if needed. The script delays fictional CRM responses and run-history saving to exercise the busy state.
-3. Run `CONTROL_TOWER_BROWSER_BASE_URL=http://127.0.0.1:3000 npm run test:operator-key` to repeat the related key workflow.
+1. Open `public/enterprise-import-walkthrough.html` through the public demo or a local static server.
+2. Download the seven-row review and five-row approved CSVs. Follow `docs/enterprise-import-fixtures.md` in a configured development workspace.
+3. Existing development records remain after rollback. Reimporting proposes the two updates again; the new Nina already exists. The first-run native check requires a fresh eight-person baseline and does not reset CRM records.
 
 ## Checks
 
-- The extended browser regression failed on the prior release for both providers because input controls remained enabled during comparison.
-- After the fix, HubSpot and Salesforce simulated checks passed at comparison, execution and receipt-saving pauses, including error recovery. Existing 105-row batch totals and replacement-import checks still passed.
-- Shared-key browser regression passed for both providers with 21 intercepted private requests and no native CRM requests.
-- 215 tests across 23 suites, lint, TypeScript and both builds passed. No browser page exceptions or horizontal overflow in the batch check.
+- Native HubSpot and Salesforce browser runs, independent field read-back, saved receipts, repeat imports and update rollback passed; no provider responses were mocked.
+- Native Salesforce rejection returned DUPLICATES_DETECTED after the receipt fix, with zero creates and a persisted failed receipt. Sparse probe cleanup was verified.
+- 216 tests across 23 suites, lint, TypeScript, both builds, script syntax, fixture consistency, secret scan and public account/record-ID checks passed.
+- Walkthrough images, downloads and website links passed desktop/mobile checks; no horizontal overflow or browser page errors.
 
 ## Decisions
 
-- Reuse the existing fieldset and sending states; retain a single synchronous request guard until receipt saving finishes.
-- Wait for input-changing operations to finish before CRM work starts. Avoid cancellation machinery or another approval step.
+- Approximate suggestions require an operator decision; the approved CSV explicitly excludes unresolved identities.
+- A single duplicate-alert acknowledgment constructed the second fictional Jordan during setup. Application writes retain allowSave=false; no organization rule was changed.
+- Scores rank evidence; they are not calibrated probabilities. Only dated development behavior is claimed.
 
 ## Remaining
 
-- Native write execution, duplicate rules and rollback remain unqualified. These simulated browser checks do not extend the native-read claims in `docs/import-matching-native-check.md`.
+- No calibrated accuracy benchmark, production use, native merge, Lead conversion, additional-email mutation, bulk pagination or concurrent-writer qualification.
+- Configured native duplicate rules can permit sparse records. Manual review remains necessary.
 
 ## Review First
 
-- `components/control-tower-dashboard.tsx` request guards, fieldset and receipt-saving order.
-- `scripts/check-crm-batches.mjs` delayed-response checks.
-- `docs/import-crm-comparison.md` execution boundaries.
+- `docs/enterprise-import-native-check.md` and the illustrated walkthrough.
+- `scripts/seed_enterprise_import.mjs` and `scripts/check-enterprise-import.mjs`.
+- Salesforce error formatting in `app/api/control-tower/crm-writeback/route.ts`.

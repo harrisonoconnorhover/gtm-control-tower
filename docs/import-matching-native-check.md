@@ -1,5 +1,11 @@
 # Native import-matching check — September 27, 2026
 
+**Later native evidence:** the [enterprise import case](enterprise-import-native-check.md)
+verified creates, updates, unchanged records, an existing Salesforce Contact hold,
+repeat imports, and update rollback in development accounts on September 27, 2026.
+Approximate suggestions still require manual review. Earlier read-only results below
+retain their original scope.
+
 **Result:** the approximate review and exact-email preview passed a read-only
 check against the configured HubSpot account and a Salesforce Developer Edition
 org. This is dated development evidence, not measured matching accuracy or

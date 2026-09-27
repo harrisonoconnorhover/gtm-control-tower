@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Follow a fictional event import through human match review, native CRM writes, a duplicate-free repeat, and update rollback in GTM Control Tower development accounts.">
+  <title>An event list meets an existing CRM · GTM Control Tower</title>
+  <style>
+    :root{color-scheme:dark;--bg:#06100d;--panel:#0b1b16;--line:#284136;--text:#edf8f2;--muted:#adc0b5;--lime:#d8ff67;--blue:#a3ccff;--amber:#efcc8d}
+    *{box-sizing:border-box}html{scroll-behavior:smooth;scroll-padding-top:24px}body{margin:0;background:var(--bg);color:var(--text);font:16px/1.65 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}a{color:var(--blue);text-underline-offset:4px}a:hover{color:var(--lime)}a:focus-visible,[tabindex]:focus-visible{outline:3px solid var(--lime);outline-offset:5px}::selection{background:var(--lime);color:var(--bg)}.shell{width:min(1080px,calc(100% - 48px));margin:auto}.skip{position:absolute;left:24px;top:-100px;padding:12px 20px;background:var(--lime);color:var(--bg);z-index:2}.skip:focus{top:12px}.topbar{display:flex;justify-content:space-between;align-items:center;gap:20px;padding:26px 0;border-bottom:1px solid var(--line)}.brand{display:flex;align-items:center;gap:12px;text-decoration:none;color:var(--text);font-weight:750;letter-spacing:-.02em}.mark{display:grid;place-items:center;width:38px;height:38px;border-radius:11px;background:var(--lime);color:var(--bg);font-size:12px;font-weight:900}.toplink{font-size:14px}.hero{padding:65px 0 38px;max-width:870px}.eyebrow,.step-label{font:600 12px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace;letter-spacing:.1em;text-transform:uppercase;color:var(--lime)}h1,h2,h3,p{margin-top:0}h1{font-size:clamp(38px,6.3vw,68px);line-height:1.07;letter-spacing:-.055em;margin:18px 0 24px;max-width:800px}h1 span{color:var(--lime)}.intro{font-size:20px;line-height:1.6;color:var(--muted);max-width:730px}.context{color:var(--muted);font-size:14px;max-width:800px}.actions{display:flex;flex-wrap:wrap;gap:12px;margin:26px 0}.button{display:inline-block;padding:10px 17px;border:1px solid var(--line);border-radius:8px;text-decoration:none;font-size:14px;font-weight:650}.button.primary{background:var(--lime);border-color:var(--lime);color:var(--bg)}.jump{display:flex;gap:8px 22px;flex-wrap:wrap;padding:18px 0 24px;border-bottom:1px solid var(--line);font-size:14px}.jump a{color:var(--muted);text-decoration:none}.jump a:hover{color:var(--lime)}section{padding:44px 0;border-bottom:1px solid var(--line)}h2{font-size:clamp(25px,3.5vw,34px);line-height:1.2;letter-spacing:-.035em;margin:10px 0 17px}h3{font-size:17px;line-height:1.4;margin-bottom:10px}.copy{max-width:800px;color:var(--muted)}.cards{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin:25px 0}.card{padding:22px;border:1px solid var(--line);border-radius:14px;background:var(--panel)}.card p{color:var(--muted);font-size:14px;margin-bottom:0}.tag{display:inline-block;color:var(--amber);font:600 11px/1.4 ui-monospace,SFMono-Regular,Consolas,monospace;letter-spacing:.05em;text-transform:uppercase;margin-bottom:12px}.email{font:13px/1.7 ui-monospace,SFMono-Regular,Consolas,monospace;overflow-wrap:anywhere;color:var(--text);margin:10px 0 14px}.email span{color:var(--muted)}.decision{padding:19px 23px;border-left:3px solid var(--lime);background:var(--panel);margin:22px 0;color:var(--muted)}.decision strong{color:var(--text)}figure{margin:26px 0 0;border:1px solid var(--line);border-radius:14px;overflow:hidden;background:#07130f}figure>a{display:block;padding:10px;text-decoration:none}figure img{display:block;width:100%;height:auto;max-height:480px;object-fit:contain;font-size:14px;color:var(--muted)}figcaption{padding:14px 20px;border-top:1px solid var(--line);font-size:13px;line-height:1.6;color:var(--muted)}.table-wrap{max-width:100%;overflow-x:auto;border:1px solid var(--line);border-radius:13px;margin:24px 0}table{border-collapse:collapse;width:100%;min-width:460px;font-size:15px}caption{text-align:left;padding:17px 20px;background:var(--panel);font-weight:650}th,td{text-align:left;padding:12px 20px;border-top:1px solid var(--line)}thead th{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:650}tbody th{font-weight:500}td{font-variant-numeric:tabular-nums}.good{color:var(--lime);font-weight:700}.small{font-size:14px;color:var(--muted)}.limits{padding:24px;border:1px solid var(--line);border-radius:14px;background:var(--panel);margin:34px 0}.limits p{color:var(--muted);font-size:14px;margin-bottom:12px}.limits p:last-child{margin-bottom:0}footer{padding:0 0 34px;color:var(--muted);font-size:13px;display:flex;justify-content:space-between;gap:20px;flex-wrap:wrap}footer p{margin:0}@media(max-width:620px){.shell{width:calc(100% - 32px)}.topbar{padding:19px 0}.toplink{font-size:12px}.brand{font-size:14px;gap:9px}.hero{padding:39px 0 26px}.intro{font-size:18px}.cards{grid-template-columns:1fr;gap:12px}.card{padding:19px}section{padding:32px 0}th,td{padding:11px 14px}figure>a{padding:5px}figcaption{padding:12px 15px}.actions{gap:9px}.button{font-size:13px;padding:10px 13px}.jump{gap:10px 16px}.limits{padding:20px}}@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}@media print{body{background:white;color:#102019}a,.eyebrow,.step-label,.good{color:#174a35}.cards,figure,.table-wrap,.limits{break-inside:avoid}.topbar,.jump,.actions{display:none}.shell{width:100%}.hero{padding-top:10px}.intro,.copy,.context,.small,.card p,.limits p,figcaption{color:#334b3e}.card,.decision,.limits,caption{background:#f2f5f2}figure img{max-height:350px}h1{font-size:42px}}
+  </style>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to case study</a>
+  <div class="shell">
+    <header class="topbar">
+      <a class="brand" href="./"><span class="mark" aria-hidden="true">GT</span>GTM Control Tower</a>
+      <a class="toplink" href="https://github.com/harrisonoconnorhover/gtm-control-tower">View source ↗</a>
+    </header>
+
+    <main id="main">
+      <div class="hero">
+        <p class="eyebrow">Development run · September 27, 2026</p>
+        <h1>An event list meets <br>an <span>existing CRM.</span></h1>
+        <p class="intro">Seven attendees. Two uncertain identities. Follow one import through human review, native CRM writes, a duplicate-free repeat, and rollback.</p>
+        <p class="context">People and contact details are fictional; company names and websites provide real context. Emails use <strong>.example.com</strong> to avoid real mailboxes. No company endorsement is implied.</p>
+        <div class="actions">
+          <a class="button primary" href="#review">Follow the two-minute case</a>
+          <a class="button" href="./enterprise-import-review.csv" download>Download all 7 rows</a>
+          <a class="button" href="https://github.com/harrisonoconnorhover/gtm-control-tower/blob/main/docs/enterprise-import-native-check.md">Inspect run evidence ↗</a>
+        </div>
+      </div>
+
+      <nav class="jump" aria-label="Case study steps">
+        <a href="#review">01 Review</a><a href="#decide">02 Decide</a><a href="#write">03 Write</a><a href="#repeat">04 Repeat</a><a href="#rollback">05 Roll back</a>
+      </nav>
+
+      <section id="review" aria-labelledby="review-title">
+        <p class="step-label">01 · Review all seven rows</p>
+        <h2 id="review-title">A plausible match still needs evidence.</h2>
+        <p class="copy">Compare a saved CRM snapshot by name, email, phone, state, and company. Two rows need attention.</p>
+        <div class="cards">
+          <article class="card">
+            <span class="tag">Changed email</span>
+            <h3>Priya Nair · Salesforce</h3>
+            <div class="email"><span>Existing</span> priya.nair@salesforce.example.com<br><span>Imported</span> p.nair@salesforce.example.com</div>
+            <p>Name, phone, company, and state agree; email conflicts. Both CRMs produced a 72/100 suggestion, requiring review.</p>
+          </article>
+          <article class="card">
+            <span class="tag">Two possible coworkers</span>
+            <h3>Jordan Lee · Cisco</h3>
+            <div class="email">Director, Network Sales<br>Senior Manager, Field Marketing</div>
+            <p>Two coworkers share the name, company, and state. Both score 28/100; the import has no phone or title to distinguish them.</p>
+          </article>
+        </div>
+        <p class="small">Scores out of 100 rank evidence, not probability or certainty. Suggestions do not automatically hold, merge, or link records.</p>
+        <figure>
+          <a href="./enterprise-import-evidence/hubspot-approximate.png" aria-label="Open full-size HubSpot approximate match review"><img src="./enterprise-import-evidence/hubspot-approximate.png" alt="HubSpot snapshot review with candidate evidence for the fictional imported contacts." width="1440" height="900" loading="lazy"></a>
+          <figcaption>HubSpot candidate evidence. Select screenshots to enlarge. <a href="./enterprise-import-evidence/hubspot-coworkers.png">Inspect both Jordan candidates.</a></figcaption>
+        </figure>
+      </section>
+
+      <section id="decide" aria-labelledby="decide-title">
+        <p class="step-label">02 · Make the human decision explicit</p>
+        <h2 id="decide-title">Seven reviewed. Five approved.</h2>
+        <p class="copy">The operator removes Priya and Jordan until their identities are resolved. Five rows reach the exact-email write preview.</p>
+        <div class="decision"><strong>Manual decision:</strong> the operator prepares the approved file. A separate Salesforce probe allowed a sparse Jordan row with a new email and no phone. That test record was deleted and absence verified. Configured duplicate rules do not catch every plausible duplicate.</div>
+        <a class="button" href="./enterprise-import-approved.csv" download>Download the 5 approved rows</a>
+      </section>
+
+      <section id="write" aria-labelledby="write-title">
+        <p class="step-label">03 · Preview and execute</p>
+        <h2 id="write-title">Write only the intended changes.</h2>
+        <p class="copy">Create Nina. Update Marcus’s title and phone. Clear Tess’s website deliberately. Elena stays unchanged. Denise is unchanged in HubSpot; Salesforce holds her existing Contact, outside the Lead write path.</p>
+        <div class="table-wrap" role="region" aria-label="Initial import outcomes by CRM" tabindex="0">
+          <table>
+            <caption>Initial approved import · five rows per CRM</caption>
+            <thead><tr><th scope="col">Outcome</th><th scope="col">HubSpot</th><th scope="col">Salesforce</th></tr></thead>
+            <tbody>
+              <tr><th scope="row">Created</th><td>1</td><td>1</td></tr>
+              <tr><th scope="row">Updated</th><td>2</td><td>2</td></tr>
+              <tr><th scope="row">Unchanged</th><td>2</td><td>1</td></tr>
+              <tr><th scope="row">Held</th><td>0</td><td>1</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <figure>
+          <a href="./enterprise-import-evidence/salesforce-plan.png" aria-label="Open full-size Salesforce write preview"><img src="./enterprise-import-evidence/salesforce-plan.png" alt="Salesforce exact-email preview showing one create, two updates, one unchanged Lead, and an existing Contact hold." width="1440" height="900" loading="lazy"></a>
+          <figcaption>Salesforce holds Denise’s existing Contact instead of creating a duplicate Lead.</figcaption>
+        </figure>
+      </section>
+
+      <section id="repeat" aria-labelledby="repeat-title">
+        <p class="step-label">04 · Submit the same approved file again</p>
+        <h2 id="repeat-title">The second import has nothing new to write.</h2>
+        <p class="copy">Read back the native records and repeat. Nina now exists; Marcus and Tess already have the requested values.</p>
+        <div class="table-wrap" role="region" aria-label="Repeat import outcomes by CRM" tabindex="0">
+          <table>
+            <caption>Repeat import · same approved file</caption>
+            <thead><tr><th scope="col">Outcome</th><th scope="col">HubSpot</th><th scope="col">Salesforce</th></tr></thead>
+            <tbody>
+              <tr><th scope="row">Created / updated</th><td class="good">0 / 0</td><td class="good">0 / 0</td></tr>
+              <tr><th scope="row">Unchanged / held</th><td>5 / 0</td><td>4 / 1</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <figure>
+          <a href="./enterprise-import-evidence/hubspot-repeat.png" aria-label="Open full-size HubSpot repeat import result"><img src="./enterprise-import-evidence/hubspot-repeat.png" alt="HubSpot repeat import reports five unchanged contacts with no new creates or updates." width="1440" height="900" loading="lazy"></a>
+          <figcaption>All five HubSpot contacts match the requested state. Nina is not created again.</figcaption>
+        </figure>
+      </section>
+
+      <section id="rollback" aria-labelledby="rollback-title">
+        <p class="step-label">05 · Restore the prior field values</p>
+        <h2 id="rollback-title">Undo the two updates. Keep the new record.</h2>
+        <p class="copy">The original receipt restores Marcus’s title and phone and Tess’s website in both CRMs. Native read-back checks the values. Nina remains: update rollback does not delete created records.</p>
+        <figure>
+          <a href="./enterprise-import-evidence/salesforce-rollback.png" aria-label="Open full-size Salesforce rollback result"><img src="./enterprise-import-evidence/salesforce-rollback.png" alt="Salesforce rollback result restoring the two updated fictional records while retaining the newly created Lead." width="1440" height="900" loading="lazy"></a>
+          <figcaption>Salesforce restores two updates. The newly created Lead remains.</figcaption>
+        </figure>
+      </section>
+
+      <aside class="limits" aria-labelledby="limits-title">
+        <h3 id="limits-title">What this case demonstrates—and its limits</h3>
+        <p>Development accounts: HubSpot <strong>STANDARD</strong> and Salesforce <strong>Developer Edition</strong> (<code>IsSandbox=false</code>), not formally provisioned sandbox accounts. No production customer work. Real APIs; no mocked CRM responses. Screenshots mask account and native record IDs.</p>
+        <p>Salesforce blocked the second Jordan during fixture setup. A one-record <code>allowSave=true</code> acknowledgement seeded that coworker; application writes kept <code>allowSave=false</code>.</p>
+        <p>A separate stronger match—Priya’s matching name and phone with a changed email—was rejected with <code>DUPLICATES_DETECTED</code>. The app saved the failed receipt, and CRM read-back confirmed zero creates. Sparse input can still pass the configured rule.</p>
+        <p>This fictional exercise does not measure matching accuracy. Review is manual. The import writeback does not synchronize state or city. Results cover these cases; other CRM configurations and concurrent external edits remain outside this demonstration.</p>
+        <p><a href="https://github.com/harrisonoconnorhover/gtm-control-tower/blob/main/docs/enterprise-import-native-check.md">Read the run evidence, checks, and remaining limits ↗</a></p>
+      </aside>
+    </main>
+
+    <footer>
+      <p>GTM Control Tower · A revenue systems portfolio project</p>
+      <a href="./">Back to the public demo</a>
+    </footer>
+  </div>
+</body>
+</html>

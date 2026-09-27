@@ -179,7 +179,7 @@ async function executeSalesforcePlan(plan: CrmWritePlan, runId: string): Promise
     const errors = Array.isArray(result.errors) ? result.errors.filter(isRecord) : [];
     return {
       contactId: record.contactId, email: record.email, nativeId: record.nativeId, status: 'failed',
-      error: errors.map((error) => stringValue(error.message)).filter(Boolean).join('; ') || 'Salesforce rejected this record.',
+      error: errors.map((error) => [stringValue(error.statusCode) || stringValue(error.errorCode), stringValue(error.message)].filter(Boolean).join(': ')).filter(Boolean).join('; ') || 'Salesforce rejected this record.',
     };
   });
 }
@@ -249,7 +249,7 @@ async function executeRollback(rollback: CrmRollbackPlan): Promise<CrmWritebackR
       const errors = Array.isArray(result.errors) ? result.errors.filter(isRecord) : [];
       return result.success === true
         ? { contactId: record.contactId, email: record.email, nativeId: stringValue(result.id) || record.nativeId, status: 'rolled_back', error: null }
-        : { contactId: record.contactId, email: record.email, nativeId: record.nativeId, status: 'failed', error: errors.map((error) => stringValue(error.message)).filter(Boolean).join('; ') || 'Salesforce rejected this rollback.' };
+        : { contactId: record.contactId, email: record.email, nativeId: record.nativeId, status: 'failed', error: errors.map((error) => [stringValue(error.statusCode) || stringValue(error.errorCode), stringValue(error.message)].filter(Boolean).join(': ')).filter(Boolean).join('; ') || 'Salesforce rejected this rollback.' };
     });
   }
   const completedAt = new Date().toISOString();

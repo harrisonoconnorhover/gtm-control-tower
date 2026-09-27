@@ -74,6 +74,19 @@ describe('import comparison before governed CRM writes', () => {
     expect(fetchMock.mock.calls.every(([url]) => String(url).includes('/query?'))).toBe(true);
   });
 
+  it('retains the native Salesforce error code when a duplicate rule rejects a create', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      if (new URL(String(input)).pathname.endsWith('/query')) return response({ done: true, records: [] });
+      return response([{ success: false, errors: [{ statusCode: 'DUPLICATES_DETECTED', message: 'Use one of these records?', fields: [] }] }]);
+    });
+    const imported = [contact('one', 'new@example.com')];
+    const plan = await (await POST(request('salesforce', imported))).json() as CrmWritePlan;
+    const result = await POST(request('salesforce', imported, plan));
+    expect(result.status).toBe(202);
+    expect(await result.json()).toMatchObject({ created: 0, updated: 0, failed: 1,
+      records: [{ status: 'failed', error: 'DUPLICATES_DETECTED: Use one of these records?' }] });
+  });
+
   it('updates a HubSpot secondary-email match by native ID without changing its primary email', async () => {
     const writes: unknown[] = [];
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {

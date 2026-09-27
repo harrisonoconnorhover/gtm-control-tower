@@ -1,0 +1,297 @@
+{
+  "caseId": "enterprise-import-2026-09-27",
+  "fictionalData": true,
+  "companyReferences": "Microsoft, Adobe, Salesforce, ServiceNow, Costco, Cisco; all people and business relationships invented",
+  "emailBoundary": "Company subdomains of IANA-reserved example.com",
+  "positiveWorkflowSourceRevision": "3005cba60437e4569317cb77291f596bfc3c48d0",
+  "runtimeChangeAfterPositiveRun": "Preserve native Salesforce composite statusCode in failed execution/rollback receipts; verified by a fresh native duplicate-rule rejection",
+  "accounts": {
+    "hubspot": "User-designated development portal; accountType STANDARD",
+    "salesforce": "Developer Edition; IsSandbox false"
+  },
+  "providers": {
+    "hubspot": {
+      "startedAt": "2026-09-27T21:24:03.200Z",
+      "finishedAt": "2026-09-27T21:24:13.913Z",
+      "firstWrite": {
+        "created": 1,
+        "updated": 2,
+        "unchanged": 2,
+        "held": 0,
+        "failed": 0,
+        "nativeRecordsAfter": 9,
+        "unrelatedFixtureRecordsPreserved": true,
+        "ownersPreserved": true
+      },
+      "repeat": {
+        "created": 0,
+        "updated": 0,
+        "unchanged": 5,
+        "held": 0,
+        "failed": 0,
+        "nativeStateIdentical": true
+      },
+      "rollback": {
+        "restored": 2,
+        "held": 0,
+        "failed": 0,
+        "baselineFieldsRestored": true,
+        "createdRecordRetained": true
+      },
+      "snapshotRecords": 25,
+      "review": [
+        {
+          "contactId": "ENT-UNCHANGED",
+          "candidates": [
+            {
+              "name": "Elena Marquez",
+              "email": "elena.marquez@microsoft.example.com",
+              "score": 100,
+              "objectType": "contact"
+            }
+          ],
+          "warnings": []
+        },
+        {
+          "contactId": "ENT-UPDATE",
+          "candidates": [
+            {
+              "name": "Marcus Bell",
+              "email": "marcus.bell@adobe.example.com",
+              "score": 86,
+              "objectType": "contact"
+            }
+          ],
+          "warnings": []
+        },
+        {
+          "contactId": "ENT-CREATE",
+          "candidates": [],
+          "warnings": []
+        },
+        {
+          "contactId": "ENT-EMAIL-CHANGE",
+          "candidates": [
+            {
+              "name": "Priya Nair",
+              "email": "priya.nair@salesforce.example.com",
+              "score": 72,
+              "objectType": "contact"
+            }
+          ],
+          "warnings": []
+        },
+        {
+          "contactId": "ENT-COWORKER",
+          "candidates": [
+            {
+              "name": "Jordan Lee",
+              "email": "jordan.a.lee@cisco.example.com",
+              "score": 28,
+              "objectType": "contact"
+            },
+            {
+              "name": "Jordan Lee",
+              "email": "jordan.lee@cisco.example.com",
+              "score": 28,
+              "objectType": "contact"
+            }
+          ],
+          "warnings": []
+        },
+        {
+          "contactId": "ENT-CONTACT",
+          "candidates": [
+            {
+              "name": "Denise Carter",
+              "email": "denise.carter@servicenow.example.com",
+              "score": 100,
+              "objectType": "contact"
+            }
+          ],
+          "warnings": []
+        },
+        {
+          "contactId": "ENT-NULL-CLEAR",
+          "candidates": [
+            {
+              "name": "Tess Morgan",
+              "email": "tess.morgan@microsoft.example.com",
+              "score": 100,
+              "objectType": "contact"
+            }
+          ],
+          "warnings": []
+        }
+      ],
+      "savedReceiptsVerifiedByReadBack": true,
+      "populatedStateNameCodeMatch": true,
+      "browserPageErrors": []
+    },
+    "salesforce": {
+      "startedAt": "2026-09-27T21:28:48.800Z",
+      "finishedAt": "2026-09-27T21:29:02.655Z",
+      "firstWrite": {
+        "created": 1,
+        "updated": 2,
+        "unchanged": 1,
+        "held": 1,
+        "failed": 0,
+        "nativeRecordsAfter": 9,
+        "unrelatedFixtureRecordsPreserved": true,
+        "ownersPreserved": true
+      },
+      "repeat": {
+        "created": 0,
+        "updated": 0,
+        "unchanged": 4,
+        "held": 1,
+        "failed": 0,
+        "nativeStateIdentical": true
+      },
+      "rollback": {
+        "restored": 2,
+        "held": 0,
+        "failed": 0,
+        "baselineFieldsRestored": true,
+        "createdRecordRetained": true
+      },
+      "snapshotRecords": 138,
+      "review": [
+        {
+          "contactId": "ENT-UNCHANGED",
+          "candidates": [
+            {
+              "name": "Elena Marquez",
+              "email": "elena.marquez@microsoft.example.com",
+              "score": 100,
+              "objectType": "lead"
+            }
+          ],
+          "warnings": []
+        },
+        {
+          "contactId": "ENT-UPDATE",
+          "candidates": [
+            {
+              "name": "Marcus Bell",
+              "email": "marcus.bell@adobe.example.com",
+              "score": 86,
+              "objectType": "lead"
+            }
+          ],
+          "warnings": []
+        },
+        {
+          "contactId": "ENT-CREATE",
+          "candidates": [],
+          "warnings": []
+        },
+        {
+          "contactId": "ENT-EMAIL-CHANGE",
+          "candidates": [
+            {
+              "name": "Priya Nair",
+              "email": "priya.nair@salesforce.example.com",
+              "score": 72,
+              "objectType": "lead"
+            }
+          ],
+          "warnings": []
+        },
+        {
+          "contactId": "ENT-COWORKER",
+          "candidates": [
+            {
+              "name": "Jordan Lee",
+              "email": "jordan.lee@cisco.example.com",
+              "score": 28,
+              "objectType": "lead"
+            },
+            {
+              "name": "Jordan Lee",
+              "email": "jordan.a.lee@cisco.example.com",
+              "score": 28,
+              "objectType": "lead"
+            }
+          ],
+          "warnings": []
+        },
+        {
+          "contactId": "ENT-CONTACT",
+          "candidates": [
+            {
+              "name": "Denise Carter",
+              "email": "denise.carter@servicenow.example.com",
+              "score": 100,
+              "objectType": "contact"
+            }
+          ],
+          "warnings": []
+        },
+        {
+          "contactId": "ENT-NULL-CLEAR",
+          "candidates": [
+            {
+              "name": "Tess Morgan",
+              "email": "tess.morgan@microsoft.example.com",
+              "score": 100,
+              "objectType": "lead"
+            }
+          ],
+          "warnings": []
+        }
+      ],
+      "savedReceiptsVerifiedByReadBack": true,
+      "populatedStateNameCodeMatch": true,
+      "browserPageErrors": []
+    }
+  },
+  "salesforceRuleChecks": {
+    "setup": "Second fictional Jordan Lee initially rejected; one-record allowSave=true acknowledgment used only for fixture setup. No rule configuration changed.",
+    "applicationHeader": "allowSave=false",
+    "sparseCase": {
+      "checkedAt": "2026-09-27T21:31:18.601Z",
+      "case": "ENT-COWORKER",
+      "created": 1,
+      "failed": 0,
+      "nativeRuleBlocked": false,
+      "cleanup": "Soft-deleted only the native ID returned by this probe; absence verified.",
+      "remainingEmailMatches": 0,
+      "interpretation": "Sparse unresolved name/company input was accepted by configured native rules. Approximate review/manual exclusion is still needed."
+    },
+    "strongCase": {
+      "passed": true,
+      "checkedAt": "2026-09-27T21:35:53.398Z",
+      "case": "ENT-EMAIL-CHANGE",
+      "preview": "create",
+      "created": 0,
+      "failed": 1,
+      "nativeMatchingEmailCount": 0,
+      "receiptPersisted": true,
+      "providerError": "DUPLICATES_DETECTED: Use one of these records?"
+    }
+  },
+  "retainedState": {
+    "hubspotCaseContacts": 9,
+    "salesforceCaseLeads": 8,
+    "salesforceCaseContacts": 1,
+    "salesforceFixtureAccounts": 1,
+    "updatedBaselineValuesRestored": true,
+    "mainCreatedNinaRetained": true,
+    "sparseProbeLeadSoftDeleted": true
+  },
+  "limits": [
+    "Approximate suggestions do not hold or approve writes; two unresolved rows were excluded through a prepared approved CSV.",
+    "Scores are deterministic ranking signals, not measured probabilities or matching accuracy.",
+    "Account-specific duplicate rules may permit sparse unresolved records.",
+    "No production use, native merge, Lead conversion, additional-email mutation, concurrent writer, bulk pagination, or calibrated matching benchmark was qualified.",
+    "State and city were seeded for matching context; the application writeback does not synchronize addresses."
+  ],
+  "privateDataOmitted": [
+    "Credentials",
+    "Account and native record identifiers",
+    "Unrelated CRM records",
+    "Full snapshots and run-history exports"
+  ]
+}

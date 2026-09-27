@@ -1,5 +1,11 @@
 # Review possible CRM matches for an imported file
 
+**Later native evidence:** the [enterprise import case](enterprise-import-native-check.md)
+verified creates, updates, unchanged records, an existing Salesforce Contact hold,
+repeat imports, and update rollback in development accounts on September 27, 2026.
+Approximate suggestions still require manual review. Earlier read-only results below
+retain their original scope.
+
 In self-hosted `/app/lab`, **Find possible CRM matches** compares active imported
 rows with a saved CRM snapshot. Select **Name**, **Email**, **Phone**, **State**,
 and **Company** under **Matching fields**. Suggested selections reflect usable,
