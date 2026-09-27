@@ -1,5 +1,18 @@
 # Decisions
 
+## September 27, 2026: make connector setup reproducible
+
+Docker setup documents Compose's default `.env` loading and the explicit
+`--env-file .env.local` alternative. The app uses the `n8n` service hostname
+inside Compose; a Node development server uses localhost. Changed environment
+values require `docker compose up -d app`, not a plain restart. An isolated
+configuration check with synthetic values confirmed both loading paths without
+starting containers or contacting providers.
+
+The Sheets guide retains the August 26 receipt's 44 ready and 12 held records
+as historical evidence. The revised local fixture produces 46 ready and 11 held
+after seven merges; no new connected Sheets run is implied.
+
 ## September 27, 2026: demonstrate the same rules that import real files
 
 The synthetic fixture supplies raw identities rather than precomputed normalized
