@@ -97,7 +97,9 @@ npm test -- tests/crm-import-comparison.test.ts tests/crm-existing-hubspot.test.
 A separate [September 27 native read check](import-matching-native-check.md)
 verified exact-email preview proposals against existing fictional HubSpot and
 Salesforce records: unchanged/update/create proposals, and a held Salesforce
-Contact. No proposed change was executed. Live write execution, duplicate-rule
+Contact. A later browser follow-up verified rendered native previews after fixing
+shared operator-key state and a local worker fetch incompatibility. No proposed
+change was executed. Live write execution, duplicate-rule
 behavior, converted Leads and additional-email cases remain unqualified by that
 run. Historical Salesforce receipts elsewhere describe a separate workflow;
 neither those receipts nor these development reads establish behavior under

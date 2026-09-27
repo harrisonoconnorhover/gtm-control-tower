@@ -73,9 +73,11 @@ secondary mobile phone contributed matching evidence; a HubSpot phone shared by
 four records produced a warning and no suggestion when used alone. No CRM writes
 were made.
 
-This check did not exercise the browser with a live provider, continuation
-cursors, or populated state/additional-email values. The scores remain
-uncalibrated. See the [dated native-check evidence and limits](import-matching-native-check.md);
+A later browser run at 20:09 UTC verified native scans, displayed/exported
+suggestions, exact-email previews and one populated Salesforce state-name/code
+match after repairing shared operator-key state and a local-runtime fetch
+incompatibility. Native continuation cursors and populated HubSpot state/additional
+emails remain outside these checks. The scores remain uncalibrated. See the [dated native-check evidence and limits](import-matching-native-check.md);
 the illustrated walkthrough above remains a separate local fixture exercise.
 
 ## Coverage and limits

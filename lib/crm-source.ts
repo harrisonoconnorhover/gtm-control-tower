@@ -271,7 +271,7 @@ function hubSpotHeaders(accessToken: string) {
 async function fetchJsonWithRetry(url: URL, init: RequestInit): Promise<{ response: Response; payload: unknown }> {
   let lastResponse: Response | null = null;
   for (let attempt = 0; attempt < 4; attempt += 1) {
-    const response = await fetch(url, { ...init, cache: 'no-store', redirect: 'error', signal: AbortSignal.timeout(30_000) });
+    const response = await fetch(url, { ...init, cache: 'no-store', redirect: 'manual', signal: AbortSignal.timeout(30_000) });
     lastResponse = response;
     const payload: unknown = await response.json().catch(() => null);
     if (response.status !== 429 && response.status < 500) return { response, payload };

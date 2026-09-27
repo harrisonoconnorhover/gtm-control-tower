@@ -69,6 +69,16 @@ describe('Salesforce exact-email comparison reads', () => {
     });
   });
 
+  it('rejects redirects without following them or accepting incomplete match evidence', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, {
+      status: 302, headers: { location: 'https://other.my.salesforce.com/query' },
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(readSalesforceExisting([contact], apiRoot, headers)).rejects.toThrow('Salesforce query returned 302');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({ redirect: 'manual' });
+  });
+
   it('rejects contradictory evidence for one identity instead of selecting a version', async () => {
     mockPages(
       { done: false, records: [leadRecord], nextRecordsUrl: '/services/data/v67.0/query/lead-2' },
