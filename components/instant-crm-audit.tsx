@@ -56,7 +56,7 @@ export function InstantCrmAudit() {
     const link = document.createElement('a');
     link.href = url;
     link.download = `${report.fileName.replace(/\.csv$/iu, '') || 'crm'}-readiness-audit.md`;
-    document.body.append(link);
+    document.body.appendChild(link);
     link.click();
     link.remove();
     window.setTimeout(() => URL.revokeObjectURL(url), 0);
