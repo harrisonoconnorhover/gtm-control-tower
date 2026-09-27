@@ -264,3 +264,9 @@ only inside the latest workspace snapshot. Each run keeps its source and repair
 counts, reviewed plan, native receipt, failures, and eligible rollback. The UI
 can filter and export this evidence, while a completed rollback disables that
 plan's repeated rollback control.
+
+## September 27, 2026 — Reject ambiguous CSV identities and invalidate failed previews
+
+Each imported source record must have a unique final contact ID, including IDs generated for blank inputs. Repairs index records by ID; silently accepting repeats could merge an unrelated person. Reject the batch with both CSV row numbers instead of renaming or dropping records. Preview and direct import share the existing normalized-header collision check.
+
+Starting a replacement preview discards the previous draft and mapping. An unreadable, oversized or invalid file cannot leave an old Validate + load action available. Already imported contacts remain intact until a new file validates successfully. These changes correct the existing CSV workflow without changing the bundled sample or adding providers.

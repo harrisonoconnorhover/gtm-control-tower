@@ -2,36 +2,37 @@
 
 ## Finished
 
-- Corrected Docker connector setup: `.env` loads automatically, `.env.local` requires `--env-file`, the app uses the `n8n` service hostname, and changed values require recreating the app.
-- HubSpot instructions distinguish Docker from Node development and include the existing production sync-key requirement.
-- Sheets documentation separates the August 26 receipt (44 ready, 12 held) from the revised local fixture (seven merges, 57 canonical records, 46 ready, 11 held).
-- The previous public runtime remains unchanged: browser CSV audit, all 64 record decisions, shared identity rules, lifecycle coverage and CSV-first operator setup.
+- CSV import rejects repeated final contact IDs, including generated-ID collisions, with row-specific errors. This prevents a duplicate repair from merging unrelated records sharing an ID.
+- Preview and direct import now share normalized-header validation; neither silently overwrites an ambiguous column.
+- Starting a replacement preview clears its predecessor. Invalid, oversized or unreadable input cannot leave an old import action available; loaded contacts remain intact.
+- The current 64-row example and previous Docker/Sheets documentation corrections remain unchanged.
 
 ## Try It
 
-1. Run `docker compose up --build`, then open `http://localhost:3000/app/lab` for the account-free CSV workspace.
-2. When adding a connector, follow `docs/self-hosting.md` and the provider guide. Use `.env` with `docker compose up -d app`, or explicitly pass `--env-file .env.local`.
-3. Open [the public demo](https://gtm-control-tower.pages.dev/#decisions), run cleanup, and inspect or download record decisions.
+1. In the CSV workspace, preview a valid file, then choose a malformed or oversized replacement. Its error appears, the draft mapping disappears, and already-loaded rows stay unchanged. Choose a corrected file and validate it normally.
+2. Import a CSV with two source rows sharing a contact ID. The error identifies both rows; correct the IDs before running repairs.
+3. Run `npm test -- --run tests/csv-control-tower.test.ts tests/messy-lead-demo.test.ts tests/crm-audit.test.ts` for the focused importer/demo/audit cases.
 
 ## Checks
 
-- This documentation pass: isolated Compose configuration checks with synthetic values confirmed default `.env` and explicit `.env.local` loading; default Compose ignored `.env.local` as expected. No containers or provider calls were started.
-- Focused documentation links, sample-count references, handoff structure and `git diff --check` passed. Runtime tests and builds were not rerun for prose-only changes.
-- Previous runtime release: 89 tests passed; lint, operator/public builds and [CI for `569e568`](https://github.com/harrisonoconnorhover/gtm-control-tower/actions/runs/36332613775), including Docker smoke, passed. Deployment `c176923b` serves that runtime; its canonical assets and browser workflow were verified previously.
+- New importer regressions failed before correction. All 32 focused tests, changed-file ESLint, TypeScript and diff checks passed in public and development checkouts.
+- Public operator and static-site builds passed. The same UI correction was mirrored into the identical development component; development ESLint/TypeScript checks passed.
+- Isolated browser reproduced the stale-file import before correction, then verified malformed/oversized replacement rejection, retention of loaded rows and successful recovery with a valid replacement.
+- Browser verification covered session CSV state; the disposable development database was uninitialized, so persistence was not qualified by that check. No provider calls or real CRM rows were used.
 
 ## Decisions
 
-- Document existing environment and network behavior without changing runtime configuration.
-- Preserve historical provider receipts; local fixture results do not establish a new connected run.
-- Mirrored the four relevant documents locally as `9aa0641`; preserved the development handoff and unrelated product work without pushing that branch.
+- Reject ambiguous record IDs rather than silently assigning new identities.
+- Preserve imported work while invalidating a failed replacement draft.
+- Keep current local checks separate from historical provider receipts.
 
 ## Remaining
 
-- No runtime rebuild, static-site redeployment or provider requalification is needed for this documentation correction.
-- Historical provider benchmarks were not rerun; no new connected results are claimed.
+- Publish and verify the reviewed public source and static assets. Development mirrors stay local.
+- No connected-provider requalification or private-host deployment is part of this pass.
 
 ## Review First
 
-- `docs/self-hosting.md` and `docs/hubspot-csv-setup.md`.
-- `docs/google-sheets-setup.md`.
-- `docs/decisions.md` and this handoff.
+- `lib/csv-control-tower.ts` and `tests/csv-control-tower.test.ts`.
+- `components/self-host-console.tsx`: draft clearing and file-read errors.
+- `docs/decisions.md`: identity and preview-state choices.

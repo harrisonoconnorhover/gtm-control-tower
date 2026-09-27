@@ -81,7 +81,14 @@ export function SelfHostConsole({
   const heldRows = activeRows.length - readyRows.length;
   const currentPhase = lastReceipt?.phase ?? (contacts.length ? 'validate' : preview ? 'preview' : null);
 
+  function clearPreview() {
+    setRawCsv(null);
+    setPreview(null);
+    setDraftMapping({});
+  }
+
   async function prepareCsv(csv: string, fileName: string) {
+    clearPreview();
     try {
       const nextPreview = previewContactsCsv(csv);
       setRawCsv(csv);
@@ -97,17 +104,20 @@ export function SelfHostConsole({
   }
 
   async function readCsv(file: File) {
+    clearPreview();
     setStatus('working');
     setMessage(null);
-    if (file.size > 10 * 1024 * 1024) {
+    try {
+      if (file.size > 10 * 1024 * 1024) throw new Error('Use a CSV smaller than 10 MB.');
+      await prepareCsv(await file.text(), file.name);
+    } catch (error) {
       setStatus('error');
-      setMessage('Use a CSV smaller than 10 MB.');
-      return;
+      setMessage(error instanceof Error ? error.message : 'That file could not be read.');
     }
-    await prepareCsv(await file.text(), file.name);
   }
 
   async function previewGoogleSheet() {
+    clearPreview();
     setStatus('working');
     setMessage(null);
     try {
@@ -133,6 +143,7 @@ export function SelfHostConsole({
 
   async function previewCrm() {
     if (sourceType !== 'hubspot' && sourceType !== 'salesforce') return;
+    clearPreview();
     setStatus('working');
     setMessage(null);
     try {
@@ -225,8 +236,8 @@ export function SelfHostConsole({
           {sourceType === 'csv' && (
             <div className="mt-4">
               <input ref={fileInput} type="file" accept=".csv,text/csv" className="sr-only" onChange={(event) => { const file = event.currentTarget.files?.[0]; if (file) void readCsv(file); event.currentTarget.value = ''; }} />
-              <button onClick={() => fileInput.current?.click()} className="w-full rounded-2xl border border-dashed border-[#83bcff]/30 bg-[#83bcff]/[0.05] px-5 py-6 text-sm font-semibold text-[#83bcff] hover:bg-[#83bcff]/10">Choose CSV to preview</button>
-              <button onClick={() => void prepareCsv(messyLeadDemoCsv(), 'gtm-control-tower-messy-leads-64.csv')} className="mt-2 w-full rounded-2xl border border-white/10 bg-white/[0.035] px-5 py-3 text-xs font-semibold text-[#a9bbb2] hover:bg-white/[0.06]">Or load the bundled 64-row practice batch</button>
+              <button onClick={() => fileInput.current?.click()} disabled={status === 'working'} className="w-full rounded-2xl border border-dashed border-[#83bcff]/30 bg-[#83bcff]/[0.05] px-5 py-6 text-sm font-semibold text-[#83bcff] hover:bg-[#83bcff]/10 disabled:opacity-40">Choose CSV to preview</button>
+              <button onClick={() => void prepareCsv(messyLeadDemoCsv(), 'gtm-control-tower-messy-leads-64.csv')} disabled={status === 'working'} className="mt-2 w-full rounded-2xl border border-white/10 bg-white/[0.035] px-5 py-3 text-xs font-semibold text-[#a9bbb2] hover:bg-white/[0.06] disabled:opacity-40">Or load the bundled 64-row practice batch</button>
             </div>
           )}
 
@@ -289,7 +300,7 @@ export function SelfHostConsole({
                   <input value={presetName} onChange={(event) => setPresetName(event.target.value)} className="rounded-full border border-white/10 bg-[#0c1d17] px-4 py-2.5 text-xs normal-case tracking-normal text-[#dce9e2]" />
                 </label>
                 <button onClick={() => void onSavePreset(presetName, draftMapping)} disabled={persistenceStatus === 'disabled' || persistenceStatus === 'error'} className="rounded-full border border-white/10 px-4 py-2.5 text-xs text-[#a9bbb2] disabled:opacity-40">Save mapping</button>
-                <button onClick={() => void importMappedData()} disabled={!draftMapping.rawEmail && !draftMapping.fullName && !draftMapping.firstName && !draftMapping.lastName} className="rounded-full bg-[#cdfc54] px-5 py-2.5 text-xs font-bold text-[#07130f] disabled:opacity-40">Validate + load</button>
+                <button onClick={() => void importMappedData()} disabled={status === 'working' || (!draftMapping.rawEmail && !draftMapping.fullName && !draftMapping.firstName && !draftMapping.lastName)} className="rounded-full bg-[#cdfc54] px-5 py-2.5 text-xs font-bold text-[#07130f] disabled:opacity-40">Validate + load</button>
               </div>
               {presets.length > 0 && (
                 <div className="mt-3 flex flex-wrap gap-2">
