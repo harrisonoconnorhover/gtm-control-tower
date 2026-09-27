@@ -1,7 +1,7 @@
 'use client';
 
 import { useRef, useState, type DragEvent } from 'react';
-import { auditContactsCsv, renderCrmAuditMarkdown, type CrmAuditReport } from '@/lib/crm-audit';
+import { auditContactsCsv, lifecycleComparisonSummary, renderCrmAuditMarkdown, type CrmAuditReport } from '@/lib/crm-audit';
 import { messyLeadDemoCsv } from '@/lib/messy-lead-demo';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
@@ -78,7 +78,7 @@ export function InstantCrmAudit() {
               Private browser-only audit
             </div>
             <h2 id="audit-heading" className="mt-5 text-4xl font-semibold leading-[0.98] tracking-[-0.055em] sm:text-5xl">Know what will break before the CRM does.</h2>
-            <p className="mt-5 max-w-xl text-sm leading-6 text-[#91a69b]">Drop a common CRM contact export. Control Tower reads it in this tab, maps familiar headers, and returns a board-ready readiness audit. The file is never uploaded or stored.</p>
+            <p className="mt-5 max-w-xl text-sm leading-6 text-[#91a69b]">Drop a common CRM contact export. Control Tower reads it in this tab, maps familiar headers, and returns issue counts and a downloadable readiness report. The file is never uploaded or stored.</p>
             <div className="mt-6 grid grid-cols-2 gap-3 text-xs">
               <AuditPromise value="Seconds" label="to first diagnosis" />
               <AuditPromise value="0 rows" label="sent to a server" />
@@ -151,6 +151,14 @@ function AuditResult({ report, onDownload, onReset }: { report: CrmAuditReport; 
           </div>
         </div>
       </div>
+
+      <p data-testid="lifecycle-comparison-coverage" className="mt-5 rounded-2xl border border-[#83bcff]/20 bg-[#83bcff]/[0.045] px-4 py-3 text-xs leading-5 text-[#a7b8af]">{lifecycleComparisonSummary(report)}</p>
+      <details className="mt-3 rounded-xl border border-white/10 px-4 py-3 text-xs text-[#a7b8af]">
+        <summary className="cursor-pointer font-semibold">Mapped CSV headers ({report.mappedFields})</summary>
+        <ul className="mt-3 flex flex-wrap gap-2">
+          {report.mappedHeaders.map((header) => <li key={header} className="max-w-full break-all rounded-md bg-white/[0.04] px-2 py-1 font-mono text-[10px]">{header}</li>)}
+        </ul>
+      </details>
 
       <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
         <AuditMetric label="Ready now" value={report.readyRows} tone="good" />
