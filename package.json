@@ -38,7 +38,8 @@
     "configure:salesforce": "node scripts/configure_salesforce_env.mjs",
     "sync:n8n": "node scripts/sync_ops_workflow.mjs",
     "test:crm-batches": "node scripts/check-crm-batches.mjs",
-    "test:receipt-recovery": "node scripts/check-receipt-recovery.mjs"
+    "test:receipt-recovery": "node scripts/check-receipt-recovery.mjs",
+    "test:import-holds": "node scripts/check-import-holds.mjs"
   },
   "dependencies": {
     "better-sqlite3": "^12.11.1",

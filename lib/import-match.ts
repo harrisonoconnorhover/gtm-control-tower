@@ -13,14 +13,17 @@ export type MatchFieldSuggestion = {
 export type ImportMatchComparison = {
   field: MatchField; imported: string; existing: string; status: 'match' | 'similar' | 'conflict' | 'missing';
 };
-export type ImportMatchCandidate = {
-  record: IdentityRecord; score: number; evidence: MatchEvidence[]; comparisons: ImportMatchComparison[];
+type MatchCandidate<T> = {
+  record: T; score: number; evidence: MatchEvidence[]; comparisons: ImportMatchComparison[];
 };
-export type ImportMatchReport = {
+type MatchReport<T> = {
   ruleVersion: string; fields: MatchField[];
-  rows: Array<{ contactId: string; input: ImportMatchInput; candidates: ImportMatchCandidate[]; candidateCount: number; warnings: string[] }>;
+  rows: Array<{ contactId: string; input: ImportMatchInput; candidates: MatchCandidate<T>[]; candidateCount: number; warnings: string[] }>;
   warnings: string[];
 };
+export type ImportMatchCandidate = MatchCandidate<IdentityRecord>;
+export type ImportMatchReport = MatchReport<IdentityRecord>;
+export type ImportRowMatchReport = MatchReport<ImportMatchInput>;
 
 export const IMPORT_MATCH_RULE_VERSION = 'import-match-v1';
 const fieldLabels: Record<MatchField, string> = { name: 'Name', email: 'Email', phone: 'Phone', state: 'State', company: 'Company' };
@@ -57,62 +60,94 @@ export function suggestMatchFields(inputs: ImportMatchInput[]): MatchFieldSugges
 export function compareImportedContacts(inputs: ImportMatchInput[], crm: IdentityRecord[], fields: MatchField[]): ImportMatchReport {
   if (inputs.length > 100) throw new Error('Analyze at most 100 imported contacts at a time.');
   if (crm.length > 25_000) throw new Error('Analyze at most 25,000 CRM records at a time.');
+  return compareContacts(inputs, crm, fields, {
+    key: (record) => record.recordKey, source: 'CRM records', location: 'CRM snapshot', excludeSelf: false,
+  });
+}
+
+export function compareImportRows(inputs: ImportMatchInput[], savedRows: ImportMatchInput[], fields: MatchField[]): ImportRowMatchReport {
+  if (inputs.length > 100) throw new Error('Analyze at most 100 imported contacts at a time.');
+  if (savedRows.length > 5_000) throw new Error('Analyze at most 5,000 saved import rows at a time.');
+  return compareContacts(inputs, savedRows, fields, {
+    key: (record) => record.contactId, source: 'other import rows', location: 'saved import', excludeSelf: true,
+  });
+}
+
+type MatchSource = Pick<ImportMatchInput, 'fullName' | 'email' | 'phone' | 'company'> & {
+  state?: string; firstName?: string; lastName?: string; additionalEmails?: string[]; secondaryPhone?: string;
+};
+type ComparisonContext<T> = {
+  key: (record: T) => string; source: 'CRM records' | 'other import rows';
+  location: 'CRM snapshot' | 'saved import'; excludeSelf: boolean;
+};
+
+function compareContacts<T extends MatchSource>(inputs: ImportMatchInput[], source: T[], fields: MatchField[], context: ComparisonContext<T>): MatchReport<T> {
   if (fields.some((field) => !allFields.includes(field))) throw new Error('Choose supported matching fields.');
   const selected = allFields.filter((field) => fields.includes(field));
   const enabled = new Set(selected);
-  const stable = [...crm].sort((a, b) => a.recordKey.localeCompare(b.recordKey));
+  const stable = [...source].sort((a, b) => context.key(a).localeCompare(context.key(b)));
+  const indexByKey = new Map(stable.map((record, index) => [context.key(record), index]));
   const normalized = stable.map((record) => normalize({
-    ...record, fullName: record.fullName || `${record.firstName} ${record.lastName}`, state: record.state ?? '',
+    ...record, fullName: sourceName(record), state: record.state ?? '',
   }, record.additionalEmails, record.secondaryPhone));
   const phoneFrequency = new Map<string, number>();
   for (const item of normalized) for (const phone of item.phones) phoneFrequency.set(phone, (phoneFrequency.get(phone) ?? 0) + 1);
   const buckets = new Map<string, number[]>();
   normalized.forEach((item, index) => {
-    for (const key of candidateKeys(item, enabled, phoneFrequency)) {
+    // Import queries subtract their own phone use. Keep phone buckets available
+    // even when that subtraction crosses the shared-phone threshold.
+    for (const key of candidateKeys(item, enabled, context.excludeSelf ? undefined : phoneFrequency)) {
       const members = buckets.get(key) ?? [];
       members.push(index);
       buckets.set(key, members);
     }
   });
   const warnings = [
-    'Match scores are deterministic review signals, not probabilities. No suggestion does not establish that a contact is absent from the CRM.',
+    context.excludeSelf
+      ? 'Match scores are deterministic review signals, not probabilities. No suggestion does not establish that a person appears only once in the saved import.'
+      : 'Match scores are deterministic review signals, not probabilities. No suggestion does not establish that a contact is absent from the CRM.',
     ...(!selected.length ? ['Select at least one field to compare.'] : []),
     ...selected.filter((field) => !normalized.some((item) => hasField(item, field)))
-      .map((field) => `No usable ${fieldLabels[field].toLowerCase()} values are present in this CRM snapshot; that field cannot contribute to this analysis.`),
+      .map((field) => `No usable ${fieldLabels[field].toLowerCase()} values are present in this ${context.location}; that field cannot contribute to this analysis.`),
     ...(enabled.has('state') ? ['State comparison treats US state names and two-letter codes as equivalent; other regions use normalized text.'] : []),
     ...(enabled.has('phone') ? ['Phone comparison ignores extensions and assumes a US country code for ten-digit numbers; a shared phone is not proof of identity.'] : []),
   ];
   const rows = inputs.map((input) => {
     const imported = normalize(input);
+    const selfIndex = context.excludeSelf ? indexByKey.get(input.contactId) : undefined;
+    const selfPhones = new Set(selfIndex === undefined ? [] : normalized[selfIndex].phones);
+    const rowPhoneFrequency = { get: (phone: string) => (phoneFrequency.get(phone) ?? 0) - Number(selfPhones.has(phone)) };
+    const selfKeys = new Set(selfIndex === undefined ? [] : candidateKeys(normalized[selfIndex], enabled));
+    const memberCount = (key: string) => (buckets.get(key)?.length ?? 0) - Number(selfKeys.has(key));
     const indices = new Set<number>();
     const rowWarnings: string[] = [];
     let skipped = 0;
     let capped = false;
     // Exact emails are considered first, then narrower corroborating buckets.
-    const keys = candidateKeys(imported, enabled, phoneFrequency).sort((a, b) =>
+    const keys = candidateKeys(imported, enabled, rowPhoneFrequency).sort((a, b) =>
       Number(!a.startsWith('email:')) - Number(!b.startsWith('email:'))
-      || (buckets.get(a)?.length ?? 0) - (buckets.get(b)?.length ?? 0) || a.localeCompare(b));
+      || memberCount(a) - memberCount(b) || a.localeCompare(b));
     for (const key of keys) {
-      const members = buckets.get(key) ?? [];
-      if (members.length > MAX_BROAD_BUCKET && !key.startsWith('email:')) { skipped += 1; continue; }
-      for (const index of members) {
+      if (memberCount(key) > MAX_BROAD_BUCKET && !key.startsWith('email:')) { skipped += 1; continue; }
+      for (const index of buckets.get(key) ?? []) {
+        if (index === selfIndex) continue;
         if (indices.size >= MAX_CANDIDATES && !indices.has(index)) { capped = true; break; }
         indices.add(index);
       }
     }
-    if (skipped) rowWarnings.push(`${skipped} broad candidate bucket(s) exceeded ${MAX_BROAD_BUCKET} CRM records and were skipped. This result is incomplete.`);
-    if (capped) rowWarnings.push(`Candidate comparison was capped at ${MAX_CANDIDATES} CRM records. Ranking is limited to those compared.`);
-    if (enabled.has('phone') && imported.phones.some((phone) => (phoneFrequency.get(phone) ?? 0) > 3)) {
-      rowWarnings.push('This phone appears on more than 3 CRM records and is used only as supporting context, not to generate candidates on its own.');
+    if (skipped) rowWarnings.push(`${skipped} broad candidate bucket(s) exceeded ${MAX_BROAD_BUCKET} ${context.source} and were skipped. This result is incomplete.`);
+    if (capped) rowWarnings.push(`Candidate comparison was capped at ${MAX_CANDIDATES} ${context.source}. Ranking is limited to those compared.`);
+    if (enabled.has('phone') && imported.phones.some((phone) => (rowPhoneFrequency.get(phone) ?? 0) > 3)) {
+      rowWarnings.push(`This phone appears on more than 3 ${context.source} and is used only as supporting context, not to generate candidates on its own.`);
     }
     if (!selected.some((field) => hasField(imported, field))) rowWarnings.push('This row has no usable values in the selected fields.');
     else if (!(['name', 'email', 'phone'] as MatchField[]).some((field) => enabled.has(field) && hasField(imported, field))) {
       rowWarnings.push('State and company alone cannot suggest a person. Select a populated name, email, or phone field.');
     }
     const candidates = [...indices].flatMap((index) => {
-      const match = scoreCandidate(input, imported, stable[index], normalized[index], selected, phoneFrequency);
+      const match = scoreCandidate(input, imported, stable[index], normalized[index], selected, rowPhoneFrequency, context.source);
       return match ? [match] : [];
-    }).sort((a, b) => b.score - a.score || a.record.recordKey.localeCompare(b.record.recordKey));
+    }).sort((a, b) => b.score - a.score || context.key(a.record).localeCompare(context.key(b.record)));
     return { contactId: input.contactId, input, candidates: candidates.slice(0, 3), candidateCount: candidates.length, warnings: rowWarnings };
   });
   if (rows.some((row) => row.warnings.some((warning) => warning.includes('incomplete') || warning.includes('capped')))) {
@@ -121,11 +156,11 @@ export function compareImportedContacts(inputs: ImportMatchInput[], crm: Identit
   return { ruleVersion: IMPORT_MATCH_RULE_VERSION, fields: selected, rows, warnings };
 }
 
-function candidateKeys(item: Normalized, fields: Set<MatchField>, phoneFrequency: Map<string, number>): string[] {
+function candidateKeys(item: Normalized, fields: Set<MatchField>, phoneFrequency?: Pick<Map<string, number>, 'get'>): string[] {
   const keys = new Set<string>();
   if (fields.has('email')) for (const email of item.emails) keys.add(`email:${email}`);
   if (fields.has('phone')) for (const phone of item.phones) {
-    if ((phoneFrequency.get(phone) ?? 0) <= 3) keys.add(`phone:${phone}`);
+    if ((phoneFrequency?.get(phone) ?? 0) <= 3) keys.add(`phone:${phone}`);
   }
   if (fields.has('name') && item.name) {
     keys.add(`name:${item.name}`);
@@ -148,7 +183,7 @@ function candidateKeys(item: Normalized, fields: Set<MatchField>, phoneFrequency
   return [...keys];
 }
 
-function scoreCandidate(input: ImportMatchInput, a: Normalized, record: IdentityRecord, b: Normalized, fields: MatchField[], phoneFrequency: Map<string, number>): ImportMatchCandidate | null {
+function scoreCandidate<T extends MatchSource>(input: ImportMatchInput, a: Normalized, record: T, b: Normalized, fields: MatchField[], phoneFrequency: Pick<Map<string, number>, 'get'>, source: ComparisonContext<T>['source']): MatchCandidate<T> | null {
   const selected = new Set(fields);
   const evidence: MatchEvidence[] = [];
   const add = (key: string, label: string, weight: number, tone: MatchEvidence['tone']) => evidence.push({ key, label, weight, tone });
@@ -174,7 +209,7 @@ function scoreCandidate(input: ImportMatchInput, a: Normalized, record: Identity
     if (!hasField(a, field) || !hasField(b, field)) { statuses.set(field, 'missing'); continue; }
     let status: ImportMatchComparison['status'] = 'conflict';
     if (field === 'email') {
-      if (email) { status = 'match'; add('exact_email', genericEmail ? 'Exact shared-role inbox' : 'Exact primary or additional email', genericEmail ? 25 : 90, genericEmail ? 'warning' : 'strong'); }
+      if (email) { status = 'match'; add('exact_email', genericEmail ? 'Exact shared-role inbox' : source === 'CRM records' ? 'Exact primary or additional email' : 'Exact imported email', genericEmail ? 25 : 90, genericEmail ? 'warning' : 'strong'); }
       else if (usefulTypo) { status = 'similar'; add('email_typo', 'Email differs by one edit, with corroborating context', 30, 'supporting'); }
       else add('email_conflict', 'Different email identities', -22, 'conflict');
     } else if (field === 'name') {
@@ -182,7 +217,7 @@ function scoreCandidate(input: ImportMatchInput, a: Normalized, record: Identity
       else if (similarName) { status = 'similar'; add('name_similar', 'Similar full name', 24, 'supporting'); }
       else add('name_conflict', 'Different full names', -32, 'conflict');
     } else if (field === 'phone') {
-      if (phone) { status = 'match'; add('phone', phoneUses > 3 ? `Shared phone on ${phoneUses} CRM records` : `Normalized phone on ${phoneUses} CRM record(s)`, uniquePhone ? 44 : phoneUses <= 3 ? 30 : 8, uniquePhone ? 'strong' : phoneUses > 3 ? 'warning' : 'supporting'); }
+      if (phone) { status = 'match'; add('phone', phoneUses > 3 ? `Shared phone on ${phoneUses} ${source}` : `Normalized phone on ${phoneUses} ${source === 'CRM records' ? 'CRM record(s)' : 'other import row(s)'}`, uniquePhone ? 44 : phoneUses <= 3 ? 30 : 8, uniquePhone ? 'strong' : phoneUses > 3 ? 'warning' : 'supporting'); }
       else add('phone_conflict', 'Different phone numbers', -14, 'conflict');
     } else if (field === 'state') {
       if (sameState) { status = 'match'; add('state', 'Same normalized state or region', 6, 'supporting'); }
@@ -199,13 +234,17 @@ function scoreCandidate(input: ImportMatchInput, a: Normalized, record: Identity
   if (score < 28 && !email) return null;
   const comparisons = fields.map((field): ImportMatchComparison => ({
     field, imported: field === 'name' ? input.fullName : input[field],
-    existing: field === 'name' ? record.fullName || `${record.firstName} ${record.lastName}`
+    existing: field === 'name' ? sourceName(record)
       : field === 'email' ? ([record.email, ...(record.additionalEmails ?? [])].find((raw) => usableEmail(raw) === (email ?? nearEmail)) ?? record.email)
         : field === 'phone' ? ([record.phone, record.secondaryPhone ?? ''].find((raw) => normalizePhone(raw) === phone) ?? record.phone)
           : record[field] ?? '',
     status: statuses.get(field)!,
   }));
   return { record, score, evidence, comparisons };
+}
+
+function sourceName(record: MatchSource): string {
+  return record.fullName || [record.firstName, record.lastName].filter(Boolean).join(' ');
 }
 
 function normalize(input: Omit<ImportMatchInput, 'contactId'>, additionalEmails: string[] = [], secondaryPhone = ''): Normalized {

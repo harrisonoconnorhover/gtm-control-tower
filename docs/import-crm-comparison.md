@@ -21,8 +21,9 @@ creates. Updates and unchanged decisions still require exact-email identity.
 
 | Current CRM result for an imported email | HubSpot | Salesforce |
 | --- | --- | --- |
-| No exact match; fresh complete snapshot has no approximate candidates and no search cap | Propose Contact create | Propose Lead create |
+| No exact match; fresh complete snapshot and other active import rows have no approximate candidates or search cap | Propose Contact create | Propose Lead create |
 | No exact match, but any approximate candidate is returned | Hold create for review | Hold create for review |
+| Another active row in the saved import is a possible match, even in a later batch | Hold create for review | Hold create for review |
 | Proposed create lacks a fresh complete snapshot, or candidate search is capped | Hold create | Hold create |
 | One exact Contact primary or additional email match | Compare portable fields using its native ID; preserve primary email | Hold a Contact match |
 | One unconverted Lead, with no other match | Not applicable | Compare portable fields using its native ID |
@@ -51,15 +52,27 @@ that Contact's ID and does not replace its primary email.
 The latest snapshot for the same workspace and CRM must be complete and
 provider-complete (`sourceComplete`), with its scan started within 15 minutes.
 Missing, stale, or partial snapshots hold would-be creates. A capped candidate
-search also holds them. The server uses the saved import's full name and state
-and all five matching fields, independently of exploratory review checkboxes.
+search also holds them. The server uses the saved import's effective destination
+name, state, and all five matching fields, independently of exploratory review checkboxes.
 Any returned candidate holds a create, including low-scoring same-name coworkers.
+
+The same guard compares each proposed create against the other active rows in
+the full saved import, including rows outside the current 100-row request.
+For example, two new rows for Priya Nair with different emails but matching phone
+and company are held even when neither appears in the CRM snapshot. The app
+shows the other import row's ID, email, score and evidence separately from native
+CRM matches. It does not choose a winning row. A row never matches itself, and
+rows already merged locally are excluded. Shared-phone weights and search limits
+count the other rows only.
 
 Correct or remove unresolved import rows, refresh the snapshot when needed, and
 refresh the preview. There is no override, automatic linking, or merge. Holds
 can be false positives. An empty candidate list does not prove absence. Snapshot
 visibility and changes after the scan limit coverage. Exact-email updates, unchanged
 records, and existing Salesforce Contact holds retain their existing behavior.
+The import comparison covers the current saved workspace, not other uploaded
+files or simultaneous imports in other workspaces. Conflicting or sparse identities
+can still evade these matching rules.
 
 Name comparison uses the first and last names that the destination mapper will
 actually write. If a CSV also supplies a conflicting full-name column, that
@@ -138,6 +151,25 @@ The disabled Salesforce n8n node is unchanged. No path here merges native CRM
 records or converts Leads.
 
 ## Verification
+
+The within-import guard is covered separately by local automated tests. Route
+tests use simulated provider reads to check both connectors: changed-email
+duplicates with an empty CRM, a matching row outside the requested batch, and
+an import identity added or changed after preview. The latter requires a fresh
+preview before execution. These tests do not establish additional native CRM
+qualification.
+
+To repeat the presentation check against a disposable local app:
+
+```bash
+CONTROL_TOWER_BROWSER_BASE_URL=http://127.0.0.1:3000 npm run test:import-holds
+```
+
+It imports two fictional Priya Nair rows and one unrelated Nina Alvarez row,
+supplies simulated CRM plans and receipts, and checks both connectors' held-row
+evidence, a single approved create, local receipt persistence, pending rows and
+mobile layout. The server tests exercise the actual matching logic; this browser
+check exercises its presentation and workflow.
 
 ![Synthetic Salesforce import comparison showing an existing Lead, a new email and a held Contact](screenshots/import-crm-comparison.png)
 

@@ -2,39 +2,38 @@
 
 ## Finished
 
-- Fixed conflicting name columns clearing the wrong identity: create checks and eligible-row review now use the first and last names actually sent to the destination.
-- Separated returned CRM outcomes from receipt-save failures. Completed rows stay completed even when local storage fails.
-- Added a visible unsaved-receipt notice with the complete receipt/rollback download and a same-ID, storage-only retry.
-- Preserved completed rollback results while their receipt awaits saving; reported workspace-summary save failures separately.
-- Added repeatable browser failure checks for both providers using simulated CRM responses and real local storage.
+- Held possible duplicate creates across the full saved import, including rows outside the current batch, for HubSpot and Salesforce.
+- Kept import-row IDs and supporting evidence separate from native CRM matches; neither unresolved row is automatically chosen to create.
+- Excluded self and locally merged rows before matching; retained useful identity evidence from active rows with invalid emails.
+- Rechecked saved-import evidence at execution, rejecting a preview when another matching identity is added or changed.
+- Added route and browser regressions and updated the public walkthrough with the automated-test evidence boundary.
 
 ## Try It
 
-1. Run the configured self-hosted workspace and inspect an import containing both full-name and first/last-name columns. The match review explains which name is used.
-2. For a disposable local app, set `CONTROL_TOWER_BROWSER_BASE_URL` and run `npm run test:receipt-recovery`. Use `CHROMIUM_PATH` if Chrome is not at the documented macOS default.
-3. If receipt storage fails, use **Retry receipt save** or **Download receipt** before leaving the page. Retry does not repeat the CRM operation.
+1. In the configured self-hosted `/app/lab`, load two fictional rows with different emails but the same name, phone and company, plus an unrelated person.
+2. Read a fresh complete CRM snapshot and compare. The two possible duplicates should be held with the other import row's ID and evidence. Correct or remove unresolved rows in the source, reload and compare again.
+3. For a disposable local app, run `CONTROL_TOWER_BROWSER_BASE_URL=http://127.0.0.1:3000 npm run test:import-holds`. Set `CHROMIUM_PATH` if needed.
 
 ## Checks
 
-- 238 tests across 25 suites passed, including both-provider conflicting-name regressions and run-save acknowledgment/error cases.
-- Receipt-recovery browser checks passed for both providers: HTTP failure, network abort, preserved JSON download, storage-only retry, durable read-back, rollback recovery, and workspace-summary failure.
-- Existing 105-row batch/progress and pending-operation browser checks passed for both providers, including the mobile overflow check.
-- TypeScript, lint, both builds, script syntax and diff checks passed. Browser tests made zero live CRM requests.
+- 253 tests across 25 suites passed. Eight route regressions failed before the correction and passed afterward, including both providers and stale-preview rejection.
+- Both-provider browser checks passed: distinct import evidence, only the unrelated create approved, real local receipt persistence, pending holds, and 390px layout. Provider responses were simulated; zero live CRM requests.
+- TypeScript, lint, both builds, script syntax, secret scan and diff checks passed.
 
 ## Decisions
 
-- Preserve the effective destination name rather than silently compare a conflicting display name.
-- Reuse existing idempotent run storage; no schema, automatic CRM retry, or browser-persistence layer was added.
-- Keep native CRM outcomes distinct from local save outcomes and preserve earlier dated development evidence.
+- Reuse existing deterministic scoring and holds; scores are evidence rankings, not probabilities.
+- Check all active saved rows, including ineligible neighbors, without selecting a winner or inferring an update target.
+- Keep the dated native CRM evidence unchanged; this correction is qualified by local automated checks.
 
 ## Remaining
 
-- Unsaved recovery is page-local: save or download before navigating or reloading.
-- No new recovery claim for an operation whose CRM response never reaches the browser.
-- Duplicate detection remains bounded by snapshot visibility, freshness and matching rules; scores are not identity probabilities.
+- Detection is limited to the current saved import and the visible, recent CRM snapshot. It does not coordinate simultaneous imports in other workspaces.
+- Sparse or conflicting identities may evade the rules; conservative holds may flag different people.
+- Legacy direct-sync and webhook routes do not use this governed create guard.
 
 ## Review First
 
-- `lib/import-create-review.ts` and `tests/import-create-review.test.ts`.
-- `components/control-tower-dashboard.tsx`, `components/sync-runs.tsx`, and `components/unsaved-runs.tsx`.
-- `scripts/check-receipt-recovery.mjs` and `docs/import-crm-comparison.md`.
+- `lib/import-create-review.ts` and `lib/import-match.ts`.
+- `tests/crm-import-comparison.test.ts` and `tests/import-create-review.test.ts`.
+- `components/control-tower-dashboard.tsx`, `scripts/check-import-holds.mjs`, and `docs/import-crm-comparison.md`.

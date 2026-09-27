@@ -10,12 +10,21 @@ export type CrmPossibleMatch = {
   evidence: MatchEvidence[];
 };
 
+export type ImportPossibleMatch = {
+  contactId: string;
+  email: string;
+  fullName: string;
+  score: number;
+  evidence: MatchEvidence[];
+};
+
 export type CrmCreateReview = {
   status: 'clear' | 'held';
   scanId: string | null;
   startedAt: string | null;
   ruleVersion: string;
   candidateCount: number;
+  importCandidateCount?: number;
   warnings: string[];
 };
 
@@ -23,6 +32,7 @@ export type CrmCreateReviewResult = {
   review: CrmCreateReview;
   reason: string;
   possibleMatches: CrmPossibleMatch[];
+  possibleImportMatches?: ImportPossibleMatch[];
 };
 
 export const portableCrmFieldNames = ['firstName', 'lastName', 'company', 'phone', 'jobTitle', 'website'] as const;
@@ -66,6 +76,7 @@ export type CrmPlanRecord = {
   changes: CrmFieldChange[];
   reason: string | null;
   possibleMatches?: CrmPossibleMatch[];
+  possibleImportMatches?: ImportPossibleMatch[];
   createReview?: CrmCreateReview;
 };
 
@@ -184,14 +195,14 @@ export function buildCrmWritePlan(
     if (!matches.length) {
       const reviewed = createReviews?.get(contact.contactId);
       if (reviewed?.review.status === 'held') return {
-        ...hold(reviewed.reason), possibleMatches: reviewed.possibleMatches, createReview: reviewed.review,
+        ...hold(reviewed.reason), possibleMatches: reviewed.possibleMatches, possibleImportMatches: reviewed.possibleImportMatches, createReview: reviewed.review,
       };
       return {
         contactId: contact.contactId, email: contact.email, nativeId: null, operation: 'create', matches,
         before: null, after,
         changes: portableCrmFieldNames.filter((field) => after[field] !== null).map((field) => ({ field, before: null, after: after[field] })),
         reason: reviewed?.reason ?? 'No existing exact email match was returned by the CRM lookup.',
-        ...(reviewed ? { possibleMatches: reviewed.possibleMatches, createReview: reviewed.review } : {}),
+        ...(reviewed ? { possibleMatches: reviewed.possibleMatches, possibleImportMatches: reviewed.possibleImportMatches, createReview: reviewed.review } : {}),
       };
     }
     const match = nativeMatches[0];
@@ -301,7 +312,7 @@ function cleanValue(value: string | null | undefined): string | null {
 }
 
 function fingerprintPlan(connectorId: string, records: CrmPlanRecord[]): string {
-  const stable = JSON.stringify([connectorId, records.map(({ contactId, email, nativeId, operation, matches, before, after, reason, possibleMatches, createReview }) => ({ contactId, email, nativeId, operation, matches, before, after, reason, possibleMatches, createReview }))]);
+  const stable = JSON.stringify([connectorId, records.map(({ contactId, email, nativeId, operation, matches, before, after, reason, possibleMatches, possibleImportMatches, createReview }) => ({ contactId, email, nativeId, operation, matches, before, after, reason, possibleMatches, possibleImportMatches, createReview }))]);
   let hash = 0x811c9dc5;
   for (let index = 0; index < stable.length; index += 1) {
     hash ^= stable.charCodeAt(index);

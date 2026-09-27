@@ -27,8 +27,9 @@ contribute to this exploratory review. Suggestions never link, merge, or select
 an update target.
 
 The [governed direct write preview](import-crm-comparison.md) independently checks
-proposed creates against a fresh complete snapshot using all five fields and
-the saved import's name and state. Any returned candidate, including a weak one,
+proposed creates against a fresh complete snapshot and the other active rows in
+the full saved import, including later batches. It uses all five fields and the
+name actually mapped to the destination. Any returned candidate, including a weak one,
 holds the create; changing these review checkboxes cannot bypass it. Missing,
 stale, partial, or capped evidence also holds creates. Correct or remove an
 unresolved import row and refresh the preview; there is no match override.
