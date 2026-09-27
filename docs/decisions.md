@@ -5,7 +5,7 @@
 The synthetic fixture supplies raw identities rather than precomputed normalized
 answers. Case variants still demonstrate exact duplicates; the corporate plus
 address remains distinct, and the internationalized domain uses IDNA. The new
-result is seven merges, 57 canonical contacts, 45 ready, and 12 held. These are
+result is seven merges, 57 canonical contacts, 46 ready, and 11 held. These are
 measured sample outcomes, not targets for the rules to satisfy.
 
 Preview and import reject nonblank rows whose column count differs from the
@@ -19,6 +19,22 @@ destination gate as the cleanup. They distinguish an action taken from final
 readiness, preserve every remaining hold reason, and download the same evidence
 locally. This adds visibility to the existing workflow without creating another
 repair engine or connecting the public site to a CRM.
+
+An applied routing rule clears `missing_owner` when it supplies an owner, while
+retaining independent blockers such as an invalid email. Repair completion and
+record readiness must describe the resulting state rather than stale flags.
+
+The CSV audit reports lifecycle comparison coverage separately from readiness.
+Only active rows with recognized, supplied current and expected stages count as
+compared. Missing columns, blank values, and unknown stages leave visible gaps;
+the fallback used by the existing repair model is not evidence of CRM history.
+Mapped source headers are inspectable in the browser and Markdown report.
+
+The dependency refresh removes the reported high and critical advisories while
+preserving the existing high-severity CI gate. Four moderate notices remain in
+Drizzle's legacy development-tool chain; npm's suggested breaking downgrade is
+not applied blindly. The public static build now runs in CI alongside the
+operator build and isolated Docker smoke test.
 
 The account-free setup starts at `/app/lab`. The whole-account scanner at `/app`
 requires configured CRM access and remains a separate optional step. Historical

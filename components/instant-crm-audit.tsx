@@ -143,7 +143,7 @@ function AuditResult({ report, onDownload, onReset }: { report: CrmAuditReport; 
         <div>
           <p className="font-mono text-[9px] uppercase tracking-[0.18em] text-[#83bcff]">Instant CRM audit · complete</p>
           <h3 className="mt-2 break-all text-2xl font-semibold">{report.fileName}</h3>
-          <p className="mt-1 text-xs text-[#71877c]">{report.sourceRows.toLocaleString()} rows · {report.mappedFields} familiar fields mapped locally</p>
+          <p className="mt-1 text-xs text-[#71877c]">{report.sourceRows.toLocaleString()} {report.sourceRows === 1 ? 'row' : 'rows'} · {report.mappedFields} familiar fields mapped locally</p>
         </div>
         <div className="relative grid h-28 w-28 place-items-center rounded-full" style={{ background: `conic-gradient(#d8ff67 ${report.readinessScore * 3.6}deg, rgba(255,255,255,0.08) 0deg)` }}>
           <div className="grid h-[92px] w-[92px] place-items-center rounded-full bg-[#081713] text-center">
