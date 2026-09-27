@@ -17,7 +17,20 @@ try {
     const page = await context.newPage();
     page.setDefaultTimeout(15_000);
     const errors = [], batches = [], savedRuns = [];
-    let executions = 0;
+    let executions = 0, failPreview = false;
+    const gates = new Map();
+    function holdResponse(kind) {
+      let release, arrived;
+      const wait = new Promise((resolve) => { release = resolve; });
+      const seen = new Promise((resolve) => { arrived = resolve; });
+      const gate = { wait, seen, release, arrived };
+      gates.set(kind, gate);
+      return gate;
+    }
+    async function pauseResponse(kind) {
+      const gate = gates.get(kind);
+      if (gate) { gate.arrived(); await gate.wait; gates.delete(kind); }
+    }
     const operation = (id) => {
       const number = Number(id.split('-')[1]);
       return number === 105 ? 'hold' : number === 2 ? 'update'
@@ -32,6 +45,7 @@ try {
       if (!url.pathname.startsWith('/api/') || endpoint === 'workspace') return route.continue();
       if (endpoint === 'runs') {
         if (request.method() === 'POST') savedRuns.push(request.postDataJSON().run);
+        await pauseResponse('history');
         return route.continue();
       }
       if (endpoint === 'connectors') return route.fulfill({ json: { persistenceEnabled: true, accessKeyRequired: false,
@@ -44,6 +58,8 @@ try {
         const body = request.postDataJSON();
         assert.equal(body.connectorId, provider);
         assert(['preview', 'execute'].includes(body.action));
+        await pauseResponse(body.action);
+        if (body.action === 'preview' && failPreview) return route.fulfill({ status: 502, json: { error: 'Fictional comparison failure.' } });
         const at = new Date().toISOString();
         if (body.action === 'preview') {
           batches.push(body.contacts.map((contact) => contact.contactId));
@@ -79,17 +95,35 @@ try {
       await page.getByRole('button', { name: 'Validate + load', exact: true }).click();
       await page.getByRole('button', { name: `Compare ${Math.min(100, count)} with CRM`, exact: true }).waitFor();
     }
-    async function processBatch(count) {
+    async function assertWorkspaceLocked(phase) {
+      for (const control of [
+        page.locator('input[type=file]'),
+        page.getByRole('button', { name: 'Reset imported file', exact: true }),
+        page.getByRole('button', { name: 'Undo saved change', exact: true }),
+        page.getByLabel('Where is your data?'),
+        page.getByLabel('Where should clean records go?'),
+      ]) assert(await control.isDisabled(), `${phase}: input changes must wait for the current CRM operation`);
+      const refresh = page.getByRole('button', { name: 'Refresh comparison', exact: true });
+      if (await refresh.count()) assert(await refresh.isDisabled(), `${phase}: another comparison must not overlap`);
+    }
+    async function processBatch(count, checkPending = false) {
+      const previewGate = checkPending ? holdResponse('preview') : null;
       await page.getByRole('button', { name: `Compare ${count} with CRM`, exact: true }).click();
+      if (previewGate) { await previewGate.seen; await assertWorkspaceLocked('Preview'); previewGate.release(); }
+      const executeGate = checkPending ? holdResponse('execute') : null;
+      const historyGate = checkPending ? holdResponse('history') : null;
       await page.getByRole('button', { name: /^Execute \d+ approved changes$/ }).click();
+      if (executeGate) { await executeGate.seen; await assertWorkspaceLocked('Execution'); executeGate.release(); }
+      if (historyGate) { await historyGate.seen; await assertWorkspaceLocked('Saving receipt'); historyGate.release(); }
       await page.getByRole('button', { name: /^Compare \d+ with CRM$/ }).waitFor();
+      assert.equal(await page.locator('input[type=file]').isDisabled(), false, 'Input controls unlock after receipt storage');
     }
     try {
       await page.goto(new URL('/app/lab', base).href);
       await page.getByText('SQLite r0 · saved', { exact: true }).waitFor({ timeout: 45_000 });
       await page.getByLabel('Where should clean records go?').selectOption(provider);
       await importRows(105);
-      await processBatch(100);
+      await processBatch(100, true);
       assert.equal(await page.getByRole('button', { name: /^Compare \d+ with CRM$/ }).innerText(), 'Compare 6 with CRM');
       await processBatch(6);
       assert.deepEqual(batches.map((batch) => batch.length), [100, 6]);
@@ -103,11 +137,16 @@ try {
       assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'No mobile horizontal overflow');
       await importRows(1);
       assert.equal(await page.getByText(`${provider === 'hubspot' ? 'HubSpot' : 'Salesforce'} receipt:`, { exact: true }).count(), 0, 'A replacement import clears previous progress');
+      failPreview = true;
+      await page.getByRole('button', { name: 'Compare 1 with CRM', exact: true }).click();
+      await page.getByText('Fictional comparison failure. No unreceipted batch is shown as complete.', { exact: true }).waitFor();
+      assert.equal(await page.locator('input[type=file]').isDisabled(), false, 'A failed comparison releases the workspace');
       assert.deepEqual(errors, []);
-      outcomes.push({ provider, passed: true, batches: [100, 6], pending: 1, created: 5, updated: 1, unchanged: 98, held: 1, failed: 0 });
+      outcomes.push({ provider, passed: true, batches: [100, 6], pending: 1, created: 5, updated: 1, unchanged: 98, held: 1, failed: 0, pendingOperationChecks: ['preview', 'execute', 'receipt storage', 'failure recovery'] });
     } catch (error) {
       outcomes.push({ provider, passed: false, error: error.message, batches: batches.map((batch) => batch.length), errors });
     } finally {
+      for (const gate of gates.values()) gate.release();
       await context.close();
     }
   }

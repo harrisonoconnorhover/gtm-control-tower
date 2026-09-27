@@ -376,3 +376,15 @@ created, updated and unchanged rows count as completed. Preserve native run IDs
 and rollback data on individual saved runs rather than inventing one combined
 execution receipt. Reuse existing import/correction/repair/undo/reset invalidation;
 add no storage migration or connector/API behavior change.
+
+## September 27, 2026 — Keep pending CRM requests attached to their input
+
+The dashboard allowed importing, resetting, undoing and refreshing comparisons
+while CRM requests were pending. A late response could reinstate an old plan or
+apply an old receipt to replacement rows with reused contact IDs. Extend the
+existing fieldset's busy state through CRM comparison/sync and receipt saving;
+wait for existing workspace saves, corrections and repairs before starting CRM
+work. One synchronous in-flight ref rejects duplicate starts before React updates
+the screen. Release it in finally, not in review invalidation. Keep provider APIs,
+matching rules and saved receipt formats unchanged; add no cancellation framework
+or new approval step.

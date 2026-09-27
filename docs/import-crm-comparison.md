@@ -67,6 +67,11 @@ that Contact's ID and does not replace its primary email.
 
 ## Execution boundaries
 
+While a CRM comparison or sync is running, workspace controls pause until its
+result and receipt saving finish. This keeps imports, reset, undo, CRM switching
+and comparison refresh from replacing the input of a pending request. Controls
+also wait for an existing workspace save or repair; errors release them for retry.
+
 Plans expire after 15 minutes. Execution rereads the relevant CRM records and
 rejects a changed comparison; invalid or incomplete reads cannot prove absence.
 Persisted whole-account scans are not used as absence evidence. Read visibility
@@ -126,6 +131,8 @@ This regression imports 105 fictional contacts and supplies simulated CRM
 receipts for both providers. It checks that completed rows stay completed across
 batches, a successful retry replaces a failure, unchanged rows are not reported
 as updates, held rows remain pending, and a replacement import clears progress.
+It also pauses comparison, execution and run-history saving to verify that
+workspace controls stay disabled, then checks recovery from a failed comparison.
 Only local workspace and run-history storage reach the app; private CRM responses
 are intercepted and external requests are blocked. This is browser regression
 evidence, not native CRM write qualification.

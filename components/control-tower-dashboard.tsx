@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import {
   demoRunSummary,
@@ -200,6 +200,10 @@ export function ControlTowerDashboard() {
   const [workspaceRevision, setWorkspaceRevision] = useState<number | null>(null);
   const [mappingPresets, setMappingPresets] = useState<MappingPreset[]>([]);
   const [persistenceStatus, setPersistenceStatus] = useState<'loading' | 'saved' | 'saving' | 'disabled' | 'error'>('loading');
+  const crmRequestInFlight = useRef(false);
+  const crmRequestPending = hubSpotSyncStatus === 'sending' || salesforceSyncStatus === 'sending';
+  const workspaceBusy = correctionSaving || persistenceStatus === 'loading' || persistenceStatus === 'saving'
+    || repairStatus === 'sending' || crmRequestPending;
   const hubSpotEligibleContacts = useMemo(() => csvContacts.filter(isHubSpotEligible), [csvContacts]);
   const syncedHubSpotContactIds = useMemo(
     () => new Set([
@@ -532,8 +536,7 @@ export function ControlTowerDashboard() {
   }
 
   async function correctHeldContact(contactId: string, input: CsvContactCorrectionInput, reason: string): Promise<string> {
-    if (correctionSaving || persistenceStatus === 'loading' || persistenceStatus === 'saving'
-      || repairStatus === 'sending' || hubSpotSyncStatus === 'sending' || salesforceSyncStatus === 'sending') {
+    if (crmRequestInFlight.current || workspaceBusy) {
       throw new Error('Wait for the current workspace operation to finish.');
     }
     const result = correctCsvContact(csvContacts, contactId, input, reason);
@@ -635,9 +638,10 @@ export function ControlTowerDashboard() {
   }
 
   async function syncNextCsvBatchToHubSpot() {
-    if (hubSpotSyncStatus === 'sending' || !pendingHubSpotContacts.length) return;
+    if (crmRequestInFlight.current || workspaceBusy || !pendingHubSpotContacts.length) return;
     const batch = pendingHubSpotContacts.slice(0, 100).map(toHubSpotSyncContact);
     const parentSyncId = hubSpotSyncReceipt?.syncId ?? globalThis.crypto.randomUUID();
+    crmRequestInFlight.current = true;
     setHubSpotSyncStatus('sending');
     setHubSpotSyncError(null);
     try {
@@ -665,7 +669,6 @@ export function ControlTowerDashboard() {
         parentSyncId,
       );
       setHubSpotSyncReceipt(combined);
-      setHubSpotSyncStatus(combined.status);
       await recordConnectorReceipt({
         id: globalThis.crypto.randomUUID(), connectorId: 'hubspot', phase: 'receipt',
         status: combined.failed ? 'partial' : 'executed',
@@ -673,16 +676,21 @@ export function ControlTowerDashboard() {
         recordsWritten: combined.synced, recordsFailed: combined.failed,
         createdAt: combined.completedAt, undoAvailable: false, nativeReceiptId: combined.syncId,
       });
+      setHubSpotSyncStatus(combined.status);
     } catch (error) {
       setHubSpotSyncStatus('error');
       setHubSpotSyncError(error instanceof Error ? error.message : 'The HubSpot sync failed before a valid receipt returned.');
+    } finally {
+      crmRequestInFlight.current = false;
     }
   }
 
   async function previewCrmWriteback(connectorId: 'hubspot' | 'salesforce') {
+    if (crmRequestInFlight.current || workspaceBusy) return;
     const source = connectorId === 'hubspot' ? pendingHubSpotContacts : pendingSalesforceContacts;
     const contacts = source.slice(0, 100).map((contact) => connectorId === 'hubspot' ? toHubSpotSyncContact(contact) : toSalesforceSyncLead(contact));
     if (!contacts.length) return;
+    crmRequestInFlight.current = true;
     if (connectorId === 'hubspot') { setHubSpotSyncStatus('sending'); setHubSpotSyncError(null); }
     else { setSalesforceSyncStatus('sending'); setSalesforceSyncError(null); }
     try {
@@ -698,10 +706,13 @@ export function ControlTowerDashboard() {
       const message = error instanceof Error ? error.message : 'CRM preview failed.';
       if (connectorId === 'hubspot') { setHubSpotSyncStatus('error'); setHubSpotSyncError(message); }
       else { setSalesforceSyncStatus('error'); setSalesforceSyncError(message); }
+    } finally {
+      crmRequestInFlight.current = false;
     }
   }
 
   async function executeCrmWriteback(connectorId: 'hubspot' | 'salesforce') {
+    if (crmRequestInFlight.current || workspaceBusy) return;
     const plan = connectorId === 'hubspot' ? hubSpotPlan : salesforcePlan;
     if (!plan) return;
     const source = connectorId === 'hubspot' ? pendingHubSpotContacts : pendingSalesforceContacts;
@@ -710,6 +721,7 @@ export function ControlTowerDashboard() {
       const contact = contactById.get(record.contactId);
       return contact ? [connectorId === 'hubspot' ? toHubSpotSyncContact(contact) : toSalesforceSyncLead(contact)] : [];
     });
+    crmRequestInFlight.current = true;
     if (connectorId === 'hubspot') setHubSpotSyncStatus('sending');
     else setSalesforceSyncStatus('sending');
     try {
@@ -751,13 +763,16 @@ export function ControlTowerDashboard() {
       const message = error instanceof Error ? error.message : 'CRM write-back failed.';
       if (connectorId === 'hubspot') { setHubSpotSyncStatus('error'); setHubSpotSyncError(message); }
       else { setSalesforceSyncStatus('error'); setSalesforceSyncError(message); }
+    } finally {
+      crmRequestInFlight.current = false;
     }
   }
 
   async function syncNextCsvBatchToSalesforce() {
-    if (salesforceSyncStatus === 'sending' || !pendingSalesforceContacts.length) return;
+    if (crmRequestInFlight.current || workspaceBusy || !pendingSalesforceContacts.length) return;
     const batch = pendingSalesforceContacts.slice(0, 100).map(toSalesforceSyncLead);
     const parentSyncId = salesforceSyncReceipt?.syncId ?? globalThis.crypto.randomUUID();
+    crmRequestInFlight.current = true;
     setSalesforceSyncStatus('sending');
     setSalesforceSyncError(null);
     try {
@@ -785,7 +800,6 @@ export function ControlTowerDashboard() {
         parentSyncId,
       );
       setSalesforceSyncReceipt(combined);
-      setSalesforceSyncStatus(combined.status);
       await recordConnectorReceipt({
         id: globalThis.crypto.randomUUID(), connectorId: 'salesforce', phase: 'receipt',
         status: combined.failed ? 'partial' : 'executed',
@@ -793,9 +807,12 @@ export function ControlTowerDashboard() {
         recordsWritten: combined.created + combined.updated, recordsFailed: combined.failed,
         createdAt: combined.completedAt, undoAvailable: false, nativeReceiptId: combined.syncId,
       });
+      setSalesforceSyncStatus(combined.status);
     } catch (error) {
       setSalesforceSyncStatus('error');
       setSalesforceSyncError(error instanceof Error ? error.message : 'The Salesforce sync failed before a valid receipt returned.');
+    } finally {
+      crmRequestInFlight.current = false;
     }
   }
 
@@ -853,7 +870,7 @@ export function ControlTowerDashboard() {
 
   return (
     <main className="min-h-screen overflow-hidden bg-[#07130f] text-[#edf8f2] selection:bg-[#cdfc54] selection:text-[#07130f]">
-      <fieldset disabled={correctionSaving} className="min-w-0 border-0 p-0">
+      <fieldset disabled={workspaceBusy} className="min-w-0 border-0 p-0">
       <div className="pointer-events-none fixed inset-x-0 top-0 h-[520px] bg-[radial-gradient(circle_at_76%_8%,rgba(205,252,84,0.11),transparent_33%),radial-gradient(circle_at_12%_0%,rgba(64,170,127,0.16),transparent_31%)]" />
       <div className="relative mx-auto max-w-[1540px] px-5 py-5 sm:px-8 lg:px-12">
         <header className="flex flex-wrap items-center justify-between gap-5 border-b border-white/10 pb-5">
@@ -931,6 +948,9 @@ export function ControlTowerDashboard() {
         </section>
 
         <div id="workspace-console" className="scroll-mt-6">
+        {crmRequestPending && <p role="status" className="mb-4 rounded-2xl border border-[#cdfc54]/20 bg-[#cdfc54]/[0.07] px-4 py-3 text-sm text-[#cdfc54]">
+          CRM request in progress. Workspace controls unlock after the result and any receipt saving finish.
+        </p>}
         <SelfHostConsole
           catalog={connectorCatalog}
           contacts={csvContacts}
@@ -959,7 +979,7 @@ export function ControlTowerDashboard() {
           key={reviewEpoch}
           contacts={csvContacts}
           history={correctionHistory}
-          disabled={correctionSaving || persistenceStatus === 'loading' || persistenceStatus === 'saving' || repairStatus === 'sending' || hubSpotSyncStatus === 'sending' || salesforceSyncStatus === 'sending'}
+          disabled={workspaceBusy}
           onCorrect={correctHeldContact}
         />}
 
@@ -970,7 +990,7 @@ export function ControlTowerDashboard() {
             connectorId={destinationType as 'hubspot' | 'salesforce'}
             workspaceId={workspaceId}
             accessKey={destinationType === 'hubspot' ? hubSpotSyncKey : salesforceSyncKey}
-            disabled={persistenceStatus !== 'saved' || correctionSaving || repairStatus === 'sending' || hubSpotSyncStatus === 'sending' || salesforceSyncStatus === 'sending'}
+            disabled={persistenceStatus !== 'saved' || workspaceBusy}
           />}
 
         <FunkyCrmLab
