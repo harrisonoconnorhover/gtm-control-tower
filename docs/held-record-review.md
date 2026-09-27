@@ -5,6 +5,11 @@ row's email, company, owner, or lifecycle stage. The expected lifecycle stage
 stays as imported. This workflow belongs to the operator workspace; it is not
 part of the static public demonstration.
 
+![Held-record correction form and before/after history for the fictional Casey Example row](images/held-record-review.png)
+
+Synthetic local self-hosted example after step 3: two ready records; Casey
+remains held for a missing owner.
+
 ## Try three fictional rows
 
 Save this as `held-record-review.csv`. Every person and address is fictional.
