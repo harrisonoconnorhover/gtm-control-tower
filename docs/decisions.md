@@ -315,3 +315,22 @@ configured duplicate rules. Neither separate read/write sequence is atomic
 against external writers. Different unlinked emails and records outside the
 connected user's visibility remain outside the guarantee. Add no fuzzy matching,
 native merge, schema, dependency or n8n behavior change.
+
+## September 27, 2026 — Rank possible import matches for review
+
+Compare each imported person independently with records in a saved CRM scan.
+Suggest selectable name, email, phone, state and company fields from usable import
+values. Keep state separate from sales territory. Reuse normalizers and scan
+storage; retain the existing account-clustering rules and exact-email write path.
+
+Use a deterministic score out of 100, not a percentage probability: no labeled
+match dataset or calibration supports a certainty claim. Fixed weights prevent
+missing or deselected fields from inflating a score. Shared phones, weak context
+and conflicting values remain visible. Limit broad candidate searches and show
+their limits alongside snapshot dates, permissions and partial coverage.
+
+Suggestions are read-only and never link, merge or approve writes. Show native
+IDs and compared values so an operator can investigate in the CRM before the
+separate write preview. Reuse paged CRM reads, reject malformed pagination rather
+than reporting false completion, and review imports in batches of 100. Add no
+schema or dependencies; live development-account qualification remains pending.

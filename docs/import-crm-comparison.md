@@ -6,6 +6,11 @@ HubSpot or Salesforce connection. The public static demo performs no CRM reads
 or writes. This is an imported-file comparison, not a native merge tool or a
 whole-account duplicate scan.
 
+For name, phone, state, company, or approximate email evidence, use the separate
+[possible-match review](approximate-import-matches.md). It ranks candidates from
+a dated snapshot and exports review JSON; it never selects a write target or
+changes eligibility. This page describes the fresh exact-email write preview.
+
 ## Decisions you can inspect
 
 | Current CRM result for an imported email | HubSpot | Salesforce |

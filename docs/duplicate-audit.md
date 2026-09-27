@@ -11,6 +11,11 @@ operator's review decisions. It is separate from:
 
 The public demonstration cannot call the account scanner or read CRM data.
 
+The saved provider records can also support
+[read-only imported-row matching](approximate-import-matches.md) in `/app/lab`.
+That review reuses scan pagination and coverage, with independent matching rules
+and selectable imported fields; it does not change account-cluster decisions.
+
 ## Connect a CRM
 
 Duplicate scans require persistence and a direct connector. Local SQLite is the
@@ -27,7 +32,7 @@ ignored `.env.local` file.
 
 | Intended use | Service-key scopes |
 | --- | --- |
-| Whole-account Contact scan and read connection test | `crm.objects.contacts.read` |
+| Whole-account Contact scan, import-match snapshot, and read connection test | `crm.objects.contacts.read` |
 | Write connection test only | `crm.objects.contacts.write` |
 | Governed preview/write, update rollback, or synthetic seed | `crm.objects.contacts.read` and `crm.objects.contacts.write` |
 
@@ -37,12 +42,18 @@ write scope alone is insufficient for that command. Restart the self-host after
 changing `.env.local`, then verify the connector at `/setup`. The service key
 stays on the server; it is not sent to the browser.
 
+HubSpot scans request `state` and `hs_additional_emails` with the existing
+Contact read scope. Older snapshots may lack these fields; read a fresh
+snapshot when using them for imported-row review.
+
 ### Salesforce
 
 Authorize the Salesforce CLI and run `npm run configure:salesforce`, as
 described in [Salesforce setup](salesforce-csv-setup.md). The configured user
 must be able to query Leads, Contacts, and the Account name/website fields used
-as Contact company context.
+as Contact company context. Scans also read Lead `State` and Contact
+`MailingState`; those fields must be readable. Read a fresh snapshot if an
+older scan lacks state data needed for imported-row review.
 
 The scan reads:
 

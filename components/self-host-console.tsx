@@ -17,7 +17,7 @@ import { messyLeadDemoCsv } from '@/lib/messy-lead-demo';
 import type { MappingPreset } from '@/lib/workspace';
 
 const mappingOrder: CsvFieldKey[] = [
-  'rawEmail', 'fullName', 'firstName', 'lastName', 'company', 'phone', 'jobTitle', 'website',
+  'rawEmail', 'fullName', 'firstName', 'lastName', 'company', 'phone', 'jobTitle', 'website', 'state',
   'region', 'segment', 'lifecycleStage', 'expectedLifecycleStage', 'ownerId', 'contactId',
   'normalizedEmail', 'canonicalContactId', 'recordStatus', 'lastAction', 'qualityFlags',
 ];

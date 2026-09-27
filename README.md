@@ -20,7 +20,8 @@ the repository.
 1. Run the browser cleanup and open [the record decisions](https://gtm-control-tower.pages.dev/#decisions). Inspect a duplicate pair, an owner change, and a held record. The original values, applied rules, remaining issues, and downloadable decisions come from the same local run.
 2. Inspect the shared [CSV importer and repairs](lib/csv-control-tower.ts) and [their regression tests](tests/csv-control-tower.test.ts). Exact email matching preserves corporate plus tags; internationalized domains use IDNA; malformed row widths are rejected before readiness is calculated.
 3. In the self-hosted `/app/lab`, follow the [three-row held-record review](docs/held-record-review.md): correct an email, inspect a new duplicate hold, resolve it, and leave a partially corrected row held.
-4. For the separate Salesforce development work, read the [approval, stale-write, and partial-success test contract](docs/salesforce-apex-routing.md). Its dated native results are historical evidence, separate from the browser demonstration and the current CI run.
+4. Inspect the [possible CRM match walkthrough](docs/approximate-import-matches.md): choose imported fields, compare a dated snapshot, and examine ranked suggestions and conflicts. The scores are review signals, not identity probabilities or permission to sync.
+5. For the separate Salesforce development work, read the [approval, stale-write, and partial-success test contract](docs/salesforce-apex-routing.md). Its dated native results are historical evidence, separate from the browser demonstration and the current CI run.
 
 These are independent development workflows using synthetic records. The browser example performs no CRM writes; the operator workspace requires your own configuration for connected operations.
 
@@ -35,6 +36,10 @@ These are independent development workflows using synthetic records. The browser
 - Scans every HubSpot Contact or every unconverted Salesforce Lead and Contact,
   persists provider-page progress, and produces an evidence-backed duplicate
   review queue without performing a native CRM merge.
+- Offers [read-only possible CRM matches](docs/approximate-import-matches.md)
+  for imported rows using selected name, email, phone, state, and company fields.
+  Shows up to three suggestions per row with native IDs, evidence, conflicts,
+  missing values, and snapshot coverage; exports the review as JSON.
 - Persists imports, repairs, field-level write plans, native receipts, rollback
   backups, and twenty workspace revisions in local SQLite.
 - Reads Google Sheets through n8n and writes governed records to a separate
@@ -213,6 +218,7 @@ Lead webhook -> n8n normalize/score/route -> CRM + BigQuery -> dbt -> dashboard
 Full instructions: [self-hosting](docs/self-hosting.md),
 [duplicate audit](docs/duplicate-audit.md),
 [imported-file CRM comparison](docs/import-crm-comparison.md),
+[possible import matches](docs/approximate-import-matches.md),
 [Google Sheets](docs/google-sheets-setup.md),
 [HubSpot](docs/hubspot-csv-setup.md), and
 [Salesforce](docs/salesforce-csv-setup.md). The deployable Salesforce developer

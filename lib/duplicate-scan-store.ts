@@ -179,9 +179,7 @@ export async function saveDuplicateReviewDecision(
 
 async function finalizeDuplicateScan(scanId: string, sourceComplete: boolean): Promise<DuplicateScanView> {
   const db = await getDatabase();
-  const rows = await db.prepare('SELECT payload_json FROM duplicate_scan_records WHERE scan_id = ? ORDER BY record_key')
-    .bind(scanId).all<{ payload_json: string }>();
-  const records = rows.results.map((row) => JSON.parse(row.payload_json) as IdentityRecord);
+  const records = await getDuplicateScanRecords(scanId);
   const result = resolveDuplicateIdentities(records);
   const now = new Date().toISOString();
   const clusterRows = result.clusters.map((cluster) => ({
@@ -205,6 +203,15 @@ async function finalizeDuplicateScan(scanId: string, sourceComplete: boolean): P
     .bind(result.recordsScanned, result.candidatesCompared, sourceComplete ? 1 : 0, JSON.stringify(result.analysisWarnings), now, now, scanId).run();
   if (changedRows(completion) === 0) return (await getDuplicateScan(scanId))!;
   return (await getDuplicateScan(scanId))!;
+}
+
+/** The caller must verify the scan's workspace and connector before exposing records. */
+export async function getDuplicateScanRecords(scanId: string): Promise<IdentityRecord[]> {
+  await ensureWorkspaceSchema();
+  const db = await getDatabase();
+  const rows = await db.prepare('SELECT payload_json FROM duplicate_scan_records WHERE scan_id = ? ORDER BY record_key')
+    .bind(scanId).all<{ payload_json: string }>();
+  return rows.results.map((row) => JSON.parse(row.payload_json) as IdentityRecord);
 }
 
 async function hydrateScan(db: DatabaseAdapter, row: ScanRow): Promise<DuplicateScanView> {

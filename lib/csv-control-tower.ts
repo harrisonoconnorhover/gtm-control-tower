@@ -51,6 +51,7 @@ const fieldAliases = {
   phone: ['phone', 'phone_number', 'phonenumber', 'mobile_phone', 'mobile'],
   jobTitle: ['job_title', 'jobtitle', 'title', 'position'],
   website: ['website', 'website_url', 'company_website', 'url'],
+  state: ['state', 'state_province', 'stateprovince', 'mailing_state', 'mailingstate', 'province'],
   region: ['region', 'territory', 'sales_region'],
   segment: ['segment', 'market_segment', 'company_segment'],
   lifecycleStage: ['lifecycle_stage', 'lifecyclestage', 'stage', 'status'],
@@ -73,6 +74,7 @@ export const csvFieldLabels: Record<CsvFieldKey, string> = {
   phone: 'Phone',
   jobTitle: 'Job title',
   website: 'Website',
+  state: 'State / province',
   region: 'Region / territory',
   segment: 'Segment',
   lifecycleStage: 'Lifecycle stage',
@@ -203,6 +205,7 @@ export function importContactsCsv(csv: string, mapping: CsvColumnMapping = {}): 
       phone: nullable(readField('phone')),
       jobTitle: nullable(readField('jobTitle')),
       website: nullable(readField('website')),
+      state: nullable(readField('state')),
       region,
       segment,
       lifecycleStage,
@@ -431,7 +434,7 @@ export function countCsvRepairCandidates(
 export function exportContactsCsv(contacts: LiveContactState[]): string {
   const headers = [
     'contact_id', 'full_name', 'first_name', 'last_name', 'email', 'normalized_email',
-    'company', 'phone', 'job_title', 'website', 'region',
+    'company', 'phone', 'job_title', 'website', 'state', 'region',
     'segment', 'lifecycle_stage', 'expected_lifecycle_stage', 'owner_id',
     'canonical_contact_id', 'record_status', 'last_action', 'quality_flags',
   ];
@@ -446,6 +449,7 @@ export function exportContactsCsv(contacts: LiveContactState[]): string {
     contact.phone ?? '',
     contact.jobTitle ?? '',
     contact.website ?? '',
+    contact.state ?? '',
     contact.region,
     contact.segment,
     contact.lifecycleStage,

@@ -25,6 +25,7 @@ import {
 } from '@/lib/csv-control-tower';
 import { HeldContactReview } from '@/components/held-contact-review';
 import { SelfHostConsole } from '@/components/self-host-console';
+import { ImportMatchReview } from '@/components/import-match-review';
 import type { ConnectorCatalog, ConnectorId, ConnectorReceipt } from '@/lib/connector-contract';
 import {
   combineHubSpotSyncReceipts,
@@ -947,6 +948,16 @@ export function ControlTowerDashboard() {
           disabled={correctionSaving || persistenceStatus === 'loading' || persistenceStatus === 'saving' || repairStatus === 'sending' || hubSpotSyncStatus === 'sending' || salesforceSyncStatus === 'sending'}
           onCorrect={correctHeldContact}
         />}
+
+        {dataMode === 'csv' && csvContacts.length > 0
+          && ((destinationType === 'hubspot' && hubSpotSafeWriteback) || (destinationType === 'salesforce' && salesforceSafeWriteback))
+          && <ImportMatchReview
+            contacts={csvContacts}
+            connectorId={destinationType as 'hubspot' | 'salesforce'}
+            workspaceId={workspaceId}
+            accessKey={destinationType === 'hubspot' ? hubSpotSyncKey : salesforceSyncKey}
+            disabled={persistenceStatus !== 'saved' || correctionSaving || repairStatus === 'sending' || hubSpotSyncStatus === 'sending' || salesforceSyncStatus === 'sending'}
+          />}
 
         <FunkyCrmLab
           mode={dataMode}

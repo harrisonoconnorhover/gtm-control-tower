@@ -29,7 +29,7 @@ export type CrmSourcePreview = {
   readAt: string;
 };
 
-const properties = ['email', 'firstname', 'lastname', 'company', 'phone', 'mobilephone', 'jobtitle', 'website'];
+const properties = ['email', 'hs_additional_emails', 'firstname', 'lastname', 'company', 'phone', 'mobilephone', 'jobtitle', 'website', 'state'];
 
 export async function readHubSpotIdentityPage(
   accessToken: string,
@@ -40,12 +40,22 @@ export async function readHubSpotIdentityPage(
   url.searchParams.set('properties', properties.join(','));
   if (cursor.after) url.searchParams.set('after', cursor.after);
   const { response, payload } = await fetchJsonWithRetry(url, { headers: hubSpotHeaders(accessToken) });
-  if (!response.ok || !isRecord(payload)) throw new Error(`HubSpot source returned ${response.status}`);
-  const results = Array.isArray(payload.results) ? payload.results.filter(isRecord) : [];
-  const paging = isRecord(payload.paging) && isRecord(payload.paging.next) ? payload.paging.next : null;
-  const after = paging && typeof paging.after === 'string' ? paging.after : null;
+  if (!response.ok) throw new Error(`HubSpot source returned ${response.status}`);
+  if (!isRecord(payload) || !Array.isArray(payload.results)) throw new Error('HubSpot source returned malformed records');
+  let after: string | null = null;
+  if (payload.paging !== undefined) {
+    if (!isRecord(payload.paging)) throw new Error('HubSpot source returned malformed pagination');
+    if (payload.paging.next !== undefined) {
+      const next = payload.paging.next;
+      if (!isRecord(next) || typeof next.after !== 'string' || !next.after.trim()) {
+        throw new Error('HubSpot source omitted its pagination cursor');
+      }
+      after = next.after;
+      if (after === cursor.after) throw new Error('HubSpot source repeated its pagination cursor');
+    }
+  }
   return {
-    records: results.flatMap(toHubSpotIdentityRecord),
+    records: payload.results.map(toHubSpotIdentityRecord),
     nextCursor: after ? { after } : null,
     complete: !after,
   };
@@ -59,10 +69,10 @@ export async function readSalesforceIdentityPage(
 ): Promise<CrmScanPage<SalesforceScanCursor>> {
   const apiRoot = `${instanceUrl}/services/data/v${apiVersion}`;
   const query = cursor.objectType === 'lead'
-    ? 'SELECT Id, FirstName, LastName, Email, Company, Phone, MobilePhone, Title, Website, CreatedDate, LastModifiedDate FROM Lead WHERE IsConverted = FALSE ORDER BY Id'
-    : 'SELECT Id, FirstName, LastName, Email, Phone, MobilePhone, Title, CreatedDate, LastModifiedDate, Account.Name, Account.Website FROM Contact ORDER BY Id';
+    ? 'SELECT Id, FirstName, LastName, Email, Company, Phone, MobilePhone, Title, Website, State, CreatedDate, LastModifiedDate FROM Lead WHERE IsConverted = FALSE ORDER BY Id'
+    : 'SELECT Id, FirstName, LastName, Email, Phone, MobilePhone, Title, MailingState, CreatedDate, LastModifiedDate, Account.Name, Account.Website FROM Contact ORDER BY Id';
   const url = cursor.nextRecordsUrl
-    ? new URL(cursor.nextRecordsUrl, instanceUrl)
+    ? salesforceCursorUrl(cursor.nextRecordsUrl, apiRoot)
     : new URL(`${apiRoot}/query?q=${encodeURIComponent(query)}`);
   const { response, payload } = await fetchJsonWithRetry(url, {
     headers: {
@@ -71,11 +81,19 @@ export async function readSalesforceIdentityPage(
       'sforce-query-options': 'batchSize=200',
     },
   });
-  if (!response.ok || !isRecord(payload) || !Array.isArray(payload.records)) throw new Error(`Salesforce ${cursor.objectType} source returned ${response.status}`);
-  const records = payload.records.filter(isRecord).flatMap((record) => toSalesforceIdentityRecord(cursor.objectType, record));
-  const done = payload.done === true;
-  const nextRecordsUrl = typeof payload.nextRecordsUrl === 'string' ? payload.nextRecordsUrl : null;
-  if (!done && nextRecordsUrl) return { records, nextCursor: { objectType: cursor.objectType, nextRecordsUrl }, complete: false };
+  if (!response.ok) throw new Error(`Salesforce ${cursor.objectType} source returned ${response.status}`);
+  if (!isRecord(payload) || !Array.isArray(payload.records) || typeof payload.done !== 'boolean') {
+    throw new Error('Salesforce source returned malformed records or pagination');
+  }
+  const records = payload.records.map((record) => toSalesforceIdentityRecord(cursor.objectType, record));
+  if (!payload.done) {
+    const nextUrl = salesforceCursorUrl(payload.nextRecordsUrl, apiRoot);
+    if (nextUrl.href === url.href) throw new Error('Salesforce source repeated its pagination cursor');
+    return { records, nextCursor: { objectType: cursor.objectType, nextRecordsUrl: nextUrl.pathname }, complete: false };
+  }
+  if (payload.nextRecordsUrl !== undefined && payload.nextRecordsUrl !== null) {
+    throw new Error('Salesforce completed source unexpectedly returned a pagination cursor');
+  }
   if (cursor.objectType === 'lead') return { records, nextCursor: { objectType: 'contact', nextRecordsUrl: null }, complete: false };
   return { records, nextCursor: null, complete: true };
 }
@@ -159,13 +177,19 @@ export function isCrmSourceContact(value: unknown): value is CrmSourceContact {
     .every((key) => typeof value[key] === 'string');
 }
 
-function toHubSpotIdentityRecord(value: Record<string, unknown>): IdentityRecord[] {
-  const nativeId = stringValue(value.id);
-  const props = isRecord(value.properties) ? value.properties : {};
-  if (!nativeId) return [];
+function toHubSpotIdentityRecord(value: unknown): IdentityRecord {
+  if (!isRecord(value) || typeof value.id !== 'string' || !value.id.trim() || !isRecord(value.properties)) {
+    throw new Error('HubSpot source returned a malformed contact identity or properties');
+  }
+  const nativeId = value.id;
+  const props = value.properties;
+  if (props.hs_additional_emails !== undefined && props.hs_additional_emails !== null
+    && typeof props.hs_additional_emails !== 'string') {
+    throw new Error('HubSpot source returned malformed additional emails');
+  }
   const firstName = stringValue(props.firstname);
   const lastName = stringValue(props.lastname);
-  return [{
+  return {
     recordKey: `hubspot:contact:${nativeId}`,
     connectorId: 'hubspot',
     objectType: 'contact',
@@ -174,6 +198,8 @@ function toHubSpotIdentityRecord(value: Record<string, unknown>): IdentityRecord
     lastName,
     fullName: [firstName, lastName].filter(Boolean).join(' '),
     email: stringValue(props.email),
+    additionalEmails: [...new Set(stringValue(props.hs_additional_emails).split(';').map((email) => email.trim()).filter(Boolean))],
+    state: stringValue(props.state),
     company: stringValue(props.company),
     phone: stringValue(props.phone) || stringValue(props.mobilephone),
     secondaryPhone: stringValue(props.phone) ? stringValue(props.mobilephone) : '',
@@ -181,16 +207,18 @@ function toHubSpotIdentityRecord(value: Record<string, unknown>): IdentityRecord
     website: stringValue(props.website),
     createdAt: nullableDate(value.createdAt),
     updatedAt: nullableDate(value.updatedAt),
-  }];
+  };
 }
 
-function toSalesforceIdentityRecord(objectType: SalesforceScanCursor['objectType'], value: Record<string, unknown>): IdentityRecord[] {
-  const nativeId = stringValue(value.Id);
-  if (!nativeId) return [];
+function toSalesforceIdentityRecord(objectType: SalesforceScanCursor['objectType'], value: unknown): IdentityRecord {
+  if (!isRecord(value) || typeof value.Id !== 'string' || !value.Id.trim()) {
+    throw new Error('Salesforce source returned a malformed record identity');
+  }
+  const nativeId = value.Id;
   const firstName = stringValue(value.FirstName);
   const lastName = stringValue(value.LastName);
   const account = isRecord(value.Account) ? value.Account : {};
-  return [{
+  return {
     recordKey: `salesforce:${objectType}:${nativeId}`,
     connectorId: 'salesforce',
     objectType,
@@ -199,6 +227,7 @@ function toSalesforceIdentityRecord(objectType: SalesforceScanCursor['objectType
     lastName,
     fullName: [firstName, lastName].filter(Boolean).join(' '),
     email: stringValue(value.Email),
+    state: objectType === 'lead' ? stringValue(value.State) : stringValue(value.MailingState),
     company: objectType === 'lead' ? stringValue(value.Company) : stringValue(account.Name),
     phone: stringValue(value.Phone) || stringValue(value.MobilePhone),
     secondaryPhone: stringValue(value.Phone) ? stringValue(value.MobilePhone) : '',
@@ -206,7 +235,19 @@ function toSalesforceIdentityRecord(objectType: SalesforceScanCursor['objectType
     website: objectType === 'lead' ? stringValue(value.Website) : stringValue(account.Website),
     createdAt: nullableDate(value.CreatedDate),
     updatedAt: nullableDate(value.LastModifiedDate),
-  }];
+  };
+}
+
+function salesforceCursorUrl(value: unknown, apiRoot: string): URL {
+  if (typeof value !== 'string' || !value.trim()) throw new Error('Salesforce source omitted its pagination cursor');
+  const root = new URL(apiRoot);
+  const cursor = new URL(value, root.origin);
+  const prefix = `${root.pathname}/query/`;
+  if (cursor.origin !== root.origin || cursor.username || cursor.password || cursor.search || cursor.hash
+    || !cursor.pathname.startsWith(prefix) || !/^[A-Za-z0-9_-]+$/.test(cursor.pathname.slice(prefix.length))) {
+    throw new Error('Salesforce source returned an invalid pagination cursor');
+  }
+  return cursor;
 }
 
 function identityToSourceContact(record: IdentityRecord): CrmSourceContact {
@@ -230,7 +271,7 @@ function hubSpotHeaders(accessToken: string) {
 async function fetchJsonWithRetry(url: URL, init: RequestInit): Promise<{ response: Response; payload: unknown }> {
   let lastResponse: Response | null = null;
   for (let attempt = 0; attempt < 4; attempt += 1) {
-    const response = await fetch(url, { ...init, cache: 'no-store', signal: AbortSignal.timeout(30_000) });
+    const response = await fetch(url, { ...init, cache: 'no-store', redirect: 'error', signal: AbortSignal.timeout(30_000) });
     lastResponse = response;
     const payload: unknown = await response.json().catch(() => null);
     if (response.status !== 429 && response.status < 500) return { response, payload };
@@ -255,5 +296,5 @@ function stringValue(value: unknown): string {
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

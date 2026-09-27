@@ -5,6 +5,10 @@ whole-account Contact duplicate audit; `/app/lab` handles CSV parsing, quality
 checks, merge/reroute/replay, preview, and governed Contact writes. Only contacts
 that pass the clean-record gate are sent after the operator approves a sync.
 
+The separate [possible-match review](approximate-import-matches.md) in `/app/lab`
+compares selected imported fields against a dated Contact snapshot. It is
+read-only, exports JSON suggestions, and does not authorize a sync.
+
 ## What is written
 
 The direct connector compares at most 100 eligible imported rows with current
@@ -34,8 +38,9 @@ Merged rows, invalid emails, unresolved duplicates, and unreplayed lifecycle reg
 This is the shortest setup for one HubSpot portal.
 
 1. In HubSpot, create an account service key. Grant
-   `crm.objects.contacts.read` for Contact reads and whole-account duplicate
-   scans. Grant `crm.objects.contacts.write` for the write connection test.
+   `crm.objects.contacts.read` for Contact reads, whole-account duplicate scans,
+   and possible-import-match snapshots. Grant `crm.objects.contacts.write` for
+   the write connection test.
    Governed preview/write, rollback, and the synthetic seed require both scopes
    because they read current Contacts before writing.
 2. Copy `.env.example` to `.env.local`.
@@ -75,6 +80,12 @@ every Contact page, commits the next HubSpot `after` cursor and records to
 SQLite/D1, and resumes after a pause or interruption. The ceiling is 25,000
 records on local SQLite and 10,000 on D1; a ceiling-limited result is labeled
 partial.
+
+Snapshots request `state` and `hs_additional_emails` for imported-row review
+under the same Contact read scope. The state field is separate from a CSV sales
+region. Read a fresh snapshot if an older scan lacks state or additional emails.
+Import suggestions use independent rules and do not change the account review
+queue or the exact-email write preview.
 
 The review queue uses deterministic email, Gmail-alias, phone, name, company,
 and domain evidence with visible conflicts. **Approve cleanup plan** saves a
