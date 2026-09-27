@@ -6,7 +6,7 @@ Google Sheets supplies the table, and BigQuery is not required.
 ## 1. Start the stack
 
 ```bash
-docker compose up --build
+docker compose up -d --build
 npm run setup
 ```
 
@@ -46,8 +46,13 @@ N8N_GOOGLE_SHEETS_READ_WEBHOOK_URL=http://n8n:5678/webhook/gtm-control-tower-she
 N8N_GOOGLE_SHEETS_WRITE_WEBHOOK_URL=http://n8n:5678/webhook/gtm-control-tower-sheets-write
 ```
 
-Use `http://localhost:5678` instead when the app runs directly with
-`npm run dev`. Restart the app service after changing environment values.
+Run `docker compose up -d app` to recreate the app with these values; a plain
+Compose restart does not reload its environment. Compose reads `.env`
+automatically. If you use `.env.local`, run
+`docker compose --env-file .env.local up -d app` instead.
+
+For `npm run dev`, put the values in `.env.local`, use `http://localhost:5678`
+instead of the Docker service name, and restart the development server.
 
 ## 4. Use it
 
@@ -57,13 +62,19 @@ Use `http://localhost:5678` instead when the app runs directly with
 4. Choose Google Sheets as the destination, paste its URL, and execute.
 5. Keep the returned receipt or export the same governed state as CSV.
 
-The included 64-row fixture is a useful proof: the validated reference run read
-all 64 rows, executed merge/reroute/replay, wrote 44 destination-ready rows, and
-held 12 unresolved active rows out of `GTM Clean`. Repeating that 44-row sync
-left exactly 44 unique emails, and changing one company value updated its
-existing row before the reference value was restored. Two overlapping webhook
-calls with a previously unseen email were also queued and produced one
-destination row.
+The [August 26, 2026 development run](https://github.com/harrisonoconnorhover/gtm-control-tower/blob/d81b57e/README.md#verified-integration-behavior)
+used an earlier 64-row fixture: it executed merge/reroute/replay, wrote 44
+destination-ready rows, and held 12 unresolved active rows out of `GTM Clean`.
+Repeating that 44-row sync left exactly 44 unique emails, and changing one
+company value updated its existing row before the reference value was restored.
+Two overlapping webhook calls with a previously unseen email were also queued
+and produced one destination row.
+
+The current bundled fixture follows the corrected shared identity and owner
+rules: seven merges leave 57 canonical records, with 46 ready and 11 held.
+Those are local cleanup results, covered by the
+[demo regression test](../tests/messy-lead-demo.test.ts); the historical Sheets
+receipt is not evidence of a new connected run with this revised fixture.
 
 The app sends spreadsheet identifiers and bounded contact rows to n8n. Google
 credentials stay inside n8n and never enter the browser or repository.

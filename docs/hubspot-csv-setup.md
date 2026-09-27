@@ -37,6 +37,11 @@ This is the shortest setup for one HubSpot portal.
    import a CSV or read a bounded Contact sample before reviewing a field-level
    write plan.
 
+For an existing Docker installation, put the same settings in `.env` instead,
+set `CONTROL_TOWER_SYNC_KEY`, and run `docker compose up -d app` to recreate the
+app with those values. See [self-hosting](self-hosting.md#3-add-hubspot-or-salesforce)
+if you prefer an explicit `--env-file .env.local`.
+
 Direct service-key mode is the full governed path: native read, exact diff,
 stale-plan check, per-record receipt, and update rollback. The server writes
 only the portable properties listed above. Empty proposed values explicitly
@@ -70,11 +75,23 @@ Use this when n8n already owns connector credentials or OAuth is preferred.
 3. Attach one HubSpot OAuth2 credential with `crm.objects.contacts.read` and
    `crm.objects.contacts.write` to the applicable HTTP nodes.
 4. Publish both workflows.
-5. Set `N8N_HUBSPOT_SYNC_WEBHOOK_URL=http://127.0.0.1:5678/webhook/gtm-control-tower-hubspot-sync`
-   in `.env.local` so the dashboard can discover the connector. Change the URL
-   only when n8n is not using the local default.
-6. Set `N8N_HUBSPOT_SOURCE_WEBHOOK_URL=http://127.0.0.1:5678/webhook/gtm-control-tower-hubspot-source`.
-7. Leave `HUBSPOT_ACCESS_TOKEN` blank; the server will use n8n.
+5. For the Docker app, save these webhook URLs in the ignored `.env` file:
+
+   ```dotenv
+   N8N_HUBSPOT_SYNC_WEBHOOK_URL=http://n8n:5678/webhook/gtm-control-tower-hubspot-sync
+   N8N_HUBSPOT_SOURCE_WEBHOOK_URL=http://n8n:5678/webhook/gtm-control-tower-hubspot-source
+   ```
+
+6. Leave `HUBSPOT_ACCESS_TOKEN` blank so the server uses n8n. Set
+   `CONTROL_TOWER_SYNC_KEY` for the Docker app's production runtime and enter the
+   same value in the operator UI when authorizing writes.
+7. Run `docker compose up -d app` to recreate the app with the new values.
+
+For an app running with `npm run dev`, put the settings in `.env.local`, replace
+`http://n8n:5678` with `http://localhost:5678`, and restart the development server.
+The browser opens n8n at `localhost:5678`; the Docker app reaches it by the
+`n8n` service name. A plain Compose restart does not apply changed environment
+values.
 
 n8n mode supports read-only source preview and delegated receipted writes. It
 does not expose the whole-account duplicate scanner. Use a direct service key

@@ -58,10 +58,26 @@ Follow [Google Sheets setup](google-sheets-setup.md). BigQuery is not required.
 
 ## 3. Add HubSpot or Salesforce
 
-Copy `.env.example` to `.env.local`, then configure only the destination you
-need. Use [HubSpot setup](hubspot-csv-setup.md) or
-[Salesforce setup](salesforce-csv-setup.md). Credentials are read only by
-server routes and `.env.local` is ignored by Git.
+For Docker, copy `.env.example` to `.env`, then configure only the destination
+you need. Compose reads `.env` automatically; it does not automatically read
+`.env.local`. Set `CONTROL_TOWER_SYNC_KEY` for CRM operations because the Docker
+app runs in production mode. Apply changed values by recreating the app:
+
+```bash
+docker compose up -d app
+```
+
+If you keep configuration in `.env.local`, use
+`docker compose --env-file .env.local up -d app` instead. A plain
+`docker compose restart app` does not reload environment values. URLs from the
+Docker app to the included n8n service must use `http://n8n:5678`, rather than
+the app container's own localhost.
+
+For `npm run dev`, use `.env.local`, use `http://localhost:5678` for the included
+n8n service, and restart the development server after changing values. Follow
+[HubSpot setup](hubspot-csv-setup.md) or [Salesforce setup](salesforce-csv-setup.md)
+for connector-specific settings. Credentials are read only by server routes;
+both environment files are ignored by Git.
 
 For any internet-accessible deployment, set `CONTROL_TOWER_SYNC_KEY`, use
 HTTPS, and put the entire application behind authentication. The repository
@@ -133,8 +149,10 @@ This produces personalized, ignored assets under `.runtime/generated`:
 Run `bigquery/setup.sql` in BigQuery. Start n8n with `docker compose up -d`,
 import the generated workflows, and attach your own BigQuery and HubSpot
 credentials to the relevant nodes before publishing them. Copy the values from
-`connection.env` into `.env.local`. For dbt, load those non-secret variables in
-your terminal and use the generated profile:
+`connection.env` into `.env` for Docker, then run `docker compose up -d app n8n`
+to apply them. For Node development, use `.env.local` and restart the development
+server. For dbt, load those non-secret variables in your terminal and use the
+generated profile:
 
 ```bash
 set -a
