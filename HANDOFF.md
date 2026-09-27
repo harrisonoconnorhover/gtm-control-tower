@@ -6,6 +6,7 @@
 - Fixed CRM reads in the local Cloudflare runtime by using supported manual redirects and rejecting non-success responses.
 - Verified the complete browser-to-CRM workflow: CSV import, native snapshot, displayed suggestions, JSON export and exact-email preview for HubSpot and Salesforce.
 - Added a credential-free browser regression and updated the dated native-check report and redacted results. No CRM records were created or changed.
+- Published runtime fixes as `43cb268`; mirrored them locally to development as `7371881`, preserving private navigation. The personal site already links the updated report.
 
 ## Try It
 
@@ -18,6 +19,7 @@
 - September 27, 2026, 20:09 UTC native browser run: 17 HubSpot Contacts and 130 Salesforce Leads/Contacts; complete scans, expected fixture suggestions, exported results, exact-email preview and Salesforce Contact hold passed.
 - One populated Salesforce state-name/code case, operator-key updates/clearing/reload/rejection, desktop and 390px layouts passed. No browser exceptions or horizontal overflow.
 - 213 tests across 23 suites, lint, TypeScript, operator/public builds and secret scan passed. Credential-free browser regression passed for both providers: 21 intercepted private requests; zero native CRM requests.
+- [Release CI](https://github.com/harrisonoconnorhover/gtm-control-tower/actions/runs/36347351343) passed, including fresh-install smoke, dependency audit and builds. Published report/results matched reviewed bytes; the canonical personal-site link was verified. Temporary credentials and CRM snapshots were removed.
 
 ## Decisions
 
@@ -27,7 +29,6 @@
 
 ## Remaining
 
-- Release publication and CI confirmation are pending.
 - Native HubSpot populated state/additional-email cases, continuation cursors, converted Leads, writes, duplicate-rule execution and rollback remain outside these checks. No measured precision/recall claim.
 
 ## Review First
