@@ -3,7 +3,7 @@
 [![CI](https://github.com/harrisonoconnorhover/gtm-control-tower/actions/workflows/ci.yml/badge.svg)](https://github.com/harrisonoconnorhover/gtm-control-tower/actions/workflows/ci.yml)
 [![MIT License](https://img.shields.io/badge/license-MIT-174b45.svg)](LICENSE)
 
-**[Try the synthetic cleanup](https://gtm-control-tower.pages.dev/#demo)** ·
+**[Try the synthetic cleanup](https://gtm-control-tower.pages.dev/#decisions)** ·
 **[Audit a CSV privately](https://gtm-control-tower.pages.dev/#audit)** ·
 **[Self-host the operator workspace](#quick-start-one-command-no-accounts-required)**
 
