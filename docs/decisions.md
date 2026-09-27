@@ -305,6 +305,8 @@ confirms missing batch results before proposing a create. Salesforce checks
 Leads, including converted Leads, and Contacts; only a sole unconverted Lead is
 an update target. Contact, converted, ambiguous and shared-native input matches
 are held with visible native IDs. Incomplete reads stop the comparison.
+Contact lookup reads only ID and email because held Contacts are never update
+targets; Account access and unrelated Contact fields are not required.
 
 Keep the existing fifteen-minute plan and execution reread. Include matched
 identities in its fingerprint. HubSpot creates use create-only requests so a

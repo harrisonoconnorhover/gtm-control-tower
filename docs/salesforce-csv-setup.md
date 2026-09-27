@@ -39,9 +39,10 @@ company. See [comparison cases and limits](import-crm-comparison.md).
    resolve local holds, and choose **Compare N with CRM** in `/app/lab`. Review
    matched record IDs, held reasons, and exact field changes before executing.
 
-The configured user needs read access to Leads, Contacts, their compared fields,
-and referenced Account `Name` and `Website`, plus write access to the mapped Lead
-fields. A successful Lead-only source read does not qualify the Contact lookup.
+The configured user needs read access to Leads and their compared fields, plus
+Contact IDs and emails, and write access to the mapped Lead fields. Contact
+matches are held, so the lookup does not read Account or other Contact fields.
+A successful Lead-only source read does not qualify the Contact lookup.
 
 ## Whole-account Lead and Contact audit
 

@@ -23,7 +23,7 @@ export async function readSalesforceExisting(
   for (const objectType of ['lead', 'contact'] as const) {
     const fields = objectType === 'lead'
       ? 'Id, Email, IsConverted, FirstName, LastName, Company, Phone, Title, Website'
-      : 'Id, Email, FirstName, LastName, Phone, Title, Account.Name, Account.Website';
+      : 'Id, Email';
     const objectName = objectType === 'lead' ? 'Lead' : 'Contact';
     const query = `SELECT ${fields} FROM ${objectName} WHERE Email IN (${quotedEmails})`;
     let nextUrl = `${root.href}/query?q=${encodeURIComponent(query)}`;
@@ -77,25 +77,29 @@ function toNativeRecord(value: unknown, objectType: 'lead' | 'contact'): NativeC
     || typeof value.Email !== 'string' || !value.Email.trim()) {
     throw new Error('Salesforce query returned a malformed record identity');
   }
-  if (objectType === 'lead' && typeof value.IsConverted !== 'boolean') {
+  if (objectType === 'contact') {
+    return {
+      nativeId: value.Id,
+      objectType,
+      email: value.Email.trim().toLowerCase(),
+      fields: { firstName: null, lastName: null, company: null, phone: null, jobTitle: null, website: null },
+    };
+  }
+  if (typeof value.IsConverted !== 'boolean') {
     throw new Error('Salesforce query returned a Lead without a conversion status');
   }
-  if (objectType === 'contact' && value.Account !== null && !isRecord(value.Account)) {
-    throw new Error('Salesforce query returned malformed Contact account fields');
-  }
-  const account = isRecord(value.Account) ? value.Account : null;
   return {
     nativeId: value.Id,
     objectType,
-    ...(objectType === 'lead' ? { isConverted: value.IsConverted as boolean } : {}),
+    isConverted: value.IsConverted,
     email: value.Email.trim().toLowerCase(),
     fields: {
       firstName: nullableString(value.FirstName),
       lastName: nullableString(value.LastName),
-      company: objectType === 'lead' ? nullableString(value.Company) : nullableString(account ? account.Name : null),
+      company: nullableString(value.Company),
       phone: nullableString(value.Phone),
       jobTitle: nullableString(value.Title),
-      website: objectType === 'lead' ? nullableString(value.Website) : nullableString(account ? account.Website : null),
+      website: nullableString(value.Website),
     },
   };
 }
