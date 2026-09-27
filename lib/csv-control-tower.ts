@@ -98,10 +98,7 @@ export function previewContactsCsv(csv: string): CsvPreview {
   const rows = parseCsv(csv);
   if (rows.length < 2) throw new Error('The CSV needs a header row and at least one contact.');
 
-  const originalHeaders = rows[0].map((header) => header.trim());
-  if (new Set(originalHeaders.map(normalizeHeader)).size !== originalHeaders.length) {
-    throw new Error('The CSV has duplicate column names after normalization. Rename those columns and try again.');
-  }
+  const originalHeaders = validatedCsvHeaders(rows[0]);
   const dataRows = rows.slice(1).filter((row) => row.some((cell) => cell.trim() !== ''));
   const suggestedMapping = suggestCsvMapping(originalHeaders);
   return {
@@ -128,19 +125,28 @@ export function importContactsCsv(csv: string, mapping: CsvColumnMapping = {}): 
   const rows = parseCsv(csv);
   if (rows.length < 2) throw new Error('The CSV needs a header row and at least one contact.');
 
-  const headers = rows[0].map(normalizeHeader);
-  const effectiveMapping = { ...suggestCsvMapping(rows[0]), ...mapping };
+  const originalHeaders = validatedCsvHeaders(rows[0]);
+  const headers = originalHeaders.map(normalizeHeader);
+  const effectiveMapping = { ...suggestCsvMapping(originalHeaders), ...mapping };
   if (!effectiveMapping.rawEmail && !effectiveMapping.fullName && !effectiveMapping.firstName && !effectiveMapping.lastName) {
     throw new Error('Add an email or full_name column so contacts can be identified.');
   }
 
   const now = new Date().toISOString();
-  const dataRows = rows.slice(1).filter((row) => row.some((cell) => cell.trim() !== ''));
+  const dataRows = rows.slice(1)
+    .map((cells, index) => ({ cells, rowNumber: index + 2 }))
+    .filter(({ cells }) => cells.some((cell) => cell.trim() !== ''));
+  const contactIdRows = new Map<string, number>();
   let lifecycleComparedRows = 0;
-  const contacts = dataRows.map((cells, index) => {
+  const contacts = dataRows.map(({ cells, rowNumber }, index) => {
     const row = Object.fromEntries(headers.map((header, cellIndex) => [header, cells[cellIndex]?.trim() ?? '']));
     const readField = (field: CsvFieldKey) => row[normalizeHeader(effectiveMapping[field] ?? '')] ?? '';
     const contactId = readField('contactId') || `CSV-${String(index + 1).padStart(3, '0')}`;
+    const firstRow = contactIdRows.get(contactId);
+    if (firstRow !== undefined) {
+      throw new Error(`CSV row ${rowNumber} has duplicate contact ID "${contactId}" (first used on row ${firstRow}). Give each source record a unique contact ID and try again.`);
+    }
+    contactIdRows.set(contactId, rowNumber);
     const firstName = readField('firstName');
     const lastName = readField('lastName');
     const fullName = readField('fullName') || [firstName, lastName].filter(Boolean).join(' ') || contactId;
@@ -404,6 +410,14 @@ function parseCsv(csv: string): string[][] {
     }
   }
   return rows;
+}
+
+function validatedCsvHeaders(headers: string[]): string[] {
+  const originalHeaders = headers.map((header) => header.trim());
+  if (new Set(originalHeaders.map(normalizeHeader)).size !== originalHeaders.length) {
+    throw new Error('The CSV has duplicate column names after normalization. Rename those columns and try again.');
+  }
+  return originalHeaders;
 }
 
 function normalizeHeader(value: string): string {
