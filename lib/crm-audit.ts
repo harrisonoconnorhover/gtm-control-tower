@@ -25,6 +25,8 @@ export type CrmAuditReport = {
   readinessLabel: 'Ready' | 'Needs cleanup' | 'At risk' | 'Blocked';
   mappedFields: number;
   mappedHeaders: string[];
+  expectedStageMapped: boolean;
+  lifecycleComparedRows: number;
   duplicateRecords: number;
   duplicateClusters: number;
   invalidEmails: number;
@@ -43,8 +45,8 @@ export function auditContactsCsv(
   mapping?: CsvColumnMapping,
 ): CrmAuditReport {
   const preview = previewContactsCsv(csv);
-  const effectiveMapping = mapping ?? preview.suggestedMapping;
-  const { contacts, sourceRows } = importContactsCsv(csv, effectiveMapping);
+  const effectiveMapping = { ...preview.suggestedMapping, ...mapping };
+  const { contacts, sourceRows, lifecycleComparedRows, expectedStageMapped } = importContactsCsv(csv, effectiveMapping);
   const active = contacts.filter((contact) => contact.recordStatus === 'active');
   const ready = active.filter(isDestinationReadyContact);
   const duplicateRecords = countCsvRepairCandidates(contacts, 'duplicate-surge');
@@ -75,6 +77,8 @@ export function auditContactsCsv(
     readinessLabel: readinessLabel(readinessScore),
     mappedFields: mappedHeaders.length,
     mappedHeaders,
+    expectedStageMapped,
+    lifecycleComparedRows,
     duplicateRecords,
     duplicateClusters: new Set(active
       .filter((contact) => contact.qualityFlags.includes('duplicate_identity'))
@@ -89,6 +93,20 @@ export function auditContactsCsv(
     automatableCandidates: duplicateRecords + stageRegressions,
     priorities,
   };
+}
+
+export function lifecycleComparisonSummary(report: CrmAuditReport): string {
+  if (!report.expectedStageMapped) {
+    return 'Backward-stage comparison unavailable: no expected lifecycle stage column was mapped. Readiness covers the other available checks.';
+  }
+  const uncheckedRows = report.activeRows - report.lifecycleComparedRows;
+  if (!report.lifecycleComparedRows) {
+    return `Backward-stage comparison unavailable: none of the ${report.activeRows} active rows supplies both a recognized current stage and a recognized expected stage. Readiness covers the other available checks.`;
+  }
+  if (uncheckedRows) {
+    return `Backward-stage comparison available for ${report.lifecycleComparedRows} of ${report.activeRows} active rows. ${uncheckedRows} ${uncheckedRows === 1 ? 'row lacks' : 'rows lack'} a recognized current or expected stage; readiness does not establish lifecycle correctness for those rows.`;
+  }
+  return `Backward-stage comparison available for every active row (${report.activeRows}), using the supplied expected stage. This checks the exported values, not CRM history.`;
 }
 
 export function renderCrmAuditMarkdown(report: CrmAuditReport): string {
@@ -108,6 +126,12 @@ Generated ${report.generatedAt} from \`${report.fileName}\`. This report contain
 - **Ready for a governed destination:** ${report.readyRows}
 - **Held for review:** ${report.heldRows}
 - **Immediately automatable merge/replay candidates:** ${report.automatableCandidates}
+
+## Comparison coverage
+
+${lifecycleComparisonSummary(report)}
+
+Mapped CSV headers: ${report.mappedHeaders.map((header) => JSON.stringify(header)).join(', ') || 'None'}.
 
 ## Priority controls
 

@@ -4,6 +4,8 @@ import type { LiveContactState, RepairReceipt, RepairRun } from './live-control-
 export type CsvImportResult = {
   contacts: LiveContactState[];
   sourceRows: number;
+  lifecycleComparedRows: number;
+  expectedStageMapped: boolean;
 };
 
 export type CsvFieldKey = keyof typeof fieldAliases;
@@ -134,6 +136,7 @@ export function importContactsCsv(csv: string, mapping: CsvColumnMapping = {}): 
 
   const now = new Date().toISOString();
   const dataRows = rows.slice(1).filter((row) => row.some((cell) => cell.trim() !== ''));
+  let lifecycleComparedRows = 0;
   const contacts = dataRows.map((cells, index) => {
     const row = Object.fromEntries(headers.map((header, cellIndex) => [header, cells[cellIndex]?.trim() ?? '']));
     const readField = (field: CsvFieldKey) => row[normalizeHeader(effectiveMapping[field] ?? '')] ?? '';
@@ -147,12 +150,17 @@ export function importContactsCsv(csv: string, mapping: CsvColumnMapping = {}): 
     const company = nullable(readField('company'));
     const region = readField('region') || 'Unassigned';
     const segment = readField('segment') || 'Unassigned';
-    const lifecycleStage = normalizeStage(readField('lifecycleStage') || 'lead');
-    const expectedLifecycleStage = normalizeStage(readField('expectedLifecycleStage') || lifecycleStage);
+    const suppliedLifecycleStage = normalizeStage(readField('lifecycleStage'));
+    const suppliedExpectedLifecycleStage = normalizeStage(readField('expectedLifecycleStage'));
+    const lifecycleStage = suppliedLifecycleStage || 'lead';
+    const expectedLifecycleStage = suppliedExpectedLifecycleStage || lifecycleStage;
     const ownerId = nullable(readField('ownerId'));
     const canonicalContactId = nullable(readField('canonicalContactId'));
     const recordStatus = readField('recordStatus').toLowerCase() === 'merged' ? 'merged' : 'active';
     const qualityFlags = new Set(splitFlags(readField('qualityFlags')));
+    if (recordStatus === 'active'
+      && Object.hasOwn(stageRank, suppliedLifecycleStage)
+      && Object.hasOwn(stageRank, suppliedExpectedLifecycleStage)) lifecycleComparedRows += 1;
 
     if (!normalizedEmail) qualityFlags.add('invalid_email');
     if (!company) qualityFlags.add('missing_company');
@@ -196,7 +204,13 @@ export function importContactsCsv(csv: string, mapping: CsvColumnMapping = {}): 
     }
   }
 
-  return { contacts, sourceRows: dataRows.length };
+  return {
+    contacts,
+    sourceRows: dataRows.length,
+    lifecycleComparedRows,
+    expectedStageMapped: Boolean(effectiveMapping.expectedLifecycleStage)
+      && headers.includes(normalizeHeader(effectiveMapping.expectedLifecycleStage ?? '')),
+  };
 }
 
 export function executeCsvRepair(
