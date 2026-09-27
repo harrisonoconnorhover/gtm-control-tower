@@ -14,8 +14,7 @@ const leadRecord = {
   Phone: null, Title: 'Analyst', Website: null,
 };
 const contactRecord = {
-  Id: '003-1', Email: 'alex@example.com', FirstName: 'Alex', LastName: 'Morgan',
-  Phone: null, Title: 'Analyst', Account: { Name: 'Synthetic Account', Website: 'https://example.com' },
+  Id: '003-1', Email: 'alex@example.com',
 };
 
 function mockPages(...pages: unknown[]) {
@@ -27,7 +26,7 @@ function mockPages(...pages: unknown[]) {
 describe('Salesforce exact-email comparison reads', () => {
   afterEach(() => vi.unstubAllGlobals());
 
-  it('reads converted Leads and Contacts, mapping Account fields and normalizing exact emails', async () => {
+  it('reads converted Leads and identity-only Contacts, normalizing exact emails', async () => {
     const fetchMock = mockPages(
       { done: true, records: [{ ...leadRecord, IsConverted: true }] },
       { done: true, records: [contactRecord] },
@@ -40,14 +39,14 @@ describe('Salesforce exact-email comparison reads', () => {
       },
       {
         nativeId: '003-1', objectType: 'contact', email: 'alex@example.com',
-        fields: { firstName: 'Alex', lastName: 'Morgan', company: 'Synthetic Account', phone: null, jobTitle: 'Analyst', website: 'https://example.com' },
+        fields: { firstName: null, lastName: null, company: null, phone: null, jobTitle: null, website: null },
       },
     ]);
     const urls = fetchMock.mock.calls.map((call) => new URL((call as unknown as [string])[0]));
     expect(urls[0].searchParams.get('q')).toContain("FROM Lead WHERE Email IN ('alex@example.com')");
     expect(urls[0].searchParams.get('q')).toContain('IsConverted');
     expect(urls[0].searchParams.get('q')).not.toContain('IsConverted = FALSE');
-    expect(urls[1].searchParams.get('q')).toContain('Account.Name, Account.Website FROM Contact');
+    expect(urls[1].searchParams.get('q')).toBe("SELECT Id, Email FROM Contact WHERE Email IN ('alex@example.com')");
   });
 
   it('reads every page of both objects and counts a repeated identity only once', async () => {
@@ -62,8 +61,8 @@ describe('Salesforce exact-email comparison reads', () => {
     expect(fetchMock).toHaveBeenCalledTimes(4);
   });
 
-  it('allows a Contact with no Account while preserving its native identity', async () => {
-    mockPages({ done: true, records: [] }, { done: true, records: [{ ...contactRecord, Account: null }] });
+  it('ignores unused Contact properties while preserving its native identity', async () => {
+    mockPages({ done: true, records: [] }, { done: true, records: [{ ...contactRecord, Account: 42, FirstName: false }] });
     const matches = await readSalesforceExisting([contact], apiRoot, headers);
     expect(matches.get(contact.email)?.[0]).toMatchObject({
       objectType: 'contact', fields: { company: null, website: null },
