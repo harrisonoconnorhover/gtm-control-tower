@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { readSalesforceExisting } from '../../../../lib/crm-existing-salesforce';
 import {
   isSalesforceSyncBatch,
   isSalesforceSyncReceipt,
@@ -77,23 +78,39 @@ export async function syncDirectlyToSalesforce(
     accept: 'application/json',
   };
   const apiRoot = `${instanceUrl}/services/data/v${apiVersion}`;
-  const existing = await findExistingLeads(batch.leads, apiRoot, headers);
+  const existing = await readSalesforceExisting(batch.leads, apiRoot, headers);
   const recordsByContact = new Map<string, SalesforceSyncRecord>();
   const creates: SalesforceSyncLead[] = [];
   const updates: Array<{ lead: SalesforceSyncLead; id: string }> = [];
+  const importedEmailCounts = new Map<string, number>();
+  for (const lead of batch.leads) {
+    const email = lead.email.trim().toLowerCase();
+    importedEmailCounts.set(email, (importedEmailCounts.get(email) ?? 0) + 1);
+  }
 
   for (const lead of batch.leads) {
-    const matches = existing.get(lead.email.toLowerCase()) ?? [];
-    if (matches.length > 1) {
+    const email = lead.email.trim().toLowerCase();
+    const matches = existing.get(email) ?? [];
+    let holdReason: string | null = null;
+    if ((importedEmailCounts.get(email) ?? 0) > 1) {
+      holdReason = 'Held: Multiple imported rows use this email and would target the same Salesforce identity.';
+    } else if (matches.length > 1) {
+      holdReason = `Held: Salesforce already has ${matches.length} Leads or Contacts with this email.`;
+    } else if (matches[0]?.objectType === 'contact') {
+      holdReason = 'Held: Salesforce already has a Contact with this email; this workflow only writes Leads.';
+    } else if (matches[0] && matches[0].isConverted !== false) {
+      holdReason = 'Held: Salesforce already has a converted Lead with this email.';
+    }
+    if (holdReason) {
       recordsByContact.set(lead.contactId, {
         contactId: lead.contactId,
         email: lead.email,
         status: 'failed',
         salesforceId: null,
-        error: `Held: Salesforce already has ${matches.length} active Leads with this email.`,
+        error: holdReason,
       });
     } else if (matches.length === 1) {
-      updates.push({ lead, id: matches[0] });
+      updates.push({ lead, id: matches[0].nativeId });
     } else {
       creates.push(lead);
     }
@@ -137,39 +154,6 @@ export async function syncDirectlyToSalesforce(
   };
 }
 
-async function findExistingLeads(
-  leads: SalesforceSyncLead[],
-  apiRoot: string,
-  headers: Record<string, string>,
-): Promise<Map<string, string[]>> {
-  const quotedEmails = leads.map((lead) => `'${escapeSoqlString(lead.email)}'`).join(',');
-  const query = `SELECT Id, Email FROM Lead WHERE IsConverted = FALSE AND Email IN (${quotedEmails})`;
-  let nextUrl: string | null = `${apiRoot}/query?q=${encodeURIComponent(query)}`;
-  const matches = new Map<string, string[]>();
-  let pages = 0;
-
-  while (nextUrl && pages < 10) {
-    const response = await fetch(nextUrl.startsWith('http') ? nextUrl : `${new URL(apiRoot).origin}${nextUrl}`, {
-      cache: 'no-store',
-      headers,
-      signal: AbortSignal.timeout(30_000),
-    });
-    const payload: unknown = await response.json();
-    if (!response.ok || !isRecord(payload)) throw new Error(`Salesforce query returned ${response.status}`);
-    const records = Array.isArray(payload.records) ? payload.records.filter(isRecord) : [];
-    for (const record of records) {
-      const email = typeof record.Email === 'string' ? record.Email.toLowerCase() : '';
-      const id = typeof record.Id === 'string' ? record.Id : '';
-      if (!email || !id) continue;
-      matches.set(email, [...(matches.get(email) ?? []), id]);
-    }
-    nextUrl = payload.done === false && typeof payload.nextRecordsUrl === 'string' ? payload.nextRecordsUrl : null;
-    pages += 1;
-  }
-  if (nextUrl) throw new Error('Salesforce query exceeded the bounded pagination limit');
-  return matches;
-}
-
 async function writeLeadCollection(
   method: 'POST' | 'PATCH',
   records: Array<Record<string, unknown>>,
@@ -179,7 +163,7 @@ async function writeLeadCollection(
   const response = await fetch(`${apiRoot}/composite/sobjects`, {
     method,
     cache: 'no-store',
-    headers,
+    headers: { ...headers, 'Sforce-Duplicate-Rule-Header': 'allowSave=false' },
     body: JSON.stringify({ allOrNone: false, records }),
     signal: AbortSignal.timeout(30_000),
   });
@@ -233,10 +217,6 @@ function toReceiptRecord(
     salesforceId: fallbackId,
     error: (message || 'Salesforce rejected this record.').slice(0, 1000),
   };
-}
-
-function escapeSoqlString(value: string): string {
-  return value.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 }
 
 function normalizeInstanceUrl(value: string | undefined): string | null {

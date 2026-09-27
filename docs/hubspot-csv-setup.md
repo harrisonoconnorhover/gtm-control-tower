@@ -7,11 +7,19 @@ that pass the clean-record gate are sent after the operator approves a sync.
 
 ## What is written
 
-Contacts are upserted by normalized email in batches of at most 100. The portable default mapping writes only standard HubSpot properties:
+The direct connector compares at most 100 eligible imported rows with current
+Contacts before execution. An exact primary or additional email match selects
+the native Contact ID for an update; a confirmed absence permits a create.
+Ambiguous matches and multiple imported rows targeting one Contact are held.
+Updates preserve the existing primary email. Creates use HubSpot's create API:
+a conflict fails instead of silently updating another Contact. See the
+[comparison cases and limits](import-crm-comparison.md).
+
+The portable default mapping writes only standard HubSpot properties:
 
 | CSV value | HubSpot property |
 | --- | --- |
-| `normalized_email` | contact identity (`email`) |
+| `normalized_email` | lookup identity; `email` on create only |
 | `first_name` / parsed `full_name` | `firstname` |
 | `last_name` / parsed `full_name` | `lastname` |
 | `company` | `company` |
@@ -32,10 +40,11 @@ This is the shortest setup for one HubSpot portal.
    because they read current Contacts before writing.
 2. Copy `.env.example` to `.env.local`.
 3. Set `HUBSPOT_ACCESS_TOKEN` to the service key. Do not put the key in Git.
-4. Run `npm install` and `npm run dev`.
+4. Run `npm ci`, `npm run db:migrate:local`, and `npm run dev`.
 5. Use `/app` for a durable whole-account duplicate audit, or `/app/lab` to
-   import a CSV or read a bounded Contact sample before reviewing a field-level
-   write plan.
+   import a CSV or read a bounded Contact sample. In `/app/lab`, choose
+   **Compare N with CRM**, review the matched IDs and field changes, then
+   explicitly execute the approved changes.
 
 For an existing Docker installation, put the same settings in `.env` instead,
 set `CONTROL_TOWER_SYNC_KEY`, and run `docker compose up -d app` to recreate the
@@ -46,6 +55,14 @@ Direct service-key mode is the full governed path: native read, exact diff,
 stale-plan check, per-record receipt, and update rollback. The server writes
 only the portable properties listed above. Empty proposed values explicitly
 clear those properties; the rollback snapshot restores their prior nullability.
+The comparison must finish successfully; incomplete or invalid responses stop
+the plan. Execution rereads the CRM and rejects a changed comparison, though a
+separate CRM writer can still change data between that read and the write.
+
+HubSpot treats [additional emails as Contact identifiers](https://developers.hubspot.com/docs/api-reference/legacy/crm/objects/contacts/guide#additional-emails).
+The comparison uses both `email` and `hs_additional_emails`, while preserving the
+primary `email` on updates. It does not infer a match from a similar name or
+company when emails are different and unlinked.
 
 HubSpot documents the object scopes and bearer-token use in its
 [contacts guide](https://developers.hubspot.com/docs/api-reference/latest/crm/objects/contacts/guide)
@@ -93,10 +110,11 @@ The browser opens n8n at `localhost:5678`; the Docker app reaches it by the
 `n8n` service name. A plain Compose restart does not apply changed environment
 values.
 
-n8n mode supports read-only source preview and delegated receipted writes. It
-does not expose the whole-account duplicate scanner. Use a direct service key
-when account scans, field-level preflight, or rollback are required, because
-those paths need the server to read native records directly.
+n8n mode supports read-only source preview and delegated receipted email
+upserts. Its existing workflow does not gain **Compare N with CRM**, the direct
+connector's create-only conflict behavior, or rollback. It does not expose the
+whole-account duplicate scanner. Use a direct service key when those features
+are required, because they need the server to read native records directly.
 
 ## Production safety
 

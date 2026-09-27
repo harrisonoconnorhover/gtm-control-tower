@@ -69,10 +69,12 @@ export function toHubSpotSyncContact(contact: LiveContactState): HubSpotSyncCont
 export function isHubSpotSyncBatch(value: unknown): value is HubSpotSyncBatch {
   if (!isRecord(value)) return false;
   if (!isBoundedString(value.syncId, 1, 120) || !isBoundedString(value.sourceFile, 1, 255)) return false;
-  return Array.isArray(value.contacts)
+  if (!(Array.isArray(value.contacts)
     && value.contacts.length >= 1
     && value.contacts.length <= 100
-    && value.contacts.every(isHubSpotSyncContact);
+    && value.contacts.every(isHubSpotSyncContact))) return false;
+  return new Set(value.contacts.map((contact) => contact.contactId.trim())).size === value.contacts.length
+    && new Set(value.contacts.map((contact) => contact.email.toLowerCase())).size === value.contacts.length;
 }
 
 export function isHubSpotSyncReceipt(value: unknown): value is HubSpotSyncReceipt {

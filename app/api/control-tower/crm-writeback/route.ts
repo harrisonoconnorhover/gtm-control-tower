@@ -1,10 +1,11 @@
-import { syncDirectlyToHubSpot } from '@/app/api/control-tower/hubspot-sync/route';
+import { readHubSpotExisting } from '@/lib/crm-existing-hubspot';
+import { readSalesforceExisting } from '@/lib/crm-existing-salesforce';
+import { createHubSpotContacts } from '@/app/api/control-tower/hubspot-sync/route';
 import {
   buildCrmWritePlan,
   isCrmRollbackPlan,
   isCrmWritePlan,
   planStillMatches,
-  portableCrmFieldNames,
   rollbackRecordAlreadyRestored,
   rollbackRecordStillMatches,
   rollbackFromPlan,
@@ -12,13 +13,11 @@ import {
   type CrmRollbackRecord,
   type CrmWritePlan,
   type CrmWritebackReceipt,
-  type NativeCrmRecord,
   type PortableCrmContact,
 } from '@/lib/crm-workflow';
 import { toHubSpotFieldPayload, toSalesforceFieldPayload } from '@/lib/crm-field-mapping';
 import { operatorAccessError } from '@/lib/operator-auth';
 
-const HUBSPOT_PROPERTIES = ['email', 'firstname', 'lastname', 'company', 'phone', 'jobtitle', 'website'];
 const DEFAULT_API_VERSION = '67.0';
 
 export async function POST(request: Request) {
@@ -53,54 +52,13 @@ async function createPlan(connectorId: CrmWritePlan['connectorId'], sourceFile: 
 }
 
 async function readExisting(connectorId: CrmWritePlan['connectorId'], contacts: PortableCrmContact[]) {
-  if (connectorId === 'hubspot') return readHubSpotExisting(contacts);
-  return readSalesforceExisting(contacts);
-}
-
-async function readHubSpotExisting(contacts: PortableCrmContact[]): Promise<Map<string, NativeCrmRecord[]>> {
-  const token = process.env.HUBSPOT_ACCESS_TOKEN;
-  if (!token) throw new Error('Safe HubSpot preview requires a private-app token with contact read and write scopes.');
-  const response = await fetch('https://api.hubapi.com/crm/objects/2026-03/contacts/batch/read', {
-    method: 'POST', cache: 'no-store', headers: hubSpotHeaders(token), signal: AbortSignal.timeout(30_000),
-    body: JSON.stringify({ idProperty: 'email', properties: HUBSPOT_PROPERTIES, inputs: contacts.map((contact) => ({ id: contact.email })) }),
-  });
-  const payload: unknown = await response.json();
-  if (!response.ok && response.status !== 207) throw new Error(`HubSpot preview returned ${response.status}`);
-  const map = new Map<string, NativeCrmRecord[]>();
-  const results = isRecord(payload) && Array.isArray(payload.results) ? payload.results.filter(isRecord) : [];
-  for (const result of results) {
-    const props = isRecord(result.properties) ? result.properties : {};
-    const email = stringValue(props.email).toLowerCase();
-    const nativeId = stringValue(result.id);
-    if (!email || !nativeId) continue;
-    const record = nativeRecord(nativeId, email, {
-      firstName: props.firstname, lastName: props.lastname, company: props.company, phone: props.phone,
-      jobTitle: props.jobtitle, website: props.website,
-    });
-    map.set(email, [...(map.get(email) ?? []), record]);
+  if (connectorId === 'hubspot') {
+    const token = process.env.HUBSPOT_ACCESS_TOKEN;
+    if (!token) throw new Error('HubSpot preview requires a private-app token with contact read and write scopes.');
+    return readHubSpotExisting(contacts, token);
   }
-  return map;
-}
-
-async function readSalesforceExisting(contacts: PortableCrmContact[]): Promise<Map<string, NativeCrmRecord[]>> {
   const { apiRoot, headers } = salesforceConnection();
-  const emails = contacts.map((contact) => `'${escapeSoql(contact.email)}'`).join(',');
-  const query = `SELECT Id, Email, FirstName, LastName, Company, Phone, Title, Website FROM Lead WHERE IsConverted = FALSE AND Email IN (${emails})`;
-  const response = await fetch(`${apiRoot}/query?q=${encodeURIComponent(query)}`, { cache: 'no-store', headers, signal: AbortSignal.timeout(30_000) });
-  const payload: unknown = await response.json();
-  if (!response.ok || !isRecord(payload) || !Array.isArray(payload.records)) throw new Error(`Salesforce preview returned ${response.status}`);
-  const map = new Map<string, NativeCrmRecord[]>();
-  for (const result of payload.records.filter(isRecord)) {
-    const email = stringValue(result.Email).toLowerCase();
-    const nativeId = stringValue(result.Id);
-    if (!email || !nativeId) continue;
-    const record = nativeRecord(nativeId, email, {
-      firstName: result.FirstName, lastName: result.LastName, company: result.Company, phone: result.Phone,
-      jobTitle: result.Title, website: result.Website,
-    });
-    map.set(email, [...(map.get(email) ?? []), record]);
-  }
-  return map;
+  return readSalesforceExisting(contacts, apiRoot, headers);
 }
 
 async function executePlan(plan: CrmWritePlan, contacts: PortableCrmContact[]): Promise<CrmWritebackReceipt> {
@@ -142,13 +100,13 @@ async function executeHubSpotPlan(
       return contact ? [contact] : [];
     });
     if (contacts.length !== creates.length) throw new Error('The HubSpot plan no longer matches the governed contacts.');
-    const receipt = await syncDirectlyToHubSpot({ syncId: runId, sourceFile: plan.sourceFile, contacts }, token);
+    const receipt = await createHubSpotContacts({ syncId: runId, sourceFile: plan.sourceFile, contacts }, token);
     records.push(...receipt.records.map((record) => ({
       contactId: record.contactId,
       email: record.email,
       nativeId: record.hubSpotId,
-      status: record.status === 'failed' ? 'failed' as const : record.created === false ? 'updated' as const : 'created' as const,
-      error: record.error ?? (record.created === false ? 'HubSpot found this identity during the create request; the write succeeded without a pre-write rollback snapshot.' : null),
+      status: record.status === 'failed' ? 'failed' as const : 'created' as const,
+      error: record.error,
     })));
   }
 
@@ -340,10 +298,6 @@ function contactsAreValid(connectorId: CrmWritePlan['connectorId'], contacts: Po
   });
 }
 
-function nativeRecord(nativeId: string, email: string, raw: Record<string, unknown>): NativeCrmRecord {
-  return { nativeId, email, fields: Object.fromEntries(portableCrmFieldNames.map((field) => [field, nullableString(raw[field])])) as NativeCrmRecord['fields'] };
-}
-
 function compact(value: Record<string, string | null>) { return Object.fromEntries(Object.entries(value).filter((entry): entry is [string, string] => entry[1] !== null)); }
 function hubSpotHeaders(token: string) { return { authorization: `Bearer ${token}`, 'content-type': 'application/json', accept: 'application/json' }; }
 function salesforceConnection() {
@@ -353,9 +307,8 @@ function salesforceConnection() {
   const url = new URL(raw);
   if (url.protocol !== 'https:') throw new Error('Salesforce instance must use HTTPS.');
   const apiVersion = process.env.SALESFORCE_API_VERSION ?? DEFAULT_API_VERSION;
-  return { instanceUrl: url.origin, accessToken, apiVersion, apiRoot: `${url.origin}/services/data/v${apiVersion}`, headers: { authorization: `Bearer ${accessToken}`, 'content-type': 'application/json', accept: 'application/json' } };
+  return { instanceUrl: url.origin, accessToken, apiVersion, apiRoot: `${url.origin}/services/data/v${apiVersion}`, headers: { authorization: `Bearer ${accessToken}`, 'content-type': 'application/json', accept: 'application/json', 'Sforce-Duplicate-Rule-Header': 'allowSave=false' } };
 }
-function escapeSoql(value: string) { return value.replace(/\\/gu, '\\\\').replace(/'/gu, "\\'"); }
 function stringValue(value: unknown) { return typeof value === 'string' ? value : ''; }
 function nullableString(value: unknown): string | null { const cleaned = stringValue(value).trim(); return cleaned || null; }
 function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === 'object' && value !== null; }

@@ -1,0 +1,95 @@
+# Compare an imported file with your CRM
+
+In the self-hosted `/app/lab`, **Compare N with CRM** reads current records for
+the eligible imported rows before proposing writes. It requires a direct
+HubSpot or Salesforce connection. The public static demo performs no CRM reads
+or writes. This is an imported-file comparison, not a native merge tool or a
+whole-account duplicate scan.
+
+## Decisions you can inspect
+
+| Current CRM result for an imported email | HubSpot | Salesforce |
+| --- | --- | --- |
+| No match after complete successful reads | Propose Contact create | Propose Lead create |
+| One exact Contact primary or additional email match | Compare portable fields using its native ID; preserve primary email | Hold a Contact match |
+| One unconverted Lead, with no other match | Not applicable | Compare portable fields using its native ID |
+| Converted Lead | Not applicable | Hold |
+| Multiple matching records | Hold | Hold |
+| Multiple imported rows target one native record | Hold affected rows | Hold affected rows |
+| Matched fields already agree | Unchanged; no write | Unchanged; no write |
+| Failed, malformed, or incomplete lookup | Stop comparison | Stop comparison |
+
+Local eligibility checks still apply. The comparison shows matched native IDs,
+field differences, and reasons for holds. It does not use fuzzy names or company
+similarity to join different, unlinked emails. HubSpot's
+[additional email identifiers](https://developers.hubspot.com/docs/api-reference/legacy/crm/objects/contacts/guide#additional-emails)
+can link an imported secondary email to an existing Contact; the update uses
+that Contact's ID and does not replace its primary email.
+
+## Try with your own development CRM
+
+1. Start the [self-hosted workspace](../README.md#quick-start-one-command-no-accounts-required),
+   then configure a direct [HubSpot](hubspot-csv-setup.md#option-a-account-service-key)
+   or [Salesforce](salesforce-csv-setup.md#local-connection) connection. Use a
+   development account and clearly labeled synthetic records.
+2. Save the following as `crm-comparison.csv` and import it in `/app/lab`:
+
+   ```csv
+   contact_id,full_name,email,company,region,segment,lifecycle_stage,expected_lifecycle_stage,owner_id
+   REVIEW-001,Alex Example,existing@comparison.example,Comparison Example,Northeast,Enterprise,lead,lead,NE-ENT
+   REVIEW-002,Blair Example,new@comparison.example,Comparison Example,Northeast,Enterprise,lead,lead,NE-ENT
+   REVIEW-003,Casey Example,alias@comparison.example,Comparison Example,Northeast,Enterprise,lead,lead,NE-ENT
+   ```
+
+3. To exercise matches, first add synthetic CRM records with selected emails
+   from the file. For HubSpot, make `alias@comparison.example` an additional
+   email on the same Contact as `existing@comparison.example`: both imported
+   rows should be held because they target one Contact. For Salesforce, use
+   an unconverted Lead for one email and a Contact for another. Leave the new
+   email absent. Results depend on the CRM records you actually create.
+4. Select HubSpot or Salesforce under **Where should clean records go?**, then
+   choose **Compare N with CRM** and inspect the proposed creates, updates,
+   unchanged rows, and holds. Comparison itself does not write to the CRM.
+   Execute only after reviewing the changes. `/runs` records outcomes and
+   eligible update rollback; newly created records are not auto-deleted.
+
+## Execution boundaries
+
+Plans expire after 15 minutes. Execution rereads the relevant CRM records and
+rejects a changed comparison; invalid or incomplete reads cannot prove absence.
+Persisted whole-account scans are not used as absence evidence. Read visibility
+is limited to the configured credentials.
+
+Direct HubSpot creates use the native create operation, including the legacy
+direct sync route. A create conflict fails instead of falling back to an update.
+Salesforce writes set `allowSave=false` in the
+[duplicate-rule header](https://developer.salesforce.com/docs/platform/api-rest/guide/headers-duplicaterules.html),
+so configured duplicate rules are not bypassed. A reread and write are separate
+operations: neither connector guarantees atomic protection against external
+writers.
+
+The existing HubSpot n8n workflow remains a delegated email upsert, without this
+comparison promise. The disabled Salesforce n8n node is unchanged. No path here
+merges native CRM records or converts Leads.
+
+## Verification
+
+![Synthetic Salesforce import comparison showing an existing Lead, a new email and a held Contact](screenshots/import-crm-comparison.png)
+
+This local browser capture uses the three-row CSV above and simulated CRM
+responses. The CSV import and local persistence ran in the app; the displayed
+CRM IDs are fictional. Desktop and 390px browser checks covered matched IDs,
+hold reasons, backup download, stale-execution errors and HubSpot alias holds.
+
+The comparison and reader tests use mocked provider responses and synthetic
+records, including aliases, cross-object matches, partial reads, stale plans,
+and create conflicts:
+
+```bash
+npm test -- tests/crm-import-comparison.test.ts tests/crm-existing-hubspot.test.ts tests/crm-existing-salesforce.test.ts
+```
+
+Live-provider qualification is pending; this is not native CRM verification.
+Historical Salesforce development receipts
+elsewhere in this repository describe a separate workflow and do not verify
+this comparison path against your account's permissions or duplicate rules.
