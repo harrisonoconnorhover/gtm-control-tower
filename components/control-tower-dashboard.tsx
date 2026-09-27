@@ -1689,7 +1689,7 @@ function ChangePlanCard({ plan, onRefresh }: { plan: CrmWritePlan; onRefresh: ()
       </div>
       <p className="mt-3 text-xs leading-5 text-[#a8bbb1]">{plan.connectorId === 'hubspot'
         ? 'Checks exact primary and additional email addresses. Two imported rows matching the same Contact are held.'
-        : 'Checks exact email across Leads and Contacts. Contact matches, converted Leads and ambiguous matches are held.'} New records also undergo a possible-duplicate check using name, email, phone, state and company. A possible match holds creation for review; it never links or updates that person automatically. Creates require a complete CRM snapshot started within the last 15 minutes. Both checks run again before execution.</p>
+        : 'Checks exact email across Leads and Contacts. Contact matches, converted Leads and ambiguous matches are held.'} New records are also checked against the CRM snapshot and other active rows in the saved import, including later batches, using name, email, phone, state and company. A possible match holds creation for review; it never links or updates that person automatically. Creates require a complete CRM snapshot started within the last 15 minutes. These checks run again before execution.</p>
       <div className="mt-3 max-h-80 space-y-2 overflow-y-auto" aria-label="CRM comparison records">
         {plan.records.map((record) => (
           <details key={record.contactId} className="rounded-xl border border-white/10 p-3 text-xs">
@@ -1706,6 +1706,14 @@ function ChangePlanCard({ plan, onRefresh }: { plan: CrmWritePlan; onRefresh: ()
                 <ul className="mt-2 space-y-1 text-[#a8bbb1]">{candidate.evidence.map((evidence, index) => <li key={index}>{evidence.label} ({evidence.weight > 0 ? '+' : ''}{evidence.weight})</li>)}</ul>
               </div>
             ))}
+            {record.possibleImportMatches?.map((candidate) => (
+              <div key={candidate.contactId} className="mt-3 rounded-lg border border-[#ffb19a]/20 p-3">
+                <p className="break-words font-semibold text-[#ffb19a]">Possible match in this import: {candidate.fullName || candidate.email} · {candidate.score}/100</p>
+                <p className="mt-1 break-all font-mono text-[#a8bbb1]">Import row {candidate.contactId} · {candidate.email}</p>
+                <ul className="mt-2 space-y-1 text-[#a8bbb1]">{candidate.evidence.map((evidence, index) => <li key={index}>{evidence.label} ({evidence.weight > 0 ? '+' : ''}{evidence.weight})</li>)}</ul>
+              </div>
+            ))}
+            {Boolean(record.possibleImportMatches?.length) && <p className="mt-2 leading-5 text-[#a8bbb1]">Review both rows. Correct or remove unresolved duplicates from the source file, load it again, and refresh the comparison. No row is automatically chosen to create.</p>}
             {record.operation === 'unchanged' && <p className="mt-2 text-[#a8bbb1]">Portable fields already match. No write needed.</p>}
             {record.changes.length > 0 && <ul className="mt-2 space-y-1 text-[#a8bbb1]">{record.changes.map((change) => <li key={change.field} className="break-words">{change.field}: {change.before ?? 'Empty'} → {change.after ?? 'Empty'}</li>)}</ul>}
           </details>

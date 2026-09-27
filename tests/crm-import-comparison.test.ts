@@ -16,8 +16,8 @@ const contact = (id: string, email: string): PortableCrmContact => ({
 const response = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 let savedContacts: LiveContactState[] = [];
 let snapshotStartedAt = '';
-function request(connectorId: 'salesforce' | 'hubspot', contacts: PortableCrmContact[], plan?: CrmWritePlan, overrides = {}) {
-  savedContacts = contacts.map((item) => ({ ...item, fullName: `${item.firstName} ${item.lastName}`, rawEmail: item.email,
+function request(connectorId: 'salesforce' | 'hubspot', contacts: PortableCrmContact[], plan?: CrmWritePlan, overrides = {}, workspaceContacts = contacts) {
+  savedContacts = workspaceContacts.map((item) => ({ ...item, fullName: `${item.firstName} ${item.lastName}`, rawEmail: item.email,
     normalizedEmail: item.email, state: 'WA', recordStatus: 'active', qualityFlags: [], region: 'West', segment: '',
     lifecycleStage: 'Lead', expectedLifecycleStage: 'Lead', ownerId: null, canonicalContactId: null, lastAction: '', updatedAt: new Date().toISOString(),
   }));
@@ -35,6 +35,24 @@ const lead = (Id: string, Email: string, IsConverted = false) => ({
   Phone: null, Title: 'Old title', Website: null,
 });
 const nativeContact = (Id: string, Email: string) => ({ ...lead(Id, Email), Account: { Name: 'Example', Website: null } });
+
+function mockEmptyCrm(connectorId: 'salesforce' | 'hubspot') {
+  return vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+    const url = new URL(String(input));
+    if (connectorId === 'salesforce') {
+      expect(url.pathname.endsWith('/query')).toBe(true);
+      return response({ done: true, records: [] });
+    }
+    if (url.pathname.endsWith('/batch/read')) return response({ status: 'COMPLETE', results: [] });
+    // Missing batch results are confirmed by an individual read. Any native write fails this assertion.
+    expect(init?.method ?? 'GET').toBe('GET');
+    return response({ category: 'OBJECT_NOT_FOUND' }, 404);
+  });
+}
+
+const importIdentity = (id: string, email: string): PortableCrmContact => ({
+  ...contact(id, email), firstName: 'Priya', lastName: 'Nair', company: 'Salesforce', phone: '415-555-0123',
+});
 
 beforeEach(() => {
   vi.stubEnv('NODE_ENV', 'test');
@@ -65,7 +83,8 @@ describe('import comparison before governed CRM writes', () => {
       writes.push({ method: init?.method, body });
       return response(body.records.map((record: { Id?: string }) => ({ id: record.Id ?? '00Q-new', success: true, errors: [] })));
     });
-    const imported = [contact('one', 'lead@example.com'), contact('two', 'contact@example.com'), contact('three', 'converted@example.com'), contact('four', 'new@example.com')];
+    const imported = [contact('one', 'lead@example.com'), contact('two', 'contact@example.com'), contact('three', 'converted@example.com'),
+      { ...contact('four', 'new@example.com'), firstName: 'Casey', lastName: 'Rivera', company: 'Separate Company' }];
     const preview = await POST(request('salesforce', imported));
     expect(preview.status).toBe(200);
     const plan = await preview.json() as CrmWritePlan;
@@ -182,5 +201,64 @@ describe('import comparison before governed CRM writes', () => {
     expect(plan).toMatchObject({ creates: 0, updates: 1, held: 1 });
     expect(plan.records[1].reason).toContain('Save this import workspace');
     expect(store.getWorkspace).not.toHaveBeenCalled();
+  });
+});
+
+describe.each(['hubspot', 'salesforce'] as const)('%s import-to-import review before native creates', (connectorId) => {
+  it('holds both changed-email rows for one person even when the CRM is empty', async () => {
+    const fetchMock = mockEmptyCrm(connectorId);
+    const imported = [
+      importIdentity('first-row', 'priya.nair@salesforce.example.com'),
+      importIdentity('second-row', 'p.nair@salesforce.example.com'),
+    ];
+    const preview = await POST(request(connectorId, imported));
+    expect(preview.status).toBe(200);
+    const plan = await preview.json() as CrmWritePlan;
+    expect(plan).toMatchObject({ creates: 0, held: 2 });
+    for (const [index, row] of plan.records.entries()) {
+      const other = imported[1 - index];
+      expect(row).toMatchObject({ operation: 'hold', possibleMatches: [], possibleImportMatches: [{
+        contactId: other.contactId, email: other.email, fullName: 'Priya Nair', score: expect.any(Number),
+      }] });
+      expect(row.possibleImportMatches?.[0]).not.toHaveProperty('nativeId');
+    }
+    const execution = await POST(request(connectorId, imported, plan));
+    expect(execution.status).toBe(202);
+    expect(await execution.json()).toMatchObject({ created: 0, updated: 0, held: 2, failed: 0 });
+    expect(fetchMock).toHaveBeenCalled();
+  });
+
+  it('holds a proposed create when the matching saved row is outside the current request', async () => {
+    mockEmptyCrm(connectorId);
+    const proposed = importIdentity('current-batch', 'p.nair@salesforce.example.com');
+    const outsideBatch = importIdentity('another-batch', 'priya.nair@salesforce.example.com');
+    const workspaceContacts = [proposed, outsideBatch];
+    const plan = await (await POST(request(connectorId, [proposed], undefined, {}, workspaceContacts))).json() as CrmWritePlan;
+    expect(plan).toMatchObject({ creates: 0, held: 1, records: [{ contactId: proposed.contactId,
+      operation: 'hold', possibleImportMatches: [{ contactId: outsideBatch.contactId, email: outsideBatch.email }],
+    }] });
+    expect(plan.records).toHaveLength(1);
+    const execution = await POST(request(connectorId, [proposed], plan, {}, workspaceContacts));
+    expect(execution.status).toBe(202);
+    expect(await execution.json()).toMatchObject({ created: 0, updated: 0, held: 1, failed: 0 });
+  });
+
+  it.each(['added', 'changed'] as const)('requires a new review if another import identity is %s after preview', async (change) => {
+    mockEmptyCrm(connectorId);
+    const proposed = importIdentity('current-batch', 'p.nair@salesforce.example.com');
+    const duplicate = importIdentity('another-batch', 'priya.nair@salesforce.example.com');
+    const unrelated = { ...contact(duplicate.contactId, duplicate.email), firstName: 'Renee', lastName: 'Walters', company: 'Adobe' };
+    const initialWorkspace = change === 'added' ? [proposed] : [proposed, unrelated];
+    const plan = await (await POST(request(connectorId, [proposed], undefined, {}, initialWorkspace))).json() as CrmWritePlan;
+    expect(plan).toMatchObject({ creates: 1, held: 0 });
+
+    const changedWorkspace = [proposed, duplicate];
+    const execution = await POST(request(connectorId, [proposed], plan, {}, changedWorkspace));
+    expect(execution.status).toBe(409);
+    expect(await execution.json()).toMatchObject({ error: expect.stringContaining('preview is stale') });
+    const refreshed = await (await POST(request(connectorId, [proposed], undefined, {}, changedWorkspace))).json() as CrmWritePlan;
+    expect(refreshed).toMatchObject({ creates: 0, held: 1, records: [{
+      operation: 'hold', possibleImportMatches: [{ contactId: duplicate.contactId }],
+    }] });
   });
 });

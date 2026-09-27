@@ -56,7 +56,9 @@ That original run used advisory approximate review. A later [native follow-up](d
   100-record ceilings, per-record receipts, and update rollback. Direct
   connectors distinguish new records from exact email matches and hold unsafe
   matches before execution. Governed previews also hold proposed creates when
-  any approximate candidate exists or a fresh complete snapshot is unavailable.
+  any approximate candidate exists in the CRM snapshot or another active row of
+  the saved import, including later batches. A missing fresh complete snapshot
+  also holds creates. Import matches show source row IDs separately from CRM IDs.
   Newly created records are never auto-deleted.
 - Keeps returned CRM outcomes separate from local receipt-save failures. Failed
   history saves expose the full receipt for download or storage-only retry;

@@ -442,3 +442,16 @@ existing idempotent run store for both writes and rollback; add no schema or
 automatic CRM retry. Warn that unsaved recovery data is lost on navigation or
 reload unless it is saved or downloaded. Workspace-summary failures remain a
 separate status from detailed history persistence.
+
+## September 27, 2026 — Check possible duplicates within the saved import
+
+Two rows for a new person can use different emails and both pass a CRM-only
+lookup. Reuse the existing deterministic matcher to compare each proposed create
+against the other active rows in the full saved workspace, including later
+batches. Exclude the current row before scoring, phone frequency and search
+limits; exclude locally merged rows. Hold any candidate or incomplete search
+without choosing a winning row. Keep source-row evidence separate from native
+CRM matches, and include it in the preview fingerprint rechecked at execution.
+This is a current-import check, not a cross-workspace lock or a guarantee that
+sparse identities will be detected. Preserve exact-email update behavior and
+the dated native evidence; qualify this correction with simulated providers.

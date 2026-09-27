@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { compareImportedContacts, suggestMatchFields, type ImportMatchInput, type MatchField } from '../lib/import-match';
+import { compareImportedContacts, compareImportRows, suggestMatchFields, type ImportMatchInput, type MatchField } from '../lib/import-match';
 import { resolveDuplicateIdentities, type IdentityRecord } from '../lib/identity-resolution';
 
 function input(overrides: Partial<ImportMatchInput> = {}): ImportMatchInput {
@@ -165,4 +165,21 @@ describe('import-to-CRM candidate matching', () => {
     expect(() => compareImportedContacts([...inputs, input()], crm, allFields)).toThrow('100');
     expect(() => compareImportedContacts(inputs, [...crm, record()], allFields)).toThrow('25,000');
   }, 10_000);
+});
+
+describe('matching other rows in the same import', () => {
+  it('excludes the current row before scoring phone frequency and enforcing candidate limits', () => {
+    const first = input({ contactId: 'self', phone: '2065550112' });
+    const second = input({ contactId: 'other', phone: '2065550112' });
+    const pair = compareImportRows([first], [first, second], ['name', 'phone']).rows[0];
+    expect(pair).toMatchObject({ candidateCount: 1, candidates: [{ record: { contactId: 'other' }, score: 76 }] });
+    expect(pair.candidates[0].evidence).toContainEqual(expect.objectContaining({ key: 'phone', weight: 44, label: 'Normalized phone on 1 other import row(s)' }));
+    expect(compareImportRows([first], [first], allFields).rows[0]).toMatchObject({ candidateCount: 0, warnings: [] });
+    const shared = [first, ...['second', 'third', 'fourth'].map((contactId) => input({ contactId, phone: first.phone }))];
+    expect(compareImportRows([first], shared, ['phone']).rows[0]).toMatchObject({ candidateCount: 3, warnings: [] });
+    const broad = [first, ...Array.from({ length: 250 }, (_, index) => input({ contactId: String(index) }))];
+    expect(compareImportRows([first], broad, ['name']).rows[0]).toMatchObject({ candidateCount: 250, warnings: [] });
+    expect(compareImportRows([first], [...broad, input({ contactId: 'one-more' })], ['name']).rows[0])
+      .toMatchObject({ candidateCount: 0, warnings: [expect.stringContaining('exceeded 250 other import rows')] });
+  });
 });

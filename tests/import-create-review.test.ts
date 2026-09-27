@@ -38,6 +38,56 @@ function compare(contacts: PortableCrmContact[], records: IdentityRecord[]) {
 }
 
 describe('server-side possible-duplicate create review', () => {
+  it.each(['salesforce', 'hubspot'] as const)('holds different-email copies of a new person in the same %s import', (connectorId) => {
+    const proposed = [contact({ contactId: 'first', phone: '2065550112' }), contact({ contactId: 'second', email: 'n.shah@costco.example', phone: '2065550112' })];
+    const results = reviewImportCreates(connectorId, proposed, workspace(proposed), { ...scan, connectorId }, [], now);
+    for (const [index, person] of proposed.entries()) {
+      expect(results.get(person.contactId)).toMatchObject({ review: { status: 'held', candidateCount: 0, importCandidateCount: 1 },
+        possibleMatches: [], possibleImportMatches: [{ contactId: proposed[1 - index].contactId, score: 72 }] });
+      expect(results.get(person.contactId)?.possibleImportMatches?.[0]).not.toHaveProperty('nativeId');
+    }
+    const plan = buildCrmWritePlan(connectorId, 'test.csv', proposed, new Map(), now, results);
+    expect(plan).toMatchObject({ creates: 0, held: 2 });
+    expect(plan.records[0].possibleImportMatches).toHaveLength(1);
+  });
+
+  it.each(['salesforce', 'hubspot'] as const)('uses the effective %s name of an ineligible active neighbor and excludes merged rows', (connectorId) => {
+    const proposed = contact({ phone: '2065550112' });
+    const neighbor = contact({ contactId: 'neighbor', firstName: 'Priya', lastName: 'Nair', phone: '2065550112', email: 'other.person@costco.example' });
+    const saved = workspace([proposed, neighbor]);
+    saved.state.contacts[1].fullName = 'Nina Shah';
+    saved.state.contacts[1].qualityFlags = ['invalid_email'];
+    saved.state.contacts[1].normalizedEmail = null;
+    const review = () => reviewImportCreates(connectorId, [proposed], saved, { ...scan, connectorId }, [], now).get('import-1');
+    expect(review()?.review.status).toBe('clear');
+    Object.assign(saved.state.contacts[1], { firstName: 'Nina', lastName: 'Shah' });
+    expect(review()).toMatchObject({ review: { status: 'held', importCandidateCount: 1 }, possibleImportMatches: [{ fullName: 'Nina Shah' }] });
+    saved.state.contacts[1].recordStatus = 'merged';
+    expect(review()).toMatchObject({ review: { status: 'clear', importCandidateCount: 0 }, possibleImportMatches: [] });
+  });
+
+  it('holds incomplete or unusable saved-import identity checks without passing off import IDs as CRM IDs', () => {
+    const proposed = contact({ firstName: 'Jordan', lastName: 'Lee', email: 'person@import.example', company: 'Cisco' });
+    const saved = workspace([proposed, ...Array.from({ length: 251 }, (_, index) => contact({ ...proposed,
+      contactId: `other-${index}`, email: `employee-${index}@other.example` }))]);
+    const result = reviewImportCreates('salesforce', [proposed], saved, scan, [], now).get('import-1');
+    expect(result).toMatchObject({ review: { status: 'held', candidateCount: 0, importCandidateCount: 0 }, possibleImportMatches: [] });
+    expect(result?.review.warnings.join(' ')).toContain('other import rows');
+    saved.state.contacts[1].state = 123 as unknown as string;
+    expect(reviewImportCreates('salesforce', [proposed], saved, scan, [], now).get('import-1')?.reason)
+      .toContain('identity that could not be checked');
+  });
+
+  it('includes same-import evidence changes in the plan fingerprint', () => {
+    const proposed = [contact(), contact({ contactId: 'other', email: 'other.person@costco.example' })];
+    const reviews = compare(proposed, []);
+    const plan = buildCrmWritePlan('salesforce', 'test.csv', proposed, new Map(), new Date(), reviews);
+    const changed = new Map(reviews);
+    const first = changed.get('import-1')!;
+    changed.set('import-1', { ...first, possibleImportMatches: [{ ...first.possibleImportMatches![0], score: 31 }] });
+    expect(planStillMatches(plan, buildCrmWritePlan('salesforce', 'test.csv', proposed, new Map(), new Date(), changed))).toBe(false);
+  });
+
   it.each(['salesforce', 'hubspot'] as const)('compares the effective %s name when mapped name columns disagree', (connectorId) => {
     const existing = { ...crm(), connectorId, objectType: connectorId === 'hubspot' ? 'contact' as const : 'lead' as const };
     for (const [fullName, firstName, lastName, status] of [
