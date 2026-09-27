@@ -26,4 +26,5 @@ jobs:
       - run: npm test
       - run: npm run lint
       - run: npm run build
+      - run: npm run build:public
       - run: npm run smoke:fresh-install
