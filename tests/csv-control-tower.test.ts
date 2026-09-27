@@ -154,8 +154,24 @@ Alex Chen,original@example.com,SIGNAL@MAÑANA.EXAMPLE,Northstar,rep-1`;
     });
   });
 
-  it('rejects duplicate normalized headers before mapping', () => {
-    expect(() => previewContactsCsv('Email,email!\na@example.com,b@example.com')).toThrow(/duplicate column names/i);
+  it('rejects duplicate normalized headers before preview or direct import', () => {
+    const csv = 'Email,email!,company,owner_id\na@example.com,b@example.com,Acme,rep-1';
+    for (const read of [previewContactsCsv, importContactsCsv]) {
+      expect(() => read(csv)).toThrow(/duplicate column names/i);
+    }
+  });
+
+  it.each([
+    ['the same identity', 'ADA@example.com'],
+    ['different identities', 'bob@example.com'],
+  ])('rejects repeated contact IDs for %s with the original CSV row numbers', (_label, email) => {
+    const csv = `contact_id,email,company,owner_id\nrepeat,ada@example.com,Acme,rep-1\n\nrepeat,${email},Acme,rep-1`;
+    expect(() => importContactsCsv(csv)).toThrow('CSV row 4 has duplicate contact ID "repeat" (first used on row 2).');
+  });
+
+  it('rejects a supplied contact ID that collides with a generated ID', () => {
+    const csv = 'contact_id,email,company,owner_id\n,ada@example.com,Acme,rep-1\nCSV-001,bob@example.com,Acme,rep-1';
+    expect(() => importContactsCsv(csv)).toThrow('CSV row 3 has duplicate contact ID "CSV-001" (first used on row 2).');
   });
 
   it('keeps the downloadable template importable with HubSpot standard fields', () => {
