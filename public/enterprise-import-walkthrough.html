@@ -22,7 +22,7 @@
       <div class="hero">
         <p class="eyebrow">Development run · September 27, 2026</p>
         <h1>An event list meets <br>an <span>existing CRM.</span></h1>
-        <p class="intro">Seven attendees. Two uncertain identities. Follow one import through human review, native CRM writes, a duplicate-free repeat, and rollback.</p>
+        <p class="intro">Seven attendees. Two uncertain identities. Review the evidence, hold possible duplicates, and inspect native CRM writes, a duplicate-free repeat, and rollback.</p>
         <p class="context">People and contact details are fictional; company names and websites provide real context. Emails use <strong>.example.com</strong> to avoid real mailboxes. No company endorsement is implied.</p>
         <div class="actions">
           <a class="button primary" href="#review">Follow the two-minute case</a>
@@ -53,7 +53,7 @@
             <p>Two coworkers share the name, company, and state. Both score 28/100; the import has no phone or title to distinguish them.</p>
           </article>
         </div>
-        <p class="small">Scores out of 100 rank evidence, not probability or certainty. Suggestions do not automatically hold, merge, or link records.</p>
+        <p class="small">Scores out of 100 rank evidence, not probability or certainty. The write preview now holds possible duplicates before creating records. It never merges or links people automatically.</p>
         <figure>
           <a href="./enterprise-import-evidence/hubspot-approximate.png" aria-label="Open full-size HubSpot approximate match review"><img src="./enterprise-import-evidence/hubspot-approximate.png" alt="HubSpot snapshot review with candidate evidence for the fictional imported contacts." width="1440" height="900" loading="lazy"></a>
           <figcaption>HubSpot candidate evidence. Select screenshots to enlarge. <a href="./enterprise-import-evidence/hubspot-coworkers.png">Inspect both Jordan candidates.</a></figcaption>
@@ -61,10 +61,15 @@
       </section>
 
       <section id="decide" aria-labelledby="decide-title">
-        <p class="step-label">02 · Make the human decision explicit</p>
-        <h2 id="decide-title">Seven reviewed. Five approved.</h2>
-        <p class="copy">The operator removes Priya and Jordan until their identities are resolved. Five rows reach the exact-email write preview.</p>
-        <div class="decision"><strong>Manual decision:</strong> the operator prepares the approved file. A separate Salesforce probe allowed a sparse Jordan row with a new email and no phone. That test record was deleted and absence verified. Configured duplicate rules do not catch every plausible duplicate.</div>
+        <p class="step-label">02 · Hold uncertain identities</p>
+        <h2 id="decide-title">Possible duplicate? Hold the new record.</h2>
+        <p class="copy">Control Tower checks name, email, phone, state, and company before creating a record. It holds Priya and Jordan with their candidate evidence, independently of the CRM's rules. A complete snapshot started within 15 minutes is required; the server checks again at execution.</p>
+        <div class="decision"><strong>The gap this closes:</strong> Salesforce previously accepted the sparse Jordan row. Control Tower's follow-up check held both uncertain rows in both CRMs: zero creates, zero updates, two holds. Native read-back confirmed the records stayed unchanged.</div>
+        <figure>
+          <a href="./enterprise-import-evidence/salesforce-create-holds.png" aria-label="Open full-size Salesforce possible-duplicate holds"><img src="./enterprise-import-evidence/salesforce-create-holds.png" alt="Control Tower holds Priya and both possible Jordan matches before creating Salesforce Leads, with scores and matching evidence." width="1440" height="900" loading="lazy"></a>
+          <figcaption>New guard: even Jordan's weak 28/100 candidates hold creation for review. Scroll area expanded for readability; native IDs masked. These holds are enforced by Control Tower.</figcaption>
+        </figure>
+        <p class="small">The original write, repeat, and rollback run below used a prepared five-row file that manually excluded these identities. The new hold check was verified separately against the retained development records.</p>
         <a class="button" href="./enterprise-import-approved.csv" download>Download the 5 approved rows</a>
       </section>
 
@@ -124,8 +129,8 @@
         <h3 id="limits-title">What this case demonstrates—and its limits</h3>
         <p>Development accounts: HubSpot <strong>STANDARD</strong> and Salesforce <strong>Developer Edition</strong> (<code>IsSandbox=false</code>), not formally provisioned sandbox accounts. No production customer work. Real APIs; no mocked CRM responses. Screenshots mask account and native record IDs.</p>
         <p>Salesforce blocked the second Jordan during fixture setup. A one-record <code>allowSave=true</code> acknowledgement seeded that coworker; application writes kept <code>allowSave=false</code>.</p>
-        <p>A separate stronger match—Priya’s matching name and phone with a changed email—was rejected with <code>DUPLICATES_DETECTED</code>. The app saved the failed receipt, and CRM read-back confirmed zero creates. Sparse input can still pass the configured rule.</p>
-        <p>This fictional exercise does not measure matching accuracy. Review is manual. The import writeback does not synchronize state or city. Results cover these cases; other CRM configurations and concurrent external edits remain outside this demonstration.</p>
+        <p>Before the new guard, Salesforce rejected the stronger Priya probe with <code>DUPLICATES_DETECTED</code> but accepted sparse Jordan. That single test-created Jordan was deleted and absence verified. Control Tower now holds both cases before provider creation.</p>
+        <p>This fictional exercise does not measure matching accuracy. A possible match may be a different person; resolving that identity remains human work. No candidate is not proof of absence, and records can change after a snapshot. State and city are matching context, not fields synchronized by this import.</p>
         <p><a href="https://github.com/harrisonoconnorhover/gtm-control-tower/blob/main/docs/enterprise-import-native-check.md">Read the run evidence, checks, and remaining limits ↗</a></p>
       </aside>
     </main>

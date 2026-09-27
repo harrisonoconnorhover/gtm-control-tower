@@ -696,7 +696,7 @@ export function ControlTowerDashboard() {
     try {
       const response = await fetch('/api/control-tower/crm-writeback', {
         method: 'POST', headers: { 'content-type': 'application/json', ...((connectorId === 'hubspot' ? hubSpotSyncKey : salesforceSyncKey) ? { 'x-control-tower-key': connectorId === 'hubspot' ? hubSpotSyncKey : salesforceSyncKey } : {}) },
-        body: JSON.stringify({ action: 'preview', connectorId, sourceFile: csvFileName ?? 'imported-contacts.csv', contacts }),
+        body: JSON.stringify({ action: 'preview', connectorId, workspaceId, sourceFile: csvFileName ?? 'imported-contacts.csv', contacts }),
       });
       const result = await response.json() as CrmWritePlan | { error?: string };
       if (!response.ok || !('planId' in result)) throw new Error('error' in result ? result.error : 'CRM preview failed.');
@@ -727,7 +727,7 @@ export function ControlTowerDashboard() {
     try {
       const response = await fetch('/api/control-tower/crm-writeback', {
         method: 'POST', headers: { 'content-type': 'application/json', ...((connectorId === 'hubspot' ? hubSpotSyncKey : salesforceSyncKey) ? { 'x-control-tower-key': connectorId === 'hubspot' ? hubSpotSyncKey : salesforceSyncKey } : {}) },
-        body: JSON.stringify({ action: 'execute', connectorId, sourceFile: csvFileName ?? 'imported-contacts.csv', contacts, plan }),
+        body: JSON.stringify({ action: 'execute', connectorId, workspaceId, sourceFile: csvFileName ?? 'imported-contacts.csv', contacts, plan }),
       });
       const result = await response.json() as CrmWritebackReceipt | { error?: string };
       if (!response.ok || !('accepted' in result)) throw new Error('error' in result ? result.error : 'CRM write-back failed.');
@@ -1672,7 +1672,7 @@ function ChangePlanCard({ plan, onRefresh }: { plan: CrmWritePlan; onRefresh: ()
       </div>
       <p className="mt-3 text-xs leading-5 text-[#a8bbb1]">{plan.connectorId === 'hubspot'
         ? 'Checks exact primary and additional email addresses. Two imported rows matching the same Contact are held.'
-        : 'Checks exact email across Leads and Contacts. Contact matches, converted Leads and ambiguous matches are held.'} The CRM is checked again before execution. Different, unlinked email addresses are not matched by name or company.</p>
+        : 'Checks exact email across Leads and Contacts. Contact matches, converted Leads and ambiguous matches are held.'} New records also undergo a possible-duplicate check using name, email, phone, state and company. A possible match holds creation for review; it never links or updates that person automatically. Creates require a complete CRM snapshot started within the last 15 minutes. Both checks run again before execution.</p>
       <div className="mt-3 max-h-80 space-y-2 overflow-y-auto" aria-label="CRM comparison records">
         {plan.records.map((record) => (
           <details key={record.contactId} className="rounded-xl border border-white/10 p-3 text-xs">
@@ -1681,6 +1681,14 @@ function ChangePlanCard({ plan, onRefresh }: { plan: CrmWritePlan; onRefresh: ()
               ? `Matched CRM records: ${record.matches.map((match) => `${match.isConverted ? 'Converted Lead' : match.objectType === 'lead' ? 'Lead' : 'Contact'} ${match.nativeId} (${match.email})`).join('; ')}`
               : 'No exact email match returned by the completed lookup.'}</p>
             {record.reason && <p className="mt-2 leading-5 text-[#a8bbb1]">{record.reason}</p>}
+            {record.createReview?.startedAt && <p className="mt-2 text-[#a8bbb1]">Possible-duplicate check · snapshot started {new Date(record.createReview.startedAt).toLocaleString()} · scores rank evidence, not identity probability.</p>}
+            {record.possibleMatches?.map((candidate) => (
+              <div key={`${candidate.objectType}:${candidate.nativeId}`} className="mt-3 rounded-lg border border-[#ffb19a]/20 p-3">
+                <p className="break-words font-semibold text-[#ffb19a]">Possible match: {candidate.fullName || candidate.email} · {candidate.score}/100</p>
+                <p className="mt-1 break-all font-mono text-[#a8bbb1]">{candidate.objectType} {candidate.nativeId} · {candidate.email}</p>
+                <ul className="mt-2 space-y-1 text-[#a8bbb1]">{candidate.evidence.map((evidence, index) => <li key={index}>{evidence.label} ({evidence.weight > 0 ? '+' : ''}{evidence.weight})</li>)}</ul>
+              </div>
+            ))}
             {record.operation === 'unchanged' && <p className="mt-2 text-[#a8bbb1]">Portable fields already match. No write needed.</p>}
             {record.changes.length > 0 && <ul className="mt-2 space-y-1 text-[#a8bbb1]">{record.changes.map((change) => <li key={change.field} className="break-words">{change.field}: {change.before ?? 'Empty'} → {change.after ?? 'Empty'}</li>)}</ul>}
           </details>

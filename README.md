@@ -26,6 +26,8 @@ the repository.
 
 These are independent development workflows using fictional records. The public cleanup runs locally in the browser. The [enterprise import walkthrough](https://gtm-control-tower.pages.dev/enterprise-import-walkthrough.html) shows a separate, verified HubSpot/Salesforce development run: review seven attendees, manually exclude two unresolved identities, write five approved rows, repeat without new writes, and restore the two updates. Inspect the [native results and limitations](docs/enterprise-import-native-check.md) or [download the case files](docs/enterprise-import-fixtures.md). Connected operations require your own configured operator workspace.
 
+That original run used advisory approximate review. A later [native follow-up](docs/enterprise-import-native-check.md#follow-up-control-tower-holds-possible-duplicates) verified the new governed create guard: Priya and sparse Jordan were held in both CRMs, with zero creates or updates and unchanged native records.
+
 ## What it does
 
 - Previews any CSV, lets the operator map arbitrary headers, saves reusable
@@ -53,7 +55,9 @@ These are independent development workflows using fictional records. The public 
   [imported-file CRM comparison](docs/import-crm-comparison.md), field diffs,
   100-record ceilings, per-record receipts, and update rollback. Direct
   connectors distinguish new records from exact email matches and hold unsafe
-  matches before execution. Newly created records are never auto-deleted.
+  matches before execution. Governed previews also hold proposed creates when
+  any approximate candidate exists or a fresh complete snapshot is unavailable.
+  Newly created records are never auto-deleted.
 - Includes a source-driven Salesforce development slice: a published read-only
   Agentforce triage path plus a separate human-approved Screen Flow, invocable
   Apex planner, Queueable executor, Custom Metadata policies, stale-record
@@ -235,6 +239,13 @@ slice is documented in [Flow, Apex, and Agentforce proof](docs/salesforce-agentf
 - Governed CRM execution refuses a plan after 15 minutes or whenever a fresh
   provider read no longer matches the reviewed fingerprint. Failed or incomplete
   reads cannot establish that a record is absent.
+- Governed direct creates require the latest same-workspace/provider snapshot
+  to be complete, provider-complete, and started within 15 minutes. Server-side
+  checks use all five matching fields, independently of review checkboxes;
+  any candidate or capped search holds the create. Execution rechecks the guard.
+  Exact-email updates and unchanged records retain their existing behavior.
+  This guard applies to `/api/control-tower/crm-writeback`, not legacy direct-sync
+  or webhook routes. It does not prove absence or eliminate false positives.
 - Destination gates hold unresolved duplicates, invalid email, missing company,
   missing owner, and lifecycle regression out of generic writes.
 - Public templates contain no credential bindings or private project IDs.

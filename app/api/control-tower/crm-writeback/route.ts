@@ -17,6 +17,9 @@ import {
 } from '@/lib/crm-workflow';
 import { toHubSpotFieldPayload, toSalesforceFieldPayload } from '@/lib/crm-field-mapping';
 import { operatorAccessError } from '@/lib/operator-auth';
+import { getWorkspace, persistenceEnabled } from '@/lib/workspace-store';
+import { getDuplicateScanRecords, getLatestDuplicateScan } from '@/lib/duplicate-scan-store';
+import { reviewImportCreates, snapshotCoverageIssue } from '@/lib/import-create-review';
 
 const DEFAULT_API_VERSION = '67.0';
 
@@ -35,7 +38,7 @@ export async function POST(request: Request) {
     if (!contacts.length || contacts.length > 100) return Response.json({ error: 'Use between 1 and 100 governed contacts.' }, { status: 400 });
     if (!contactsAreValid(payload.connectorId, contacts)) return Response.json({ error: 'The governed contacts contain duplicate identity, invalid email, missing provider-required fields, or overlong portable values.' }, { status: 400 });
     const sourceFile = typeof payload.sourceFile === 'string' ? payload.sourceFile : 'crm-workspace';
-    const current = await createPlan(payload.connectorId, sourceFile, contacts);
+    const current = await createPlan(payload.connectorId, sourceFile, contacts, typeof payload.workspaceId === 'string' ? payload.workspaceId : '');
     if (payload.action === 'preview') return Response.json(current, { headers: { 'Cache-Control': 'no-store' } });
     if (payload.action !== 'execute' || !isCrmWritePlan(payload.plan) || !planStillMatches(payload.plan, current)) {
       return Response.json({ error: 'The preview is stale. Refresh the change plan before writing.' }, { status: 409 });
@@ -47,8 +50,18 @@ export async function POST(request: Request) {
   }
 }
 
-async function createPlan(connectorId: CrmWritePlan['connectorId'], sourceFile: string, contacts: PortableCrmContact[]) {
-  return buildCrmWritePlan(connectorId, sourceFile, contacts, await readExisting(connectorId, contacts));
+async function createPlan(connectorId: CrmWritePlan['connectorId'], sourceFile: string, contacts: PortableCrmContact[], workspaceId: string) {
+  const existing = await readExisting(connectorId, contacts);
+  const now = new Date();
+  const exactPlan = buildCrmWritePlan(connectorId, sourceFile, contacts, existing, now);
+  if (!exactPlan.creates) return exactPlan;
+  const createIds = new Set(exactPlan.records.filter((record) => record.operation === 'create').map((record) => record.contactId));
+  const workspace = workspaceId && persistenceEnabled() ? await getWorkspace(workspaceId) : null;
+  const scan = workspace ? await getLatestDuplicateScan(workspace.id, connectorId) : null;
+  const records = workspace && scan && !snapshotCoverageIssue(workspace.id, connectorId, scan, now)
+    ? await getDuplicateScanRecords(scan.id) : null;
+  const reviews = reviewImportCreates(connectorId, contacts.filter((contact) => createIds.has(contact.contactId)), workspace, scan, records, now);
+  return buildCrmWritePlan(connectorId, sourceFile, contacts, existing, now, reviews);
 }
 
 async function readExisting(connectorId: CrmWritePlan['connectorId'], contacts: PortableCrmContact[]) {

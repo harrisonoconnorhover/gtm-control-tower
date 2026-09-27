@@ -405,3 +405,19 @@ was necessary to seed the second fictional Jordan Lee; the seeder's opt-in appli
 only to that named fixture and does not change the account rules. Native testing
 also exposed a vague Salesforce failure message, so receipts retain its error code
 alongside its text. No matching policy or new product feature is introduced.
+
+## September 27, 2026 — Hold possible duplicates before creating CRM records
+
+The native sparse-Jordan probe showed that a CRM can accept an unresolved match.
+Connect the existing matcher to the governed direct write path: check would-be
+creates against a complete snapshot started within 15 minutes, using all five
+identity fields from the saved import. Any returned candidate holds creation,
+including low-scoring ambiguous coworkers. Missing or incomplete coverage holds
+creates too. Recompute at execution; exploratory field selection cannot weaken
+the check. Exact-email updates and existing holds retain their current behavior.
+
+Reuse plan holds and receipts without a new review table or override feature.
+Show candidate evidence, never infer an identity link or merge. Accept additional
+human review as the tradeoff: a held row may be a different person, and no
+candidate is not proof of absence. Snapshot age, search bounds, and concurrent
+CRM changes remain limitations; this is not universal duplicate prevention.

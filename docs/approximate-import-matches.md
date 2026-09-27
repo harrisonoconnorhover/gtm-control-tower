@@ -3,8 +3,7 @@
 **Later native evidence:** the [enterprise import case](enterprise-import-native-check.md)
 verified creates, updates, unchanged records, an existing Salesforce Contact hold,
 repeat imports, and update rollback in development accounts on September 27, 2026.
-Approximate suggestions still require manual review. Earlier read-only results below
-retain their original scope.
+That original run used advisory approximate review. The [native follow-up](enterprise-import-native-check.md#follow-up-control-tower-holds-possible-duplicates) verified automatic create holds for both uncertain identities in both CRMs. Earlier read-only results below retain their original scope.
 
 In self-hosted `/app/lab`, **Find possible CRM matches** compares active imported
 rows with a saved CRM snapshot. Select **Name**, **Email**, **Phone**, **State**,
@@ -24,9 +23,15 @@ This matcher has no such probability claim.
 Names alone remain weak evidence. State and company supply context but cannot
 identify a person alone. HubSpot primary and additional emails can supply exact
 evidence; shared phone numbers receive less weight. Unselected fields do not
-contribute. Suggestions never link, merge, update, or change write eligibility.
-Use the separate [exact-email write preview](import-crm-comparison.md) for any
-governed sync.
+contribute to this exploratory review. Suggestions never link, merge, or select
+an update target.
+
+The [governed direct write preview](import-crm-comparison.md) independently checks
+proposed creates against a fresh complete snapshot using all five fields and
+the saved import's name and state. Any returned candidate, including a weak one,
+holds the create; changing these review checkboxes cannot bypass it. Missing,
+stale, partial, or capped evidence also holds creates. Correct or remove an
+unresolved import row and refresh the preview; there is no match override.
 
 ## Try a fictional review
 
@@ -93,13 +98,19 @@ pagination reuses the [account scanner](duplicate-audit.md), while import
 ranking uses independent rules. Scans cover HubSpot Contacts or unconverted
 Salesforce Leads and Contacts. Visibility is limited by connector permissions;
 caps are 25,000 records on SQLite and 10,000 on D1, possibly configured lower.
-Finalized partial snapshots remain reviewable. Old snapshots may lack state or
-additional emails; refresh for new fields.
+Finalized partial snapshots remain reviewable but cannot satisfy the governed
+create guard. That guard requires the latest snapshot for the same workspace and
+provider to be complete and provider-complete (`sourceComplete`), with its scan
+started within 15 minutes. Old snapshots may lack state or additional emails;
+refresh for new fields.
 
 Imports are reviewed in pages of 100 (**Previous 100** / **Next 100**), with at
 most three suggestions per row. Candidate-search warnings identify skipped
 broad groups or comparison limits. No suggestion does **not** prove CRM absence
-or permission to create a record.
+or permission to create a record. Snapshot visibility and concurrent CRM changes
+limit coverage, and conservative holds can include different people. The guard
+rechecks before execution; it does not make reads and writes atomic. Legacy
+direct-sync and webhook routes do not use this guard.
 
 Inspect [matching rules](../lib/import-match.ts),
 [synthetic matcher tests](../tests/import-match.test.ts), and

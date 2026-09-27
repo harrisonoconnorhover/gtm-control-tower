@@ -293,5 +293,6 @@
     "Account and native record identifiers",
     "Unrelated CRM records",
     "Full snapshots and run-history exports"
-  ]
+  ],
+  "historicalScope": "Original advisory-review run. The later server-enforced create holds are qualified separately in import-create-holds-native-2026-09-27.json."
 }

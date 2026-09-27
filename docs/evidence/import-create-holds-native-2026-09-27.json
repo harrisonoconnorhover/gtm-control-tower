@@ -1,0 +1,97 @@
+{
+  "caseId": "enterprise-import-2026-09-27",
+  "qualification": "Governed create holds against native development CRM reads; no mocked CRM responses",
+  "providers": {
+    "hubspot": {
+      "provider": "hubspot",
+      "mode": "holds-only",
+      "caseId": "enterprise-import-2026-09-27",
+      "startedAt": "2026-09-27T22:02:26.123Z",
+      "finishedAt": "2026-09-27T22:02:33.345Z",
+      "withoutSnapshot": {
+        "created": 0,
+        "updated": 0,
+        "held": 2
+      },
+      "snapshot": {
+        "records": 26,
+        "pages": 1,
+        "sourceComplete": true,
+        "startedAt": "2026-09-27T22:02:28.996Z",
+        "completedAt": "2026-09-27T22:02:29.409Z"
+      },
+      "reviewSelection": [
+        "name"
+      ],
+      "enforcedCandidateScores": {
+        "ENT-EMAIL-CHANGE": [
+          72
+        ],
+        "ENT-COWORKER": [
+          28,
+          28
+        ]
+      },
+      "receipt": {
+        "created": 0,
+        "updated": 0,
+        "held": 2,
+        "failed": 0
+      },
+      "nativeFixtureRecords": 9,
+      "proposedEmailsAbsent": true,
+      "nativeStateIdentical": true,
+      "savedReceiptVerified": true,
+      "pageErrors": 0
+    },
+    "salesforce": {
+      "provider": "salesforce",
+      "mode": "holds-only",
+      "caseId": "enterprise-import-2026-09-27",
+      "startedAt": "2026-09-27T22:02:52.327Z",
+      "finishedAt": "2026-09-27T22:03:00.071Z",
+      "withoutSnapshot": {
+        "created": 0,
+        "updated": 0,
+        "held": 2
+      },
+      "snapshot": {
+        "records": 139,
+        "pages": 2,
+        "sourceComplete": true,
+        "startedAt": "2026-09-27T22:02:55.353Z",
+        "completedAt": "2026-09-27T22:02:57.025Z"
+      },
+      "reviewSelection": [
+        "name"
+      ],
+      "enforcedCandidateScores": {
+        "ENT-EMAIL-CHANGE": [
+          72
+        ],
+        "ENT-COWORKER": [
+          28,
+          28
+        ]
+      },
+      "receipt": {
+        "created": 0,
+        "updated": 0,
+        "held": 2,
+        "failed": 0
+      },
+      "nativeFixtureRecords": 9,
+      "proposedEmailsAbsent": true,
+      "nativeStateIdentical": true,
+      "savedReceiptVerified": true,
+      "pageErrors": 0
+    }
+  },
+  "limits": [
+    "Scores rank evidence and are not identity probabilities.",
+    "Snapshots can miss records added or changed after collection; no candidate is not proof of absence.",
+    "The conservative guard may hold different people. No override, auto-link, or merge was added.",
+    "Applies to governed crm-writeback; legacy direct-sync and webhooks are outside this guard."
+  ],
+  "screenshot": "Scroll container expanded for readability; native IDs masked. Native content unchanged."
+}

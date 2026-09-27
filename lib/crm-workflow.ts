@@ -1,4 +1,29 @@
 import type { ConnectorId, ConnectorStatus } from './connector-contract';
+import type { MatchEvidence } from './identity-resolution';
+
+export type CrmPossibleMatch = {
+  nativeId: string;
+  objectType: 'lead' | 'contact';
+  email: string;
+  fullName: string;
+  score: number;
+  evidence: MatchEvidence[];
+};
+
+export type CrmCreateReview = {
+  status: 'clear' | 'held';
+  scanId: string | null;
+  startedAt: string | null;
+  ruleVersion: string;
+  candidateCount: number;
+  warnings: string[];
+};
+
+export type CrmCreateReviewResult = {
+  review: CrmCreateReview;
+  reason: string;
+  possibleMatches: CrmPossibleMatch[];
+};
 
 export const portableCrmFieldNames = ['firstName', 'lastName', 'company', 'phone', 'jobTitle', 'website'] as const;
 export type PortableCrmFieldName = (typeof portableCrmFieldNames)[number];
@@ -40,6 +65,8 @@ export type CrmPlanRecord = {
   after: Record<PortableCrmFieldName, string | null>;
   changes: CrmFieldChange[];
   reason: string | null;
+  possibleMatches?: CrmPossibleMatch[];
+  createReview?: CrmCreateReview;
 };
 
 export type CrmWritePlan = {
@@ -131,6 +158,7 @@ export function buildCrmWritePlan(
   proposed: PortableCrmContact[],
   existingByEmail: Map<string, NativeCrmRecord[]>,
   now = new Date(),
+  createReviews?: Map<string, CrmCreateReviewResult>,
 ): CrmWritePlan {
   const matchedInputs = new Map<string, Set<string>>();
   const recordKey = (record: NativeCrmRecord) => `${record.objectType}:${record.nativeId}`;
@@ -154,11 +182,16 @@ export function buildCrmWritePlan(
       return hold(`${matches.length} CRM records match this email. Review the existing records before importing.`);
     }
     if (!matches.length) {
+      const reviewed = createReviews?.get(contact.contactId);
+      if (reviewed?.review.status === 'held') return {
+        ...hold(reviewed.reason), possibleMatches: reviewed.possibleMatches, createReview: reviewed.review,
+      };
       return {
         contactId: contact.contactId, email: contact.email, nativeId: null, operation: 'create', matches,
         before: null, after,
         changes: portableCrmFieldNames.filter((field) => after[field] !== null).map((field) => ({ field, before: null, after: after[field] })),
-        reason: 'No existing exact email match was returned by the CRM lookup.',
+        reason: reviewed?.reason ?? 'No existing exact email match was returned by the CRM lookup.',
+        ...(reviewed ? { possibleMatches: reviewed.possibleMatches, createReview: reviewed.review } : {}),
       };
     }
     const match = nativeMatches[0];
@@ -268,7 +301,7 @@ function cleanValue(value: string | null | undefined): string | null {
 }
 
 function fingerprintPlan(connectorId: string, records: CrmPlanRecord[]): string {
-  const stable = JSON.stringify([connectorId, records.map(({ contactId, email, nativeId, operation, matches, before, after }) => ({ contactId, email, nativeId, operation, matches, before, after }))]);
+  const stable = JSON.stringify([connectorId, records.map(({ contactId, email, nativeId, operation, matches, before, after, reason, possibleMatches, createReview }) => ({ contactId, email, nativeId, operation, matches, before, after, reason, possibleMatches, createReview }))]);
   let hash = 0x811c9dc5;
   for (let index = 0; index < stable.length; index += 1) {
     hash ^= stable.charCodeAt(index);
