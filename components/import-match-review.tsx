@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { DuplicateScanView } from '@/lib/duplicate-scan-store';
+import { isHubSpotEligible, toHubSpotSyncContact } from '@/lib/hubspot-sync';
 import {
   suggestMatchFields,
   type ImportMatchInput,
@@ -9,6 +10,7 @@ import {
   type MatchField,
 } from '@/lib/import-match';
 import type { LiveContactState } from '@/lib/live-control-tower';
+import { isSalesforceEligible, toSalesforceSyncLead } from '@/lib/salesforce-sync';
 
 type Props = {
   contacts: LiveContactState[];
@@ -28,14 +30,24 @@ const secondaryButton = 'rounded-full border border-white/20 px-4 py-2 text-xs f
 const fieldLabels: Record<MatchField, string> = { name: 'Name', email: 'Email', phone: 'Phone', state: 'State', company: 'Company' };
 
 export function ImportMatchReview({ contacts, ...props }: Props) {
-  const inputs = useMemo<ImportMatchInput[]>(() => contacts.filter((contact) => contact.recordStatus === 'active').map((contact) => ({
-    contactId: contact.contactId,
-    fullName: contact.fullName.trim() === contact.contactId.trim() ? '' : contact.fullName,
-    email: contact.normalizedEmail || contact.rawEmail,
-    phone: contact.phone || '',
-    state: contact.state || '',
-    company: contact.company || '',
-  })), [contacts]);
+  const inputs = useMemo<ImportMatchInput[]>(() => contacts.filter((contact) => contact.recordStatus === 'active').map((contact) => {
+    const placeholderName = contact.fullName.trim() === contact.contactId.trim();
+    let fullName = placeholderName ? '' : contact.fullName;
+    const eligible = props.connectorId === 'hubspot' ? isHubSpotEligible(contact) : isSalesforceEligible(contact);
+    if (eligible) {
+      const portable = props.connectorId === 'hubspot' ? toHubSpotSyncContact(contact) : toSalesforceSyncLead(contact);
+      const writtenName = [portable.firstName.trim(), portable.lastName.trim()].filter(Boolean).join(' ');
+      fullName = placeholderName && writtenName === contact.contactId.trim() ? '' : writtenName;
+    }
+    return {
+      contactId: contact.contactId,
+      fullName,
+      email: contact.normalizedEmail || contact.rawEmail,
+      phone: contact.phone || '',
+      state: contact.state || '',
+      company: contact.company || '',
+    };
+  }), [contacts, props.connectorId]);
 
   // A different import, provider, workspace, or authorization discards the old
   // review and aborts its pending requests instead of showing stale suggestions.
@@ -181,6 +193,7 @@ function MatchReview({ inputs, connectorId, workspaceId, accessKey, disabled = f
           <p className="text-xs font-semibold uppercase tracking-wider text-[#83bcff]">Read-only review · {connectorName}</p>
           <h3 className="mt-2 text-xl font-semibold">Find possible CRM matches</h3>
           <p className="mt-2 max-w-3xl text-xs leading-5 text-[#9db1a7]">Choose fields to explore possible matches in a dated CRM snapshot. The write preview separately checks all five fields and holds new records with possible duplicates, even if the CRM would accept them. Suggestions never link or update an existing person automatically.</p>
+          <p className="mt-2 max-w-3xl text-xs leading-5 text-[#9db1a7]">For eligible rows, name checks use the destination&apos;s first and last names. Mapped first/last columns take precedence over the full-name column. Rows not yet eligible use their imported full name.</p>
         </div>
         <span className="text-xs text-[#cdfc54]">{inputs.length} active imported records</span>
       </div>

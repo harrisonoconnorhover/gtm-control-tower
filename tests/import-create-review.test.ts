@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { buildCrmWritePlan, planStillMatches, type PortableCrmContact } from '../lib/crm-workflow';
+import { importContactsCsv } from '../lib/csv-control-tower';
 import type { DuplicateScanView } from '../lib/duplicate-scan-store';
+import { toHubSpotSyncContact } from '../lib/hubspot-sync';
 import { reviewImportCreates } from '../lib/import-create-review';
 import type { IdentityRecord } from '../lib/identity-resolution';
 import type { LiveContactState } from '../lib/live-control-tower';
+import { toSalesforceSyncLead } from '../lib/salesforce-sync';
 import { emptyWorkspaceState, type SavedWorkspace } from '../lib/workspace';
 
 const now = new Date('2026-09-27T22:00:00Z');
@@ -35,6 +38,31 @@ function compare(contacts: PortableCrmContact[], records: IdentityRecord[]) {
 }
 
 describe('server-side possible-duplicate create review', () => {
+  it.each(['salesforce', 'hubspot'] as const)('compares the effective %s name when mapped name columns disagree', (connectorId) => {
+    const existing = { ...crm(), connectorId, objectType: connectorId === 'hubspot' ? 'contact' as const : 'lead' as const };
+    for (const [fullName, firstName, lastName, status] of [
+      ['Nina Shah', 'Priya', 'Nair', 'held'],
+      ['Priya Nair', 'Nina', 'Shah', 'clear'],
+    ] as const) {
+      const csv = `contact_id,full_name,first_name,last_name,email,company,state,owner_id\nimport-1,${fullName},${firstName},${lastName},new.person@salesforce.example,Salesforce,Washington,owner-1`;
+      const saved = workspace([]);
+      saved.state.contacts = importContactsCsv(csv).contacts;
+      const proposed = saved.state.contacts.map(connectorId === 'hubspot' ? toHubSpotSyncContact : toSalesforceSyncLead);
+      const reviews = reviewImportCreates(connectorId, proposed, saved, { ...scan, connectorId, recordsScanned: 1 }, [existing], now);
+      expect(reviews.get('import-1')?.review.status).toBe(status);
+      expect(reviews.get('import-1')?.possibleMatches.map((match) => match.score)).toEqual(status === 'held' ? [28] : []);
+    }
+  });
+
+  it('does not treat a fallback contact ID as a person name', () => {
+    const saved = workspace([]);
+    saved.state.contacts = importContactsCsv('contact_id,email,company,state,owner_id\nPriya Nair,new.person@salesforce.example,Salesforce,Washington,owner-1').contacts;
+    const proposed = saved.state.contacts.map(toSalesforceSyncLead);
+    const result = reviewImportCreates('salesforce', proposed, saved, { ...scan, recordsScanned: 1 }, [crm()], now).get('Priya Nair');
+    expect(result?.review.status).toBe('clear');
+    expect(result?.possibleMatches).toEqual([]);
+  });
+
   it('holds a changed-email person and both sparse coworkers while allowing an unrelated person', () => {
     const priya = contact({ contactId: 'priya', firstName: 'Priya', lastName: 'Nair', email: 'p.nair@salesforce.example', company: 'Salesforce', phone: '2065550112' });
     const jordan = contact({ contactId: 'jordan', firstName: 'Jordan', lastName: 'Lee', email: 'jordan.lee.events@cisco.example', company: 'Cisco', phone: null });

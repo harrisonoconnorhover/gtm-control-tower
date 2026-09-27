@@ -5,9 +5,13 @@ import { useEffect, useMemo, useState } from 'react';
 import type { ConnectorId, ConnectorReceipt } from '@/lib/connector-contract';
 import type { ConnectorRun } from '@/lib/connector-run';
 import type { CrmWritebackReceipt } from '@/lib/crm-workflow';
+import { saveConnectorRunReceipt, type PendingConnectorRun } from '@/lib/save-connector-run';
+import { UnsavedRuns } from '@/components/unsaved-runs';
 
 export function SyncRuns() {
-  const [runs, setRuns] = useState<ConnectorRun[]>([]);
+  const [savedRuns, setRuns] = useState<ConnectorRun[]>([]);
+  const [localRollbackRuns, setLocalRollbackRuns] = useState<ConnectorRun[]>([]);
+  const [unsavedRuns, setUnsavedRuns] = useState<PendingConnectorRun[]>([]);
   const [status, setStatus] = useState<'loading' | 'ready' | 'empty' | 'error'>('loading');
   const [filter, setFilter] = useState<'all' | ConnectorId>('all');
   const [rollingBack, setRollingBack] = useState<string | null>(null);
@@ -34,14 +38,20 @@ export function SyncRuns() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workspaceId]);
 
+  const runs = useMemo(() => {
+    const byId = new Map(savedRuns.map((run) => [run.id, run]));
+    for (const run of localRollbackRuns) byId.set(run.id, run);
+    return [...byId.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }, [savedRuns, localRollbackRuns]);
   const visible = useMemo(() => filter === 'all' ? runs : runs.filter((run) => run.connectorId === filter), [filter, runs]);
+  const unsavedRollbackPlanIds = useMemo(() => new Set(unsavedRuns.flatMap((pending) => pending.run.details?.writeback?.planId ? [pending.run.details.writeback.planId] : [])), [unsavedRuns]);
   const rolledBackPlanIds = useMemo(() => new Set(runs.flatMap((run) => run.phase === 'undo' && run.status === 'undone' && run.details?.writeback?.planId ? [run.details.writeback.planId] : [])), [runs]);
   const summary = useMemo(() => ({
-    runs: runs.length,
+    runs: savedRuns.length,
     written: runs.reduce((sum, run) => sum + (run.receipt.recordsWritten ?? 0), 0),
     failed: runs.reduce((sum, run) => sum + (run.receipt.recordsFailed ?? 0), 0),
-    undoable: runs.filter((run) => run.undo?.records.length && !rolledBackPlanIds.has(run.undo.sourcePlanId)).length,
-  }), [runs, rolledBackPlanIds]);
+    undoable: runs.filter((run) => run.undo?.records.length && !rolledBackPlanIds.has(run.undo.sourcePlanId) && !unsavedRollbackPlanIds.has(run.undo.sourcePlanId)).length,
+  }), [runs, savedRuns.length, rolledBackPlanIds, unsavedRollbackPlanIds]);
 
   function exportHistory() {
     const blob = new Blob([JSON.stringify({ exportedAt: new Date().toISOString(), workspaceId, runs: visible }, null, 2)], { type: 'application/json' });
@@ -51,7 +61,7 @@ export function SyncRuns() {
   }
 
   async function rollback(run: ConnectorRun) {
-    if (!workspaceId || !run.undo) return;
+    if (!workspaceId || !run.undo || rollingBack || unsavedRollbackPlanIds.has(run.undo.sourcePlanId) || rolledBackPlanIds.has(run.undo.sourcePlanId)) return;
     setRollingBack(run.id);
     setRollbackError(null);
     try {
@@ -67,11 +77,17 @@ export function SyncRuns() {
         recordsWritten: result.updated, recordsFailed: result.failed, createdAt: result.completedAt, undoAvailable: false,
         nativeReceiptId: result.runId,
       };
-      await fetch('/api/control-tower/runs', {
-        method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ workspaceId, run: { receipt, details: { writeback: result } } }),
-      });
-      await refresh();
+      const details = { writeback: result };
+      const pending: PendingConnectorRun = { workspaceId, run: { receipt, details } };
+      const completed: ConnectorRun = { id: receipt.id, workspaceId, connectorId: receipt.connectorId, phase: receipt.phase,
+        status: receipt.status, receipt, details, undo: null, createdAt: receipt.createdAt };
+      setLocalRollbackRuns((current) => [completed, ...current.filter((item) => item.id !== completed.id)]);
+      try {
+        await saveConnectorRunReceipt(pending);
+        await refresh();
+      } catch {
+        setUnsavedRuns((current) => [pending, ...current.filter((item) => item.run.receipt.id !== receipt.id)]);
+      }
     } catch (error) {
       setRollbackError(error instanceof Error ? error.message : 'Rollback failed before a provider receipt returned.');
     } finally { setRollingBack(null); }
@@ -95,12 +111,16 @@ export function SyncRuns() {
         </section>
 
         <section className="pb-16">
+          <UnsavedRuns runs={unsavedRuns} onSaved={(receiptId) => {
+            setUnsavedRuns((current) => current.filter((pending) => pending.run.receipt.id !== receiptId));
+            void refresh();
+          }} />
           {status === 'loading' && <p className="rounded-2xl border border-white/10 p-8 text-center text-sm text-[#71877c]">Loading durable run history…</p>}
           {status === 'empty' && <p className="rounded-2xl border border-dashed border-white/10 p-8 text-center text-sm text-[#71877c]">No saved runs yet. Import and repair a batch in the workspace first.</p>}
           {status === 'error' && <p className="rounded-2xl border border-[#ff9c82]/20 p-8 text-center text-sm text-[#ff9c82]">Run history could not be loaded from this self-host.</p>}
           {rollbackError && <p className="mb-3 rounded-2xl border border-[#ff9c82]/20 bg-[#ff9c82]/[0.05] p-4 text-sm text-[#ff9c82]">{rollbackError}</p>}
           <div className="space-y-3">
-            {visible.map((run) => <RunCard key={run.id} run={run} rolledBack={Boolean(run.undo && rolledBackPlanIds.has(run.undo.sourcePlanId))} rollingBack={rollingBack === run.id} onRollback={() => void rollback(run)} />)}
+            {visible.map((run) => <RunCard key={run.id} run={run} rolledBack={Boolean(run.undo && rolledBackPlanIds.has(run.undo.sourcePlanId))} receiptUnsaved={Boolean(run.undo && unsavedRollbackPlanIds.has(run.undo.sourcePlanId))} rollingBack={rollingBack === run.id} onRollback={() => void rollback(run)} />)}
           </div>
         </section>
       </div>
@@ -108,7 +128,7 @@ export function SyncRuns() {
   );
 }
 
-function RunCard({ run, rolledBack, rollingBack, onRollback }: { run: ConnectorRun; rolledBack: boolean; rollingBack: boolean; onRollback: () => void }) {
+function RunCard({ run, rolledBack, receiptUnsaved, rollingBack, onRollback }: { run: ConnectorRun; rolledBack: boolean; receiptUnsaved: boolean; rollingBack: boolean; onRollback: () => void }) {
   const plan = run.details?.plan;
   const writeback = run.details?.writeback;
   const scan = run.details?.scan;
@@ -116,7 +136,7 @@ function RunCard({ run, rolledBack, rollingBack, onRollback }: { run: ConnectorR
     <article className="rounded-[24px] border border-white/10 bg-[#0b1b16] p-5">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="flex items-start gap-3"><span className={`mt-1 h-2.5 w-2.5 rounded-full ${run.status === 'failed' || run.status === 'partial' ? 'bg-[#ff9c82]' : run.status === 'undone' ? 'bg-[#83bcff]' : 'bg-[#d8ff67]'}`} /><div><div className="flex flex-wrap items-center gap-2"><h2 className="font-semibold capitalize">{run.connectorId} · {run.phase}</h2><span className="rounded-full bg-white/[0.05] px-2.5 py-1 font-mono text-[8px] uppercase text-[#8ca096]">{run.status}</span></div><p className="mt-2 text-xs text-[#8ca096]">{run.receipt.summary}</p><p className="mt-2 font-mono text-[8px] text-[#566b61]">{new Date(run.createdAt).toLocaleString()} · {run.receipt.nativeReceiptId ?? run.id}</p></div></div>
-        {run.undo?.records.length ? <button onClick={onRollback} disabled={rollingBack || rolledBack} className="rounded-full border border-[#83bcff]/30 px-4 py-2 text-xs font-semibold text-[#83bcff] disabled:opacity-50">{rollingBack ? 'Rolling back…' : rolledBack ? 'Rollback completed' : `Roll back ${run.undo.records.length} updates`}</button> : null}
+        {run.undo?.records.length ? <button onClick={onRollback} disabled={rollingBack || rolledBack || receiptUnsaved} className="rounded-full border border-[#83bcff]/30 px-4 py-2 text-xs font-semibold text-[#83bcff] disabled:opacity-50">{rollingBack ? 'Rolling back…' : rolledBack ? 'Rollback completed' : receiptUnsaved ? 'Receipt save needed' : `Roll back ${run.undo.records.length} updates`}</button> : null}
       </div>
       {(plan || writeback) && <div className="mt-4 grid gap-2 border-t border-white/[0.06] pt-4 sm:grid-cols-3 lg:grid-cols-6">
         <Mini label="Input" value={plan?.requested ?? writeback?.requested ?? 0} /><Mini label="Create" value={writeback?.created ?? plan?.creates ?? 0} /><Mini label="Update" value={writeback?.updated ?? plan?.updates ?? 0} /><Mini label="Unchanged" value={writeback?.unchanged ?? plan?.unchanged ?? 0} /><Mini label="Held" value={writeback?.held ?? plan?.held ?? 0} /><Mini label="Failed" value={writeback?.failed ?? 0} />

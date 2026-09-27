@@ -37,7 +37,8 @@
     "seed:duplicate-audit": "node --env-file-if-exists=.env.local scripts/seed_duplicate_audit.mjs",
     "configure:salesforce": "node scripts/configure_salesforce_env.mjs",
     "sync:n8n": "node scripts/sync_ops_workflow.mjs",
-    "test:crm-batches": "node scripts/check-crm-batches.mjs"
+    "test:crm-batches": "node scripts/check-crm-batches.mjs",
+    "test:receipt-recovery": "node scripts/check-receipt-recovery.mjs"
   },
   "dependencies": {
     "better-sqlite3": "^12.11.1",

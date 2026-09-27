@@ -112,9 +112,13 @@ function matchingInput(connectorId: CrmWritePlan['connectorId'], proposed: Porta
   } catch {
     return null;
   }
+  // The provider mappers prefer mapped first/last names over fullName. Review
+  // that same identity when a source supplies inconsistent name columns.
+  const writtenName = [proposed.firstName.trim(), proposed.lastName.trim()].filter(Boolean).join(' ');
+  const placeholderName = saved.fullName.trim() === saved.contactId.trim() && writtenName === saved.contactId.trim();
   return {
     contactId: proposed.contactId,
-    fullName: saved.fullName.trim() === saved.contactId.trim() ? '' : saved.fullName,
+    fullName: placeholderName ? '' : writtenName,
     email: proposed.email, phone: saved.phone || '', state: saved.state || '', company: saved.company || '',
   };
 }

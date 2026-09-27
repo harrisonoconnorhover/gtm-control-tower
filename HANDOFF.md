@@ -2,39 +2,39 @@
 
 ## Finished
 
-- Connected approximate matching to governed CRM import plans: possible duplicates hold new-record creation independently of HubSpot or Salesforce rules.
-- Required matching saved input and a complete snapshot started within 15 minutes; preview and execution use all five identity fields regardless of exploratory checkboxes.
-- Added candidate evidence and actionable hold reasons to the existing preview and saved receipts. Exact-email updates retain their behavior.
-- Verified Priya and sparse Jordan against both development CRMs: two holds, zero creates or updates, all nine fictional records unchanged per CRM.
-- Updated the illustrated case, guides and repeatable native check while preserving the earlier Salesforce limitation as dated evidence.
+- Fixed conflicting name columns clearing the wrong identity: create checks and eligible-row review now use the first and last names actually sent to the destination.
+- Separated returned CRM outcomes from receipt-save failures. Completed rows stay completed even when local storage fails.
+- Added a visible unsaved-receipt notice with the complete receipt/rollback download and a same-ID, storage-only retry.
+- Preserved completed rollback results while their receipt awaits saving; reported workspace-summary save failures separately.
+- Added repeatable browser failure checks for both providers using simulated CRM responses and real local storage.
 
 ## Try It
 
-1. In a configured saved `/app/lab` workspace, import `public/enterprise-import-review.csv` and select HubSpot or Salesforce.
-2. Read a fresh complete snapshot, then compare with CRM. Priya and Jordan remain held with candidate evidence. Correct or remove unresolved rows before proceeding.
-3. Run `scripts/check-enterprise-import.mjs <provider> --holds-only` with the documented private environment/output settings to repeat the retained-fixture check.
+1. Run the configured self-hosted workspace and inspect an import containing both full-name and first/last-name columns. The match review explains which name is used.
+2. For a disposable local app, set `CONTROL_TOWER_BROWSER_BASE_URL` and run `npm run test:receipt-recovery`. Use `CHROMIUM_PATH` if Chrome is not at the documented macOS default.
+3. If receipt storage fails, use **Retry receipt save** or **Download receipt** before leaving the page. Retry does not repeat the CRM operation.
 
 ## Checks
 
-- 228 tests across 24 suites passed, including weak matches, clean creates, missing/stale/partial/capped snapshots, saved-input parity and execution revalidation.
-- Native browser checks passed for both providers; held receipts saved and read back, native records unchanged, proposed emails absent, zero browser page errors.
-- TypeScript, lint, both builds, script syntax, secret scan and diff checks passed.
-- Walkthrough and personal-site checks passed at 1440px and 390px: all five evidence images loaded, no overflow or browser errors.
+- 238 tests across 25 suites passed, including both-provider conflicting-name regressions and run-save acknowledgment/error cases.
+- Receipt-recovery browser checks passed for both providers: HTTP failure, network abort, preserved JSON download, storage-only retry, durable read-back, rollback recovery, and workspace-summary failure.
+- Existing 105-row batch/progress and pending-operation browser checks passed for both providers, including the mobile overflow check.
+- TypeScript, lint, both builds, script syntax and diff checks passed. Browser tests made zero live CRM requests.
 
 ## Decisions
 
-- Any returned candidate holds a proposed create; 28/100 is sufficient for review, never a probability of identity.
-- Reuse existing plans and holds. No automatic link, merge, override or storage migration.
-- Guard only the governed direct write path. Legacy direct-sync and webhook paths retain their previous behavior.
+- Preserve the effective destination name rather than silently compare a conflicting display name.
+- Reuse existing idempotent run storage; no schema, automatic CRM retry, or browser-persistence layer was added.
+- Keep native CRM outcomes distinct from local save outcomes and preserve earlier dated development evidence.
 
 ## Remaining
 
-- Holds can include different people. Human resolution is required; no candidate does not prove absence.
-- Snapshot visibility, search limits and concurrent CRM changes prevent a universal duplicate-prevention guarantee.
-- New-create success is covered by automated tests; this follow-up's native execution intentionally exercises held outcomes. Earlier native creation/repeat/rollback evidence retains its original scope.
+- Unsaved recovery is page-local: save or download before navigating or reloading.
+- No new recovery claim for an operation whose CRM response never reaches the browser.
+- Duplicate detection remains bounded by snapshot visibility, freshness and matching rules; scores are not identity probabilities.
 
 ## Review First
 
-- `lib/import-create-review.ts` and `app/api/control-tower/crm-writeback/route.ts`.
-- `docs/enterprise-import-native-check.md`, follow-up section.
-- `public/enterprise-import-walkthrough.html` and its new hold screenshot.
+- `lib/import-create-review.ts` and `tests/import-create-review.test.ts`.
+- `components/control-tower-dashboard.tsx`, `components/sync-runs.tsx`, and `components/unsaved-runs.tsx`.
+- `scripts/check-receipt-recovery.mjs` and `docs/import-crm-comparison.md`.
