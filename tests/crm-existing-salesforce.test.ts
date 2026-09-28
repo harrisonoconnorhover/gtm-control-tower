@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { readSalesforceExisting } from '../lib/crm-existing-salesforce';
+import { readSalesforceExisting, readSalesforceLeadById } from '../lib/crm-existing-salesforce';
 import type { PortableCrmContact } from '../lib/crm-workflow';
 
 const apiRoot = 'https://synthetic.my.salesforce.com/services/data/v67.0';
@@ -22,6 +22,61 @@ function mockPages(...pages: unknown[]) {
   vi.stubGlobal('fetch', fetchMock);
   return fetchMock;
 }
+
+describe('Salesforce selected-Lead reads', () => {
+  const selectedId = '00Q000000000001EAA';
+  const selectedLead = { ...leadRecord, Id: selectedId };
+  afterEach(() => vi.unstubAllGlobals());
+
+  it.each(['00Q000000000001', selectedId])('reads a Lead by ID and preserves its CRM email: %s', async (nativeId) => {
+    const fetchMock = vi.fn().mockResolvedValue(Response.json({ ...selectedLead, Id: nativeId, Email: ' CRM@example.com ' }));
+    vi.stubGlobal('fetch', fetchMock);
+    expect(await readSalesforceLeadById(nativeId, apiRoot, headers)).toEqual({
+      nativeId, objectType: 'lead', isConverted: false, email: 'crm@example.com',
+      fields: { firstName: 'Alex', lastName: 'Morgan', company: 'Synthetic Lab', phone: null, jobTitle: 'Analyst', website: null },
+    });
+    const url = new URL(fetchMock.mock.calls[0][0]);
+    expect(url.pathname).toBe(`/services/data/v67.0/sobjects/Lead/${nativeId}`);
+    expect(url.searchParams.get('fields')).toBe('Id,Email,IsConverted,FirstName,LastName,Company,Phone,Title,Website');
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({ cache: 'no-store', redirect: 'manual', headers });
+  });
+
+  it('returns null for a missing Lead and exposes converted status for the caller to hold', async () => {
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce(new Response(null, { status: 404 }))
+      .mockResolvedValueOnce(Response.json({ ...selectedLead, IsConverted: true })));
+    expect(await readSalesforceLeadById(selectedId, apiRoot, headers)).toBeNull();
+    expect(await readSalesforceLeadById(selectedId, apiRoot, headers)).toMatchObject({ nativeId: selectedId, isConverted: true });
+  });
+
+  it.each(['', '00Q-1', '00Q000000000001 ', '../00Q000000000001', '00Q000000000001EA'])('rejects a malformed requested ID before reading: %s', async (nativeId) => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(readSalesforceLeadById(nativeId, apiRoot, headers)).rejects.toThrow('record ID');
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('validates the instance API root before sending credentials', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(readSalesforceLeadById(selectedId, 'http://synthetic.my.salesforce.com/services/data/v67.0', headers)).rejects.toThrow('instance API root');
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['wrong ID', { ...selectedLead, Id: '00Q000000000002EAA' }, 200],
+    ['missing conversion status', { ...selectedLead, IsConverted: undefined }, 200],
+    ['invalid email', { ...selectedLead, Email: 'invalid-email' }, 200],
+    ['missing identity', { ...selectedLead, Id: undefined }, 200],
+    ['invalid property', { ...selectedLead, Company: 42 }, 200],
+    ['service error', { message: 'Unavailable' }, 503],
+    ['partial result', selectedLead, 207],
+    ['redirect', selectedLead, 302],
+  ])('rejects %s instead of establishing an update target', async (_label, payload, status) => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json(payload, { status: status as number })));
+    await expect(readSalesforceLeadById(selectedId, apiRoot, headers)).rejects.toThrow('Salesforce');
+  });
+});
 
 describe('Salesforce exact-email comparison reads', () => {
   afterEach(() => vi.unstubAllGlobals());

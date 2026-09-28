@@ -132,6 +132,19 @@ describe('CRM spreadsheet review reports', () => {
     expect(decode(buildCrmReviewCsv({ plan: comparison }))[0].update_policy).toBe('');
   });
 
+  it('labels confirmed selections separately from exact-email matches and preserves the imported and native addresses', () => {
+    const confirmed = { ...row('changed-email', 'update'), email: 'new@example.com', nativeId: '123',
+      matches: [{ nativeId: '123', objectType: 'contact' as const, email: 'existing@example.com' }],
+      matchDecision: { nativeId: '123', email: 'existing@example.com', reason: 'Verified phone and employer', confirmedAt: now.toISOString() } };
+    const exact = { ...row('exact', 'unchanged'), matches: [{ nativeId: '456', objectType: 'contact' as const, email: 'exact@example.com' }] };
+    const exported = decode(buildCrmReviewCsv({ plan: plan([confirmed, exact]) }));
+    expect(exported[0]).toMatchObject({ email: 'new@example.com', native_id: '123', match_basis: 'human_confirmed',
+      matched_native_email: 'existing@example.com', match_confirmation_reason: 'Verified phone and employer', match_confirmed_at: now.toISOString(),
+      exact_match_count: '', exact_matches: '', outcome: '' });
+    expect(exported[1]).toMatchObject({ match_basis: 'exact_email', matched_native_email: 'exact@example.com', exact_match_count: '1',
+      match_confirmation_reason: '', match_confirmed_at: '' });
+  });
+
   it('returns a header-only report when no contact evidence is available', () => {
     expect(decode(buildCrmReviewCsv({}))).toEqual([]);
   });

@@ -91,6 +91,13 @@ export type CrmFieldChange = {
 
 export type CrmMatch = Pick<NativeCrmRecord, 'nativeId' | 'objectType' | 'email' | 'isConverted'>;
 
+export type CrmMatchDecision = {
+  nativeId: string;
+  email: string;
+  reason: string;
+  confirmedAt: string;
+};
+
 export type CrmPlanRecord = {
   contactId: string;
   email: string;
@@ -104,6 +111,7 @@ export type CrmPlanRecord = {
   possibleMatches?: CrmPossibleMatch[];
   possibleImportMatches?: ImportPossibleMatch[];
   createReview?: CrmCreateReview;
+  matchDecision?: CrmMatchDecision;
 };
 
 export type CrmWritePlan = {
@@ -126,6 +134,8 @@ export type CrmWritePlan = {
 export type CrmRollbackRecord = {
   contactId: string;
   email: string;
+  // Confirmed matches can keep a CRM email different from the imported address.
+  targetEmail?: string;
   nativeId: string;
   before: Record<PortableCrmFieldName, string | null>;
   after: Record<PortableCrmFieldName, string | null>;
@@ -200,6 +210,7 @@ export function buildCrmWritePlan(
   createReviews?: Map<string, CrmCreateReviewResult>,
   updatePolicy?: CrmUpdatePolicy,
   excludedRows?: Map<string, string>,
+  matchDecisions?: Map<string, CrmMatchDecision>,
 ): CrmWritePlan {
   const policy = normalizeCrmUpdatePolicy(updatePolicy);
   const matchedInputs = new Map<string, Set<string>>();
@@ -217,14 +228,20 @@ export function buildCrmWritePlan(
     const after = contactFields(contact);
     const nativeMatches = existingByEmail.get(contact.email.toLowerCase()) ?? [];
     const matches = nativeMatches.map(({ nativeId, objectType, email, isConverted }) => ({ nativeId, objectType, email, isConverted }));
+    const matchDecision = matchDecisions?.get(contact.contactId);
     const hold = (reason: string): CrmPlanRecord => ({
       contactId: contact.contactId, email: contact.email, nativeId: null, operation: 'hold',
       matches, before: null, after, changes: [], reason,
+      ...(matchDecision ? { matchDecision } : {}),
     });
     const exclusion = excludedRows?.get(contact.contactId);
     if (exclusion !== undefined) return hold(exclusion);
     if (matches.length > 1) {
       return hold(`${matches.length} CRM records match this email. Review the existing records before importing.`);
+    }
+    if (matchDecision && (matches.length !== 1 || matches[0].nativeId !== matchDecision.nativeId
+      || matches[0].email.toLowerCase() !== matchDecision.email.toLowerCase())) {
+      return hold('The confirmed CRM match is no longer available. Review the selected person again before importing.');
     }
     if (!matches.length) {
       const reviewed = createReviews?.get(contact.contactId);
@@ -261,6 +278,7 @@ export function buildCrmWritePlan(
       contactId: contact.contactId, email: contact.email, nativeId: match.nativeId,
       operation: changes.length ? 'update' : 'unchanged', matches,
       before: match.fields, after: effectiveAfter, changes,
+      ...(matchDecision ? { matchDecision } : {}),
       reason: changes.length ? null : policy.fields.length === 0
         ? 'No update fields are selected. Existing CRM values are preserved.'
         : policy.mode === 'fill-empty'
@@ -294,6 +312,7 @@ export function rollbackFromPlan(plan: CrmWritePlan): CrmRollbackPlan | null {
   const records = plan.records.flatMap((record): CrmRollbackRecord[] => record.operation === 'update' && record.nativeId && record.before
     ? [{
       contactId: record.contactId, email: record.email, nativeId: record.nativeId,
+      ...(record.matchDecision ? { targetEmail: record.matchDecision.email } : {}),
       before: record.before, after: record.after, changedFields: record.changes.map((change) => change.field),
     }]
     : []);
@@ -358,7 +377,7 @@ function cleanValue(value: string | null | undefined): string | null {
 }
 
 function fingerprintPlan(connectorId: string, records: CrmPlanRecord[], updatePolicy: CrmUpdatePolicy): string {
-  const stable = JSON.stringify([connectorId, updatePolicy, records.map(({ contactId, email, nativeId, operation, matches, before, after, reason, possibleMatches, possibleImportMatches, createReview }) => ({ contactId, email, nativeId, operation, matches, before, after, reason, possibleMatches, possibleImportMatches, createReview }))]);
+  const stable = JSON.stringify([connectorId, updatePolicy, records.map(({ contactId, email, nativeId, operation, matches, before, after, reason, possibleMatches, possibleImportMatches, createReview, matchDecision }) => ({ contactId, email, nativeId, operation, matches, before, after, reason, possibleMatches, possibleImportMatches, createReview, matchDecision }))]);
   let hash = 0x811c9dc5;
   for (let index = 0; index < stable.length; index += 1) {
     hash ^= stable.charCodeAt(index);
@@ -371,6 +390,7 @@ function isRollbackRecord(value: unknown): value is CrmRollbackRecord {
   if (!isRecord(value)) return false;
   return typeof value.contactId === 'string'
     && typeof value.email === 'string'
+    && (value.targetEmail === undefined || (typeof value.targetEmail === 'string' && /^[^@\s]+@[^@\s]+\.[^@\s]+$/u.test(value.targetEmail)))
     && typeof value.nativeId === 'string'
     && isPortableFieldRecord(value.before)
     && isPortableFieldRecord(value.after)

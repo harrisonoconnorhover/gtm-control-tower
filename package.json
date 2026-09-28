@@ -40,7 +40,8 @@
     "test:crm-batches": "node scripts/check-crm-batches.mjs",
     "test:receipt-recovery": "node scripts/check-receipt-recovery.mjs",
     "test:import-holds": "node scripts/check-import-holds.mjs",
-    "test:import-controls": "node scripts/check-import-controls.mjs"
+    "test:import-controls": "node scripts/check-import-controls.mjs",
+    "test:confirmed-matches": "node scripts/check-import-match-decision.mjs"
   },
   "dependencies": {
     "better-sqlite3": "^12.11.1",

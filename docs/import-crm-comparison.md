@@ -13,9 +13,11 @@ whole-account duplicate scan.
 
 For name, phone, state, company, or approximate email evidence, use the separate
 [possible-match review](approximate-import-matches.md). It ranks candidates from
-a dated snapshot and exports review JSON; it never selects a write target.
+a dated snapshot and exports review JSON. An operator can explicitly
+[confirm an eligible candidate](confirmed-import-matches.md) with a saved reason.
 The governed direct preview independently uses all five fields to hold unsafe
-creates. Updates and unchanged decisions still require exact-email identity.
+creates. Updates and unchanged decisions require exact-email identity or a current,
+server-verified human confirmation of an existing record.
 Use [operator controls](import-operator-controls.md) to skip or restore rows,
 choose the fields that may change, and download comparison or result CSVs.
 Updates default to filling empty CRM fields; replacement and blank clearing
@@ -31,6 +33,8 @@ require explicit policy choices.
 | Proposed create lacks a fresh complete snapshot, or candidate search is capped | Hold create | Hold create |
 | One exact Contact primary or additional email match | Compare portable fields using its native ID; preserve primary email | Hold a Contact match |
 | One unconverted Lead, with no other match | Not applicable | Compare portable fields using its native ID |
+| Human-confirmed candidate; source and CRM target still match the reviewed values | Compare Contact by native ID; preserve CRM email | Compare unconverted Lead by native ID; preserve CRM email |
+| Confirmed source/target changed, or multiple included rows choose the same target | Hold | Hold |
 | Converted Lead | Not applicable | Hold |
 | Multiple matching records | Hold | Hold |
 | Multiple imported rows target one native record | Hold affected rows | Hold affected rows |

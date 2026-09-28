@@ -23,8 +23,9 @@ This matcher has no such probability claim.
 Names alone remain weak evidence. State and company supply context but cannot
 identify a person alone. HubSpot primary and additional emails can supply exact
 evidence; shared phone numbers receive less weight. Unselected fields do not
-contribute to this exploratory review. Suggestions never link, merge, or select
-an update target.
+contribute to this exploratory review. Suggestions do not select a target automatically. An operator can now
+[confirm a specific existing person](confirmed-import-matches.md) with a saved
+reason; this does not merge records or change the CRM email.
 
 The [governed direct write preview](import-crm-comparison.md) independently checks
 proposed creates against a fresh complete snapshot and the other active rows in
@@ -33,7 +34,9 @@ name actually mapped to the destination. Any returned candidate, including a wea
 holds the create; changing these review checkboxes cannot bypass it. Missing,
 stale, partial, or capped evidence also holds creates. Correct or explicitly skip
 an unresolved import row with the [operator controls](import-operator-controls.md)
-and refresh the preview; there is no match override or automatic identity link.
+and refresh the preview. A confirmed existing-person decision can instead
+resolve an eligible candidate into a protected update; it never authorizes a
+duplicate create.
 
 ## Try a fictional review
 

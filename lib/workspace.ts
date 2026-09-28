@@ -2,6 +2,7 @@ import type { CsvColumnMapping, CsvContactCorrection } from './csv-control-tower
 import type { ConnectorId, ConnectorReceipt } from './connector-contract';
 import type { LiveContactState, RepairRun } from './live-control-tower';
 import { defaultCrmUpdatePolicy, normalizeCrmUpdatePolicy, type CrmUpdatePolicy } from './crm-workflow';
+import { validImportMatchDecisions } from './import-match-decision';
 import { isImportExclusion } from './import-exclusions';
 
 export const MAX_PERSISTED_CONTACTS = 5_000;
@@ -64,6 +65,9 @@ export function validateWorkspaceState(value: unknown): WorkspaceState {
     throw new Error(`A saved workspace can contain at most ${MAX_PERSISTED_CONTACTS.toLocaleString()} contacts.`);
   }
   for (const row of [...state.contacts, ...state.originalContacts]) {
+    if (row && typeof row === 'object' && !validImportMatchDecisions(row.crmMatchDecisions)) {
+      throw new Error('Confirmed CRM matches require a valid saved decision.');
+    }
     if (row && typeof row === 'object' && 'importExclusion' in row && row.importExclusion !== undefined
       && (!isImportExclusion(row.importExclusion) || row.recordStatus !== 'active')) {
       throw new Error('Skipped import rows require an active row, a reason and a valid timestamp.');

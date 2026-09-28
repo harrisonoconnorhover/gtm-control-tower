@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildCrmWritePlan, combineCrmWritebackProgress, defaultCrmUpdatePolicy, isCrmUpdatePolicy, isSuccessfulCrmWritebackRecord, normalizeCrmUpdatePolicy, planStillMatches, portableCrmFieldNames, rollbackFromPlan, rollbackRecordAlreadyRestored, rollbackRecordStillMatches, type CrmUpdatePolicy, type CrmWritebackReceipt, type NativeCrmRecord, type PortableCrmContact } from '../lib/crm-workflow';
+import { buildCrmWritePlan, combineCrmWritebackProgress, defaultCrmUpdatePolicy, isCrmRollbackPlan, isCrmUpdatePolicy, isSuccessfulCrmWritebackRecord, normalizeCrmUpdatePolicy, planStillMatches, portableCrmFieldNames, rollbackFromPlan, rollbackRecordAlreadyRestored, rollbackRecordStillMatches, type CrmMatchDecision, type CrmUpdatePolicy, type CrmWritebackReceipt, type NativeCrmRecord, type PortableCrmContact } from '../lib/crm-workflow';
 import { sourceContactsToCsv } from '../lib/crm-source';
 import { importContactsCsv } from '../lib/csv-control-tower';
 
@@ -151,6 +151,25 @@ function native(nativeId: string, email: string, jobTitle: string | null): Nativ
 }
 
 describe('CRM import matching evidence', () => {
+  it('retains confirmed-match intent in the fingerprint and supports different-email rollback without breaking historic receipts', () => {
+    const current = { ...native('123', 'native@example.com', 'Old title'), objectType: 'contact' as const };
+    const decision: CrmMatchDecision = { nativeId: '123', email: 'native@example.com', reason: 'Same name and phone', confirmedAt: new Date().toISOString() };
+    const build = (matchDecision: CrmMatchDecision, matches = [current]) => buildCrmWritePlan('hubspot', 'changed-email.csv', [contacts[0]],
+      new Map([[contacts[0].email, matches]]), new Date(), undefined, replaceAll, undefined, new Map([[contacts[0].contactId, matchDecision]]));
+    const plan = build(decision);
+    expect(plan.records[0]).toMatchObject({ operation: 'update', email: contacts[0].email, matchDecision: decision });
+    expect(planStillMatches(plan, build({ ...decision, reason: 'New confirmation reason' }))).toBe(false);
+    expect(build(decision, []).records[0].operation).toBe('hold');
+    const rollback = rollbackFromPlan(plan)!;
+    expect(rollback.records[0]).toMatchObject({ email: contacts[0].email, targetEmail: decision.email });
+    expect(isCrmRollbackPlan(rollback)).toBe(true);
+    const legacy = structuredClone(rollback);
+    delete legacy.records[0].targetEmail;
+    expect(isCrmRollbackPlan(legacy)).toBe(true);
+    rollback.records[0].targetEmail = 'not-an-email';
+    expect(isCrmRollbackPlan(rollback)).toBe(false);
+  });
+
   it('holds Salesforce Contacts and converted Leads instead of proposing another Lead', () => {
     const existing = new Map<string, NativeCrmRecord[]>([
       ['one@example.com', [{ ...native('003-1', 'one@example.com', 'RevOps'), objectType: 'contact' }]],

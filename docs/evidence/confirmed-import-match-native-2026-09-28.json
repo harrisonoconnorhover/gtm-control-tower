@@ -1,0 +1,48 @@
+{
+  "checkedAt": "2026-09-28",
+  "scope": "Native API check of fictional records in designated development accounts; browser regression separately uses simulated CRM responses.",
+  "providers": {
+    "hubspot": {
+      "provider": "hubspot",
+      "startedAt": "2026-09-28T14:09:30.220Z",
+      "caseId": "enterprise-import-2026-09-27",
+      "accountType": "STANDARD",
+      "finishedAt": "2026-09-28T14:09:37.847Z",
+      "retainedRecords": 9,
+      "confirmedUpdates": 1,
+      "unresolvedHeld": 1,
+      "creates": 0,
+      "deletes": 0,
+      "primaryEmailPreserved": true,
+      "decisionReloaded": true,
+      "staleExecutionBlocked": true,
+      "rollbackRestored": 1,
+      "comparedFieldsRestored": true
+    },
+    "salesforce": {
+      "provider": "salesforce",
+      "startedAt": "2026-09-28T14:09:37.960Z",
+      "caseId": "enterprise-import-2026-09-27",
+      "accountType": "Developer Edition",
+      "isSandbox": false,
+      "finishedAt": "2026-09-28T14:09:47.433Z",
+      "retainedRecords": 9,
+      "confirmedUpdates": 1,
+      "unresolvedHeld": 1,
+      "creates": 0,
+      "deletes": 0,
+      "primaryEmailPreserved": true,
+      "decisionReloaded": true,
+      "staleExecutionBlocked": true,
+      "rollbackRestored": 1,
+      "comparedFieldsRestored": true
+    }
+  },
+  "limits": [
+    "HubSpot STANDARD and Salesforce Developer Edition are designated development accounts, not formally provisioned sandboxes.",
+    "Only the title update was written. Email, portable fields, state, city, ownership markers and owners were compared before and after; audit timestamps and other properties were not.",
+    "No matching accuracy or probability calibration claim. Human judgment can be wrong.",
+    "No atomic cross-workspace or external-writer protection.",
+    "One pre-write harness attempt expected HTTP 200 for scan creation; corrected to HTTP 201. No native mutation occurred in that attempt."
+  ]
+}

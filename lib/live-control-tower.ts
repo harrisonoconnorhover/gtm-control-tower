@@ -1,3 +1,4 @@
+import { validImportMatchDecisions, type ConfirmedImportMatch } from './import-match-decision';
 import type { ScenarioKey } from './control-tower';
 import { isImportExclusion, type ImportExclusion } from './import-exclusions';
 
@@ -35,6 +36,7 @@ export type LiveContactState = {
   canonicalContactId: string | null;
   recordStatus: 'active' | 'merged';
   importExclusion?: ImportExclusion;
+  crmMatchDecisions?: Partial<Record<'hubspot' | 'salesforce', ConfirmedImportMatch>>;
   lastAction: string;
   qualityFlags: string[];
   updatedAt: string;
@@ -161,6 +163,7 @@ function isContactState(value: unknown): value is LiveContactState {
   if (!isNullableString(value.ownerId) || !isNullableString(value.canonicalContactId)) return false;
   if (value.recordStatus !== 'active' && value.recordStatus !== 'merged') return false;
   if (value.importExclusion !== undefined && (value.recordStatus !== 'active' || !isImportExclusion(value.importExclusion))) return false;
+  if (!validImportMatchDecisions(value.crmMatchDecisions)) return false;
   if (!Array.isArray(value.qualityFlags) || !value.qualityFlags.every((flag) => typeof flag === 'string')) return false;
   return [
     value.contactId,

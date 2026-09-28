@@ -3,6 +3,30 @@ import type { NativeCrmRecord, PortableCrmContact } from './crm-workflow';
 const CONTACTS_URL = 'https://api.hubapi.com/crm/objects/2026-03/contacts';
 const PROPERTIES = ['email', 'hs_additional_emails', 'firstname', 'lastname', 'company', 'phone', 'jobtitle', 'website'];
 
+/** Read the current record behind a human-confirmed identity without changing its email. */
+export async function readHubSpotRecordById(nativeId: string, accessToken: string): Promise<NativeCrmRecord | null> {
+  if (!/^\d+$/.test(nativeId)) throw new Error('HubSpot lookup requires a numeric contact ID.');
+  const query = new URLSearchParams({ properties: PROPERTIES.join(',') });
+  const response = await fetch(`${CONTACTS_URL}/${nativeId}?${query}`, {
+    cache: 'no-store', redirect: 'manual',
+    headers: { authorization: `Bearer ${accessToken}`, accept: 'application/json' },
+    signal: AbortSignal.timeout(30_000),
+  });
+  if (response.status === 404) return null;
+  if (!response.ok || response.status === 207) {
+    throw new Error(`HubSpot could not confirm contact identity (${response.status}).`);
+  }
+  const value: unknown = await response.json();
+  if (!isRecord(value) || value.id !== nativeId) {
+    throw new Error('HubSpot lookup returned an unrequested contact ID.');
+  }
+  if (value.archived !== undefined && typeof value.archived !== 'boolean') {
+    throw new Error('HubSpot lookup returned a malformed archive status.');
+  }
+  if (value.archived === true) return null;
+  return parseContact(value).record;
+}
+
 export async function readHubSpotExisting(
   contacts: PortableCrmContact[],
   accessToken: string,
@@ -53,6 +77,18 @@ function addMatchingRecord(
   matches: Map<string, NativeCrmRecord[]>,
   requiredEmail?: string,
 ) {
+  const { record, identities } = parseContact(value);
+  const keys = [...identities].filter((email) => submitted.has(email));
+  if (!keys.length || (requiredEmail && !identities.has(requiredEmail))) {
+    throw new Error('HubSpot lookup returned a contact that does not match the requested email.');
+  }
+  for (const key of keys) {
+    const existing = matches.get(key) ?? [];
+    if (!existing.some((entry) => entry.nativeId === record.nativeId)) matches.set(key, [...existing, record]);
+  }
+}
+
+function parseContact(value: unknown): { record: NativeCrmRecord; identities: Set<string> } {
   if (!isRecord(value) || typeof value.id !== 'string' || !value.id.trim()
     || value.archived === true || !isRecord(value.properties)) {
     throw new Error('HubSpot lookup returned a malformed contact.');
@@ -69,10 +105,6 @@ function addMatchingRecord(
     if (!identity) throw new Error('HubSpot lookup returned a malformed additional email.');
     identities.add(identity);
   }
-  const keys = [...identities].filter((email) => submitted.has(email));
-  if (!keys.length || (requiredEmail && !identities.has(requiredEmail))) {
-    throw new Error('HubSpot lookup returned a contact that does not match the requested email.');
-  }
   const record: NativeCrmRecord = {
     nativeId: value.id, objectType: 'contact', email: primary,
     fields: {
@@ -81,10 +113,7 @@ function addMatchingRecord(
       jobTitle: fieldValue(properties.jobtitle), website: fieldValue(properties.website),
     },
   };
-  for (const key of keys) {
-    const existing = matches.get(key) ?? [];
-    if (!existing.some((entry) => entry.nativeId === record.nativeId)) matches.set(key, [...existing, record]);
-  }
+  return { record, identities };
 }
 
 function emailValue(value: unknown): string | null {
