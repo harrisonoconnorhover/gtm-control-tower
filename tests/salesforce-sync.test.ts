@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { syncDirectlyToSalesforce } from '../app/api/control-tower/salesforce-sync/route';
+import { POST, syncDirectlyToSalesforce } from '../app/api/control-tower/salesforce-sync/route';
 import { importContactsCsv } from '../lib/csv-control-tower';
 import {
   combineSalesforceSyncReceipts,
@@ -173,4 +173,22 @@ describe('Salesforce sync contracts', () => {
     expect(receipt.records[0].error).toBe('A matching Contact already exists.');
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
+});
+
+
+it('rejects a legacy Pomade handoff in legacy Salesforce sync before reading or writing the CRM', async () => {
+  vi.stubEnv('NODE_ENV', 'test');
+  vi.stubEnv('SALESFORCE_INSTANCE_URL', 'https://example.my.salesforce.com');
+  vi.stubEnv('SALESFORCE_ACCESS_TOKEN', 'fictional-token');
+  vi.stubEnv('CONTROL_TOWER_SYNC_KEY', '');
+  const fetch = vi.fn();
+  vi.stubGlobal('fetch', fetch);
+  try {
+    const response = await POST(new Request('http://localhost/api/control-tower/salesforce-sync', { method: 'POST',
+      headers: { 'content-type': 'application/json' }, body: JSON.stringify({ syncId: 'handoff-test', sourceFile: 'handoff.json',
+        leads: [lead(`pomade-legacy-${'b'.repeat(64)}`)] }) }));
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ error: expect.stringContaining('governed CRM') });
+    expect(fetch).not.toHaveBeenCalled();
+  } finally { vi.unstubAllEnvs(); vi.unstubAllGlobals(); }
 });

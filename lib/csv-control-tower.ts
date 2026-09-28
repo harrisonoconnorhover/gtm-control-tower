@@ -333,10 +333,14 @@ export function executeCsvRepair(
 
   if (scenario === 'duplicate-surge') {
     const canonicalByContact = new Map<string, string>();
+    const originsByCanonical = new Map<string, NonNullable<LiveContactState['sourceOrigins']>>();
     for (const group of groupActiveByEmail(nextContacts).values()) {
       if (group.length < 2) continue;
       const canonical = [...group].sort(compareCanonicalCandidates)[0];
       for (const contact of group) canonicalByContact.set(contact.contactId, canonical.contactId);
+      const origins = [...new Map(group.flatMap((contact) => contact.sourceOrigins ?? [])
+        .map((origin) => [JSON.stringify(origin), origin])).values()];
+      if (origins.length) originsByCanonical.set(canonical.contactId, origins);
     }
     nextContacts = nextContacts.map((contact) => {
       const canonicalId = canonicalByContact.get(contact.contactId);
@@ -344,6 +348,7 @@ export function executeCsvRepair(
       if (canonicalId === contact.contactId) {
         return {
           ...contact,
+          ...(originsByCanonical.has(contact.contactId) ? { sourceOrigins: originsByCanonical.get(contact.contactId)! } : {}),
           qualityFlags: withoutFlag(contact.qualityFlags, 'duplicate_identity'),
           lastAction: 'canonical_record_retained',
           updatedAt: timestamp,
@@ -590,7 +595,7 @@ function compareCanonicalCandidates(left: LiveContactState, right: LiveContactSt
 }
 
 function cloneContact(contact: LiveContactState): LiveContactState {
-  return { ...contact, qualityFlags: [...contact.qualityFlags] };
+  return { ...contact, qualityFlags: [...contact.qualityFlags], ...(contact.sourceOrigins ? { sourceOrigins: structuredClone(contact.sourceOrigins) } : {}) };
 }
 
 function withoutFlag(flags: string[], flagToRemove: string): string[] {

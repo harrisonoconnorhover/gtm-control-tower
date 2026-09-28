@@ -6,6 +6,7 @@ import { exportContactsCsv, importContactsCsv, type CsvContactCorrection } from 
 import { defaultCrmUpdatePolicy, type CrmUpdatePolicy } from '../lib/crm-workflow';
 import { excludeImportRow, restoreImportRow } from '../lib/import-exclusions';
 import type { LiveContactState } from '../lib/live-control-tower';
+import { importPomadeHandoff } from '../lib/pomade-handoff';
 import { emptyWorkspaceState, validateWorkspaceState } from '../lib/workspace';
 
 const acceptanceDirectory = mkdtempSync(join(tmpdir(), 'gtm-control-tower-corrections-'));
@@ -134,4 +135,23 @@ describe('persisted import decisions and update policy', () => {
       expect(unchanged?.state).toEqual(initial.state);
     }
   });
+});
+
+
+it('saves and reloads Pomade source context separately from writable contact values in SQLite', async () => {
+  const { createWorkspace, saveWorkspace, getWorkspace } = await import('../lib/workspace-store');
+  const workspace = await createWorkspace('Optional Pomade proposal');
+  const { contacts } = await importPomadeHandoff({ source: 'pomade', schemaVersion: 1,
+    exportId: 'export-sqlite', exportedAt: '2026-09-28T12:00:00.000Z', sourceInstanceId: 'fictional-install',
+    workspaceId: 'research-table', workspaceName: 'Research table', sourceRevision: null, mode: 'preview',
+    destination: { provider: 'hubspot', objectType: 'contact' }, guards: { maxRecords: 100, allowCreate: false }, fieldMappings: [],
+    records: [{ rowId: 'row-1', externalKey: 'context-only', sourceStatus: 'Review', reviewReason: 'Review title',
+      proposedFields: { fullName: 'Priya Nair', email: 'priya@example.com', jobTitle: 'Director' },
+      evidence: [{ field: 'jobTitle', value: 'Director', sourceUrl: null, quote: null, observedAt: null, reference: 'Manual fictional fixture' }] }],
+  });
+  const saved = await saveWorkspace(workspace.id, { ...emptyWorkspaceState(), contacts, originalContacts: contacts, sourceLabel: 'Pomade · Research table' });
+  const reloaded = await getWorkspace(workspace.id);
+  expect(reloaded?.state).toEqual(saved.state);
+  expect(reloaded?.state.contacts[0].sourceOrigins![0]).toMatchObject({ allowCreate: false, proposedFields: { jobTitle: 'Director' }, evidence: [{ field: 'jobTitle' }] });
+  expect(reloaded?.state.contacts[0].importExclusion?.reason).toContain('Review title');
 });

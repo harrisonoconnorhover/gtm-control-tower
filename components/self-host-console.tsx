@@ -3,6 +3,7 @@
 import { useMemo, useRef, useState } from 'react';
 import {
   csvFieldLabels,
+  destinationHoldFlags,
   isDestinationReadyContact,
   previewContactsCsv,
   type CsvColumnMapping,
@@ -15,6 +16,8 @@ import { tabularRowsToCsv, type GoogleSheetsPreview } from '@/lib/google-sheets'
 import type { LiveContactState } from '@/lib/live-control-tower';
 import { messyLeadDemoCsv } from '@/lib/messy-lead-demo';
 import type { MappingPreset } from '@/lib/workspace';
+import { importPomadeHandoff, MAX_POMADE_HANDOFF_BYTES, type PomadeHandoffImport } from '@/lib/pomade-handoff';
+import { PomadeSourceContext } from '@/components/pomade-source-context';
 
 const mappingOrder: CsvFieldKey[] = [
   'rawEmail', 'fullName', 'firstName', 'lastName', 'company', 'phone', 'jobTitle', 'website', 'state',
@@ -35,6 +38,7 @@ type Props = {
   operatorKey: string;
   onOperatorKeyChange: (value: string) => void;
   onMappedImport: (csv: string, fileName: string, mapping: CsvColumnMapping, source: ConnectorId) => Promise<void>;
+  onPomadeImport: (handoff: PomadeHandoffImport, fileName: string) => Promise<void>;
   onSourceChange: (source: ConnectorId) => void;
   onDestinationChange: (destination: ConnectorId) => void;
   onSavePreset: (name: string, mapping: CsvColumnMapping) => Promise<void>;
@@ -56,6 +60,7 @@ export function SelfHostConsole({
   operatorKey,
   onOperatorKeyChange,
   onMappedImport,
+  onPomadeImport,
   onSourceChange,
   onDestinationChange,
   onSavePreset,
@@ -64,6 +69,9 @@ export function SelfHostConsole({
   onReceipt,
 }: Props) {
   const fileInput = useRef<HTMLInputElement>(null);
+  const pomadeInput = useRef<HTMLInputElement>(null);
+  const [pomadePreview, setPomadePreview] = useState<PomadeHandoffImport | null>(null);
+  const [pomadeFileName, setPomadeFileName] = useState('pomade-handoff.json');
   const [rawCsv, setRawCsv] = useState<string | null>(null);
   const [rawName, setRawName] = useState('imported-contacts.csv');
   const [preview, setPreview] = useState<CsvPreview | null>(null);
@@ -88,6 +96,38 @@ export function SelfHostConsole({
     setRawCsv(null);
     setPreview(null);
     setDraftMapping({});
+    setPomadePreview(null);
+  }
+
+  async function readPomadeHandoff(file: File) {
+    clearPreview();
+    setStatus('working');
+    setMessage(null);
+    try {
+      if (file.size > MAX_POMADE_HANDOFF_BYTES) throw new Error('Use a Pomade handoff smaller than 2 MB.');
+      const imported = await importPomadeHandoff(await file.text());
+      setPomadePreview(imported);
+      setPomadeFileName(file.name);
+      setStatus('ready');
+      setMessage(`${imported.contacts.length} Pomade proposals previewed. Your current workspace has not changed.`);
+    } catch (error) {
+      setStatus('error');
+      setMessage(error instanceof Error ? error.message : 'That Pomade handoff could not be read.');
+    }
+  }
+
+  async function loadPomadeHandoff() {
+    if (!pomadePreview) return;
+    setStatus('working');
+    try {
+      await onPomadeImport(pomadePreview, pomadeFileName);
+      setMessage(`${pomadePreview.contacts.length} proposals loaded in a new saved workspace for review. No CRM writes were made.`);
+      setPomadePreview(null);
+      setStatus('ready');
+    } catch (error) {
+      setStatus('error');
+      setMessage(error instanceof Error ? error.message : 'The Pomade import could not be saved.');
+    }
   }
 
   async function prepareCsv(csv: string, fileName: string) {
@@ -241,6 +281,9 @@ export function SelfHostConsole({
               <input ref={fileInput} type="file" accept=".csv,text/csv" className="sr-only" onChange={(event) => { const file = event.currentTarget.files?.[0]; if (file) void readCsv(file); event.currentTarget.value = ''; }} />
               <button onClick={() => fileInput.current?.click()} disabled={status === 'working'} className="w-full rounded-2xl border border-dashed border-[#83bcff]/30 bg-[#83bcff]/[0.05] px-5 py-6 text-sm font-semibold text-[#83bcff] hover:bg-[#83bcff]/10 disabled:opacity-40">Choose CSV to preview</button>
               <button onClick={() => void prepareCsv(messyLeadDemoCsv(), 'gtm-control-tower-messy-leads-64.csv')} disabled={status === 'working'} className="mt-2 w-full rounded-2xl border border-white/10 bg-white/[0.035] px-5 py-3 text-xs font-semibold text-[#a9bbb2] hover:bg-white/[0.06] disabled:opacity-40">Or load the bundled 64-row practice batch</button>
+              <input ref={pomadeInput} type="file" accept=".json,application/json" aria-label="Pomade handoff file" className="sr-only" onChange={(event) => { const file = event.currentTarget.files?.[0]; if (file) void readPomadeHandoff(file); event.currentTarget.value = ''; }} />
+              <button onClick={() => pomadeInput.current?.click()} disabled={status === 'working'} className="mt-2 w-full rounded-2xl border border-white/10 px-5 py-3 text-xs font-semibold text-[#a9bbb2] hover:bg-white/[0.06] disabled:opacity-40">Import Pomade handoff</button>
+              <p className="mt-2 text-[10px] leading-4 text-[#71877c]">Optional JSON file · no Pomade account or connection needed · existing-record updates only.</p>
             </div>
           )}
 
@@ -278,13 +321,21 @@ export function SelfHostConsole({
         <div className="rounded-[24px] border border-white/10 bg-[#07130f]/65 p-4 sm:p-5">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <p className="font-mono text-[9px] uppercase tracking-wider text-[#cdfc54]">Visual mapping</p>
-              <h3 className="mt-1 text-lg font-semibold">Match any headers to the clean model</h3>
-              <p className="mt-1 text-xs text-[#71877c]">Nothing writes until preview and validation succeed.</p>
+              <p className="font-mono text-[9px] uppercase tracking-wider text-[#cdfc54]">{pomadePreview ? 'Optional source handoff' : 'Visual mapping'}</p>
+              <h3 className="mt-1 text-lg font-semibold">{pomadePreview ? 'Review the imported proposals' : 'Match any headers to the clean model'}</h3>
+              <p className="mt-1 text-xs text-[#71877c]">{pomadePreview ? 'The complete file was validated locally. No CRM or research calls were made.' : 'Nothing writes until preview and validation succeed.'}</p>
             </div>
             {preview && <span className="rounded-full bg-white/[0.05] px-3 py-1 font-mono text-[9px] text-[#a9bbb2]">{preview.headers.length} columns · {preview.sourceRows} rows</span>}
           </div>
-          {preview ? (
+          {pomadePreview ? <div aria-label="Pomade handoff preview" className="mt-4 space-y-3">
+            <p className="text-sm font-semibold text-[#c5dbef]">{pomadePreview.workspaceName ?? pomadeFileName} · {pomadePreview.contacts.length} proposals</p>
+            <p className="text-xs leading-5 text-[#a9bbb2]">{pomadePreview.destination.provider === 'hubspot' ? 'HubSpot Contacts' : 'Salesforce Leads'} · updates only. Source status is context, not approval. Control Tower still checks identity, missing fields, and permitted changes.</p>
+            <div className="flex flex-wrap gap-2 text-[11px] text-[#e6bd68]"><span>{pomadePreview.contacts.filter((contact) => contact.importExclusion).length} source-review rows skipped</span><span>· {pomadePreview.contacts.filter((contact) => destinationHoldFlags(contact).length > 0).length} rows need field review</span></div>
+            {pomadePreview.warnings.map((warning) => <p key={warning} className="text-xs leading-5 text-[#e6bd68]">{warning}</p>)}
+            <div className="max-h-[420px] space-y-3 overflow-y-auto">{pomadePreview.contacts.map((contact) => <div key={contact.contactId} className="rounded-xl border border-white/10 p-3"><p className="break-words text-xs font-semibold text-[#dce9e2]">{contact.fullName || 'Missing contact name'} · {contact.rawEmail || 'Missing email'}</p>{contact.qualityFlags.length > 0 && <p className="mt-1 text-[11px] text-[#e6bd68]">{contact.qualityFlags.join(' · ')}</p>}{contact.importExclusion && <p className="mt-1 text-xs text-[#e6bd68]">Skipped: {contact.importExclusion.reason}</p>}<PomadeSourceContext origins={contact.sourceOrigins} contact={contact} /></div>)}</div>
+            <button onClick={() => void loadPomadeHandoff()} disabled={status === 'working' || persistenceStatus !== 'saved'} className="rounded-full bg-[#cdfc54] px-5 py-2.5 text-xs font-bold text-[#07130f] disabled:opacity-40">Load in new saved workspace</button>
+            <p className="text-[10px] leading-4 text-[#71877c]">Your previous workspace stays saved. Loading does not query a CRM or approve any proposal.{persistenceStatus !== 'saved' ? ' Saved workspace storage must be ready before loading.' : ''}</p>
+          </div> : preview ? (
             <>
               <div className="mt-4 grid max-h-[360px] gap-2 overflow-y-auto pr-1 sm:grid-cols-2">
                 {mappingOrder.map((field) => (

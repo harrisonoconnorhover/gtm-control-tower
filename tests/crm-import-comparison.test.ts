@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { IdentityRecord } from '../lib/identity-resolution';
 import type { LiveContactState } from '../lib/live-control-tower';
+import { importPomadeHandoff } from '../lib/pomade-handoff';
 import { emptyWorkspaceState } from '../lib/workspace';
 
 const store = vi.hoisted(() => ({ getWorkspace: vi.fn(), getLatestDuplicateScan: vi.fn(), getDuplicateScanRecords: vi.fn() }));
@@ -352,5 +353,49 @@ describe.each(['hubspot', 'salesforce'] as const)('%s governed import controls',
     savedContacts[1].importExclusion = { reason: 'Same person, keeping the complete row', excludedAt: new Date().toISOString() };
     const plan = await (await POST(preview)).json() as CrmWritePlan;
     expect(plan).toMatchObject({ creates: 1, held: 0 });
+  });
+});
+
+
+async function pomadeOrigins() {
+  return (await importPomadeHandoff({ source: 'pomade', workspaceId: 'table-1', mode: 'preview',
+    destination: { provider: 'hubspot', objectType: 'contact' }, fieldMappings: [], guards: { maxRecords: 100, allowCreate: false },
+    records: [{ rowId: 'source-row', externalKey: 'context-only', proposedFields: { email: 'new@example.com' } }],
+  })).contacts[0].sourceOrigins;
+}
+
+describe.each(['hubspot', 'salesforce'] as const)('%s Pomade handoff scope', (connectorId) => {
+  it('holds unmatched handoff rows even with a fresh complete snapshot, preserving ordinary CSV creates', async () => {
+    mockEmptyCrm(connectorId);
+    const imported = [contact('one', 'new@example.com')];
+    const normal = await (await POST(request(connectorId, imported))).json() as CrmWritePlan;
+    expect(normal.creates).toBe(1);
+    const preview = request(connectorId, imported);
+    savedContacts[0].sourceOrigins = await pomadeOrigins();
+    const held = await (await POST(preview)).json() as CrmWritePlan;
+    expect(held).toMatchObject({ creates: 0, held: 1, records: [{ reason: expect.stringContaining('existing-record updates only') }] });
+  });
+
+  it('rechecks the saved scope before executing an earlier create plan', async () => {
+    mockEmptyCrm(connectorId);
+    const imported = [contact('one', 'new@example.com')];
+    const plan = await (await POST(request(connectorId, imported))).json() as CrmWritePlan;
+    const execute = request(connectorId, imported, plan);
+    savedContacts[0].sourceOrigins = await pomadeOrigins();
+    expect((await POST(execute)).status).toBe(409);
+  });
+
+  it('keeps normal governed updates available for existing matched people', async () => {
+    const writes = mockExistingCrm(connectorId);
+    const imported = [contact('one', 'existing@example.com')];
+    const origins = await pomadeOrigins();
+    const preview = request(connectorId, imported, undefined, { updatePolicy: replaceTitle });
+    savedContacts[0].sourceOrigins = origins;
+    const plan = await (await POST(preview)).json() as CrmWritePlan;
+    expect(plan).toMatchObject({ creates: 0, updates: 1, held: 0 });
+    const execute = request(connectorId, imported, plan, { updatePolicy: replaceTitle });
+    savedContacts[0].sourceOrigins = origins;
+    expect((await POST(execute)).status).toBe(202);
+    expect(writes).toHaveLength(1);
   });
 });

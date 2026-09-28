@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "source": "pomade",
+  "exportId": "fictional-pomade-example-2026-09-28",
+  "exportedAt": "2026-09-28T16:00:00.000Z",
+  "sourceInstanceId": "fictional-pomade-example-installation",
+  "workspaceId": "fictional-conference-follow-up",
+  "workspaceName": "Fictional conference follow-up",
+  "sourceRevision": null,
+  "mode": "preview",
+  "destination": { "provider": "hubspot", "objectType": "contact" },
+  "fieldMappings": [
+    { "sourceColumnId": "person", "sourceColumnTitle": "Person", "contactField": "fullName", "destinationFields": ["firstname", "lastname"] },
+    { "sourceColumnId": "email", "sourceColumnTitle": "Work email", "contactField": "email", "destinationFields": ["email"] },
+    { "sourceColumnId": "company", "sourceColumnTitle": "Company", "contactField": "company", "destinationFields": ["company"] },
+    { "sourceColumnId": "title", "sourceColumnTitle": "Proposed title", "contactField": "jobTitle", "destinationFields": ["jobtitle"] }
+  ],
+  "records": [
+    {
+      "rowId": "fictional-nina-shah",
+      "externalKey": "fictional-nina-shah",
+      "sourceStatus": "Ready",
+      "reviewReason": null,
+      "proposedFields": { "fullName": "Nina Shah", "email": "nina.shah@example.com", "company": "Alder Example Analytics", "jobTitle": "Director of Revenue Operations" },
+      "evidence": []
+    },
+    {
+      "rowId": "fictional-noah-shah",
+      "externalKey": "fictional-noah-shah",
+      "sourceStatus": "Ready",
+      "reviewReason": null,
+      "proposedFields": { "fullName": "Noah Shah", "email": "noah.shah@example.com", "company": "Alder Example Analytics", "jobTitle": "Sales Operations Manager" },
+      "evidence": []
+    },
+    {
+      "rowId": "fictional-omar-rojas",
+      "externalKey": "fictional-omar-rojas",
+      "sourceStatus": "Ready",
+      "reviewReason": null,
+      "proposedFields": { "fullName": "Omar Rojas", "email": "omar.rojas@example.com", "company": "Mica Example Systems", "jobTitle": "Partnerships Manager" },
+      "evidence": []
+    },
+    {
+      "rowId": "fictional-incomplete-research",
+      "externalKey": "fictional-incomplete-research",
+      "sourceStatus": "Review",
+      "reviewReason": "Fictional incomplete research example: no person or email supplied.",
+      "proposedFields": { "fullName": null, "email": null, "company": "Cedar Example Labs", "jobTitle": null },
+      "evidence": []
+    }
+  ],
+  "guards": { "maxRecords": 100, "allowCreate": false }
+}

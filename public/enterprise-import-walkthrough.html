@@ -33,7 +33,7 @@
 
       <nav class="jump" aria-label="Case study steps">
         <a href="#review">01 Review</a><a href="#decide">02 Decide</a><a href="#write">03 Write</a><a href="#repeat">04 Repeat</a><a href="#rollback">05 Roll back</a><a href="#controls">06 Protect fields</a>
-        <a href="#confirm">Confirm a person</a><a href="#verify">Verify the result</a>
+        <a href="#confirm">Confirm a person</a><a href="#verify">Verify the result</a><a href="#pomade">Optional Pomade handoff</a>
       </nav>
 
       <section id="review" aria-labelledby="review-title">
@@ -204,6 +204,28 @@
         <a class="button" href="./hubspot-run-verification-results.csv" download>HubSpot verification CSV</a>
         <a class="button" href="./salesforce-run-verification-results.csv" download>Salesforce verification CSV</a>
         <p class="small"><a href="https://github.com/harrisonoconnorhover/gtm-control-tower/blob/main/docs/crm-run-verification.md">Inspect the workflow, dated results and limits ↗</a></p>
+      </section>
+
+      <section id="pomade" aria-labelledby="pomade-title">
+        <p class="step-label">Optional file workflow · persistent self-host required</p>
+        <h2 id="pomade-title">Bring research context into the review.</h2>
+        <p class="copy">Pomade can prepare contact proposals and export a JSON handoff. Control Tower previews the whole file, shows missing information and source-review reasons, and loads it into a new saved workspace. Original values and source references stay visible beside the later CRM results.</p>
+        <div class="cards">
+          <article class="card"><span class="tag">Independent CSV workflow</span><h3>Start with your own contact list.</h3><p>Control Tower still works without Pomade. Ordinary CSV imports keep the existing create and update controls, field protection, and duplicate review.</p></article>
+          <article class="card"><span class="tag">Optional Pomade JSON</span><h3>Review existing-record updates.</h3><p>Handoff files permit updates only. An unmatched person is held. Pomade’s Ready status is source context, not proof of accuracy, a confirmed identity, or permission to write.</p></article>
+        </div>
+        <ol class="copy">
+          <li>Select and map up to 100 Pomade rows, then download the preview plan. Larger selections stop; rows are never silently omitted.</li>
+          <li>In the self-hosted workspace, choose <strong>Import Pomade handoff</strong>, inspect every proposal, and choose <strong>Load in new saved workspace</strong>. Preview and loading make no CRM writes.</li>
+          <li>Use a direct CRM connector to compare existing people, resolve review holds, select protected field changes, and explicitly execute the reviewed plan.</li>
+          <li>Inspect the receipt, source context, read-only verification, and eligible rollback in saved runs.</li>
+        </ol>
+        <p class="small">Local and private hosted Pomade can each export a file; neither installation has to share an account or database with Control Tower. Pomade’s separate direct CRM workflow remains independent. Legacy handoffs label missing dates, installation details, status, and evidence as unknown. Evidence for a value that changes remains historical source context.</p>
+        <div class="decision"><strong>Try the shape of the handoff:</strong> the four-row sample below is manually prepared, with fictional people and companies, reserved example.com emails, and no research citations. It does not seed a CRM, assert an existing match, or represent native execution evidence. This static page documents the workflow; actual loading requires a persistent self-hosted workspace.</div>
+        <p class="small"><strong>Separate native qualification · September 28, 2026:</strong> the actual Pomade exporter helper and Control Tower APIs updated and verified one fictional title in each development CRM. Both held an unmatched proposal and an upstream Review row, preserved email and unselected fields, and reloaded the saved source context. A stale replay was rejected; rollback restored all nine retained records’ compared fields. A subsequent read-only check reported the deliberate title difference. Zero creates or deletes.</p>
+        <p class="small">That check used HubSpot STANDARD as a designated development portal and Salesforce Developer Edition (<code>IsSandbox=false</code>), with real CRM responses. It used manually supplied proposals, not live enrichment, and is separate from browser tests with simulated CRM responses. <a href="https://github.com/harrisonoconnorhover/gtm-control-tower/blob/main/docs/evidence/pomade-handoff-native-2026-09-28.json">Inspect the dated result summary ↗</a></p>
+        <a class="button" href="./pomade-handoff-example.json" download>Download fictional Pomade handoff</a>
+        <a class="button" href="https://github.com/harrisonoconnorhover/gtm-control-tower/blob/main/docs/pomade-handoff.md">Open the import guide ↗</a>
       </section>
 
       <aside class="limits" aria-labelledby="limits-title">

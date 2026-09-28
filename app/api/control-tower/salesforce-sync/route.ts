@@ -1,3 +1,4 @@
+import { isPomadeContactId } from '@/lib/pomade-handoff';
 import { NextResponse } from 'next/server';
 import { readSalesforceExisting } from '../../../../lib/crm-existing-salesforce';
 import {
@@ -43,6 +44,10 @@ export async function POST(request: Request) {
       { error: 'The Salesforce batch is invalid or exceeds 100 leads.' },
       { status: 400, headers: { 'Cache-Control': 'no-store' } },
     );
+  }
+
+  if (body.leads.some((record) => isPomadeContactId(record.contactId))) {
+    return NextResponse.json({ error: 'Pomade handoffs require the governed CRM comparison and update workflow; legacy sync is unavailable.' }, { status: 409 });
   }
 
   try {

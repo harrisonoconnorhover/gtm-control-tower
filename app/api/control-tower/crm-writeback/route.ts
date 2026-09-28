@@ -1,3 +1,4 @@
+import { hasPomadeOrigin } from '@/lib/pomade-handoff';
 import { readHubSpotExisting } from '@/lib/crm-existing-hubspot';
 import { readSalesforceExisting } from '@/lib/crm-existing-salesforce';
 import { createHubSpotContacts } from '@/app/api/control-tower/hubspot-sync/route';
@@ -92,6 +93,12 @@ async function createPlan(connectorId: CrmWritePlan['connectorId'], sourceFile: 
   const existing = await readExisting(connectorId, contacts);
   const matchDecisions = await applyConfirmedMatches(connectorId, contacts, workspace, existing, rowHolds);
   const now = new Date();
+  const initialPlan = buildCrmWritePlan(connectorId, sourceFile, contacts, existing, now, undefined, updatePolicy, rowHolds, matchDecisions);
+  for (const record of initialPlan.records) {
+    if (record.operation === 'create' && workspace.state.contacts.some((row) => row.contactId === record.contactId && hasPomadeOrigin(row))) {
+      rowHolds.set(record.contactId, 'This Pomade handoff permits existing-record updates only. No new CRM person will be created.');
+    }
+  }
   const exactPlan = buildCrmWritePlan(connectorId, sourceFile, contacts, existing, now, undefined, updatePolicy, rowHolds, matchDecisions);
   if (!exactPlan.creates) return exactPlan;
   const createIds = new Set(exactPlan.records.filter((record) => record.operation === 'create').map((record) => record.contactId));
