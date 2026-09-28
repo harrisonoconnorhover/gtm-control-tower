@@ -94,9 +94,12 @@ real local workspace/run storage and simulated provider responses for both
 connectors. It verifies failed-save behavior, skip/restore across reload,
 policy persistence and invalidation, pending-operation controls, downloaded
 comparisons and saved results, and a 390px viewport. Route tests separately check
-the actual server decisions and native update payload fields. These new controls
-were not qualified through additional native CRM writes; the earlier dated
-[enterprise import evidence](enterprise-import-native-check.md) retains its scope.
+the actual server decisions and native update payload fields. A separate
+[native operator check](import-operator-controls-native-check.md) verified saved
+row decisions, selected replacement, explicit clearing, actual fill-empty writes,
+results downloads and restoration in both development CRMs. Its dated evidence
+and redacted CSVs are distinct from these simulated-provider tests and the earlier
+[enterprise import evidence](enterprise-import-native-check.md).
 
 Selection and comparison are not an atomic lock against other writers. Snapshot
 coverage, stale or sparse identities, and account permissions remain limitations.
