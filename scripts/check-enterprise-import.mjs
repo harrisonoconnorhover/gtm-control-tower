@@ -19,8 +19,10 @@ const fixture = JSON.parse(readFileSync(repo + '/fixtures/enterprise-import-case
 const provider = process.argv[2];
 assert(['hubspot', 'salesforce'].includes(provider));
 const holdsOnly = process.argv.includes('--holds-only');
-assert(process.argv.slice(3).every(arg => arg === '--holds-only'), 'Only --holds-only is supported after the provider.');
+const controlsOnly = process.argv.includes('--controls-only');
+assert(process.argv.slice(3).length <= 1 && process.argv.slice(3).every(arg => ['--holds-only', '--controls-only'].includes(arg)), 'Choose at most one of --holds-only or --controls-only after the provider.');
 const base = env.CONTROL_TOWER_BROWSER_BASE_URL ?? 'http://127.0.0.1:3000', images = runtime + '/screens';
+if (controlsOnly) assert(['localhost', '127.0.0.1', '[::1]'].includes(new URL(base).hostname), 'Native controls qualification requires a loopback app.');
 mkdirSync(images, { recursive: true });
 const evidence = { provider, startedAt: new Date().toISOString(), caseId: fixture.caseId, stages: {}, pageErrors: [] };
 const browser = await chromium.launch({ executablePath: env.CHROMIUM_PATH ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: true });
@@ -29,6 +31,7 @@ const page = await context.newPage();
 page.setDefaultTimeout(45000);
 page.on('pageerror', e => evidence.pageErrors.push(e.message));
 let stage = 'startup';
+let allowedControlRequest = null;
 const approvedIds = new Set(fixture.approved.map(r => r.contactId));
 const heldInputs = fixture.review.filter(r => ['ENT-EMAIL-CHANGE', 'ENT-COWORKER'].includes(r.contactId));
 await page.route('**/api/control-tower/**', async (route) => {
@@ -37,7 +40,20 @@ await page.route('**/api/control-tower/**', async (route) => {
         throw Error('Unexpected write endpoint');
     if (p.endsWith('/crm-writeback') && b?.action !== 'preview') {
         assert.equal(b.connectorId, provider);
-        if (holdsOnly) {
+        if (controlsOnly) {
+            assert(allowedControlRequest, 'No native control mutation has been qualified for this stage.');
+            assert.equal(b.action, allowedControlRequest.action);
+            if (b.action === 'execute') {
+                assert.deepEqual(b.contacts, allowedControlRequest.contacts);
+                assert.deepEqual(b.plan, allowedControlRequest.plan);
+                assert.deepEqual(b.updatePolicy, allowedControlRequest.plan.updatePolicy);
+            } else {
+                assert.equal(b.action, 'rollback');
+                assert.deepEqual(b.rollback, allowedControlRequest.rollback);
+            }
+            allowedControlRequest = null; // One request only; failures require operator reconciliation.
+        }
+        else if (holdsOnly) {
             assert.equal(b.action, 'execute', 'The holds-only qualification never requests rollback.');
             assert.equal(b.contacts.length, 2);
             assert(b.contacts.every(r => heldInputs.some(f => f.contactId === r.contactId && f.email === r.email)));
@@ -72,6 +88,7 @@ async function native() {
     for (const object of ['Lead', 'Contact']) {
         const lead = object === 'Lead';
         const r = await soql(`SELECT Id,Email,FirstName,LastName,${lead ? 'Company' : 'Account.Name'},Phone,Title,${lead ? 'Website,State,City' : 'MailingState,MailingCity'},Description,OwnerId FROM ${object} WHERE Email IN (${clause})`);
+        if (controlsOnly) assert(r.done === true && Array.isArray(r.records), 'Native fixture read must be complete.');
         out.push(...r.records.map(r => ({ id: r.Id, type: object.toLowerCase(), email: r.Email, firstName: r.FirstName, lastName: r.LastName, company: lead ? r.Company : r.Account?.Name ?? null, phone: r.Phone, jobTitle: r.Title, website: lead ? r.Website : null, state: lead ? r.State : r.MailingState, city: lead ? r.City : r.MailingCity, marker: r.Description, owner: r.OwnerId })));
     }
     return out;
@@ -90,8 +107,7 @@ async function selectFixtureUpdatePolicy() {
             const body = r.request().postDataJSON();
             return body.action === 'save' && body.reason === 'crm_update_policy_changed';
         });
-        await change();
-        const saved = await response;
+        const [saved] = await Promise.all([response, change()]);
         assert.equal(saved.status(), 200, 'The intentional update policy must be saved before comparison.');
         const policy = (await saved.json()).workspace.state.crmUpdatePolicy;
         assert.equal(policy.mode, 'replace');
@@ -99,8 +115,8 @@ async function selectFixtureUpdatePolicy() {
         assert.deepEqual(policy.fields, ['firstName', 'lastName', 'company', 'phone', 'jobTitle', 'website']);
         await page.getByText(/SQLite r\d+ · saved/).waitFor();
     }
-    await savePolicyChange(() => page.getByLabel('Update existing CRM records', { exact: true }).selectOption('replace'), false);
-    await savePolicyChange(() => page.getByLabel('Allow blank values to clear selected fields', { exact: true }).check(), true);
+    await savePolicyChange(() => page.getByRole('combobox', { name: /^Update existing CRM records/ }).selectOption('replace'), false);
+    await savePolicyChange(() => page.getByLabel('Allow blank values to clear selected fields', { exact: true }).click(), true);
 }
 async function preview(refresh = false) {
     const response = page.waitForResponse(r => r.url().endsWith('/crm-writeback') && r.request().postDataJSON()?.action === 'preview');
@@ -242,8 +258,330 @@ async function checkHolds() {
     save(provider + '-holds-result', result);
     console.log(JSON.stringify(result, null, 2));
 }
+async function checkControls() {
+    evidence.mode = 'controls-only';
+    const fields = ['firstName', 'lastName', 'company', 'phone', 'jobTitle', 'website'];
+    const defaultPolicy = { mode: 'fill-empty', fields, clearBlanks: false };
+    const selectedPolicy = { mode: 'replace', fields: ['jobTitle', 'website'], clearBlanks: true };
+    const clean = value => value?.trim() || null;
+    const stable = rows => [...rows].sort((a, b) => `${a.type}:${a.id}`.localeCompare(`${b.type}:${b.id}`));
+    const portable = row => Object.fromEntries(fields.map(field => [field, clean(row[field])]));
+    const manifestPath = env.GTM_FIXTURE_MANIFEST;
+    assert(manifestPath && isAbsolute(manifestPath), 'Controls qualification requires an existing private GTM_FIXTURE_MANIFEST.');
+    const manifestRelative = relative(repo, manifestPath);
+    if (manifestRelative !== '..' && !manifestRelative.startsWith('../')) {
+        execFileSync('git', ['check-ignore', '--quiet', '--', manifestRelative], { cwd: repo });
+    }
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+    assert.equal(manifest.caseId, fixture.caseId);
+    const owned = manifest.providers?.[provider];
+    assert(owned?.accountId && owned.records && !owned.pendingCreate, 'Reconcile the fixture manifest before qualification.');
+    stage = 'controls-account';
+    if (provider === 'hubspot') {
+        assert(env.HUBSPOT_DEVELOPMENT_ACCOUNT_ID, 'Set HUBSPOT_DEVELOPMENT_ACCOUNT_ID to the designated development account.');
+        const account = await api(provider, '/account-info/v3/details');
+        assert.equal(String(account.portalId), env.HUBSPOT_DEVELOPMENT_ACCOUNT_ID);
+        assert.equal(String(account.portalId), owned.accountId);
+    } else {
+        assert.equal(new URL(env.SALESFORCE_INSTANCE_URL).protocol, 'https:');
+        const result = await soql('SELECT Id, OrganizationType, IsSandbox FROM Organization LIMIT 1');
+        assert(result.done === true && result.records?.length === 1);
+        const org = result.records[0];
+        assert(org.IsSandbox === true || org.OrganizationType === 'Developer Edition', 'Use the designated Salesforce sandbox or Developer Edition.');
+        assert.equal(String(org.Id), owned.accountId);
+    }
+    checkpoint('controls-account', { developmentAccountVerified: true, manifestVerified: true });
+    stage = 'controls-before';
+    const before = stable(await native());
+    assert.equal(before.length, 9, 'Requires the eight restored baseline records plus retained Nina; never seed or reset here.');
+    for (const input of fixture.baseline) {
+        const rows = before.filter(row => row.email === input.email);
+        assert.equal(rows.length, 1);
+        const row = rows[0], saved = owned.records[input.key];
+        assert(saved && row.id === saved.nativeId && row.email === saved.email && row.type === saved.objectType, 'Fixture identity must match the private manifest.');
+        assert.equal(row.type, provider === 'salesforce' && input.key !== 'denise' ? 'lead' : 'contact');
+        assert(row.marker?.includes(fixture.caseId) && row.marker.includes(`Key: ${input.key}.`), 'Baseline record must carry the case ownership marker.');
+        const expected = portable(input);
+        if (provider === 'salesforce' && input.key === 'denise') expected.website = null;
+        assert.deepEqual(portable(row), expected, 'Baseline portable fields must be restored before qualification.');
+    }
+    const nina = fixture.approved.find(row => row.contactId === 'ENT-CREATE');
+    const retained = before.filter(row => row.email === nina.email);
+    assert.equal(retained.length, 1);
+    assert.deepEqual(portable(retained[0]), portable(nina));
+    assert.equal(retained[0].type, provider === 'salesforce' ? 'lead' : 'contact');
+    assert(heldInputs.every(input => !before.some(row => row.email === input.email)));
+    checkpoint('controls-before', before);
+
+    const marcus = fixture.review.find(row => row.contactId === 'ENT-UPDATE');
+    const tess = fixture.review.find(row => row.contactId === 'ENT-NULL-CLEAR');
+    const elena = { ...fixture.review.find(row => row.contactId === 'ENT-UNCHANGED'), jobTitle: 'Vice President, Partner Operations' };
+    const inputs = [marcus, tess, elena];
+    const skipReason = 'This attendee has not approved a title replacement; leave the existing CRM record unchanged.';
+    const beforeByEmail = new Map(before.map(row => [row.email, row]));
+    const csv = rows => {
+        const mapping = { contact_id: 'contactId', first_name: 'firstName', last_name: 'lastName', email: 'email', company: 'company', phone: 'phone', state: 'state', region: 'region', segment: 'segment', owner_id: 'ownerId', job_title: 'jobTitle', website: 'website' };
+        const cell = value => `"${String(value ?? '').replaceAll('"', '""')}"`;
+        return Buffer.from([Object.keys(mapping).join(','), ...rows.map(row => Object.values(mapping).map(key => cell(row[key])).join(','))].join('\n') + '\n');
+    };
+    const selection = page.getByRole('region', { name: 'Import row decisions', exact: true });
+    const mode = page.getByRole('combobox', { name: /^Update existing CRM records/ });
+    const comparisonButton = page.getByRole('button', { name: 'Download comparison CSV', exact: true });
+    async function savedChange(action, reason) {
+        const response = page.waitForResponse(r => r.url().endsWith('/workspace') && r.request().method() === 'POST'
+            && r.request().postDataJSON()?.reason === reason);
+        const [result] = await Promise.all([response, action()]);
+        assert.equal(result.status(), 200);
+        const workspace = (await result.json()).workspace;
+        await page.getByText(/SQLite r\d+ · saved/).waitFor();
+        return workspace;
+    }
+    async function savedSelection(skip) {
+        if (skip) await selection.getByLabel(`Reason for skipping ${elena.contactId}`, { exact: true }).fill(skipReason);
+        const workspace = await savedChange(() => selection.getByRole('button', { name: `${skip ? 'Skip' : 'Restore'} row ${elena.contactId}`, exact: true }).click(), skip ? 'import_row_skipped' : 'import_row_restored');
+        const row = workspace.state.contacts.find(row => row.contactId === elena.contactId);
+        if (skip) assert.equal(row.importExclusion.reason, skipReason); else assert.equal(row.importExclusion, undefined);
+        await page.getByRole('button', { name: `Compare ${skip ? 2 : 3} with CRM`, exact: true }).waitFor();
+        assert.equal(await comparisonButton.count(), 0, 'Saved row selection must invalidate comparison.');
+        return workspace;
+    }
+    function validatePlan(plan, rows, expectedChanges, policy) {
+        assert.equal(plan.connectorId, provider);
+        assert.deepEqual(plan.updatePolicy, policy);
+        assert.equal(plan.requested, rows.length);
+        assert.equal(plan.records.length, rows.length);
+        assert.equal(plan.creates, 0);
+        assert.equal(plan.held, 0);
+        assert.equal(plan.updates, rows.filter(row => expectedChanges[row.contactId]?.length).length);
+        assert.equal(plan.unchanged, rows.length - plan.updates);
+        assert.deepEqual(plan.records.map(row => row.contactId).sort(), rows.map(row => row.contactId).sort());
+        for (const input of rows) {
+            const record = plan.records.find(row => row.contactId === input.contactId);
+            const original = beforeByEmail.get(input.email), changes = expectedChanges[input.contactId] ?? [];
+            assert.equal(record.email, input.email);
+            assert.equal(record.nativeId, original.id);
+            assert.equal(record.matches.length, 1);
+            assert.equal(record.matches[0].nativeId, original.id);
+            assert.equal(record.matches[0].objectType, original.type);
+            assert.equal(record.matches[0].email, input.email);
+            assert.equal(record.operation, changes.length ? 'update' : 'unchanged');
+            assert.deepEqual(record.changes, changes);
+        }
+    }
+    async function download(button, name) {
+        const pending = page.waitForEvent('download');
+        await button.click();
+        const file = await pending;
+        assert(file.suggestedFilename().includes('current-batch'));
+        const text = readFileSync(await file.path(), 'utf8');
+        writeFileSync(runtime + '/' + provider + '-' + name + '.csv', text, { mode: 0o600 });
+        return parseControlCsv(text);
+    }
+    async function compareCsv(plan, name) {
+        const rows = await download(comparisonButton, name);
+        assert.equal(rows.length, plan.records.length);
+        for (const record of plan.records) {
+            const row = rows.find(row => row.contact_id === record.contactId);
+            assert(row);
+            assert.equal(row.report_kind, 'comparison');
+            assert.equal(row.report_scope, 'current_batch');
+            assert.equal(row.outcome, '');
+            assert.equal(row.planned_action, record.operation);
+            assert.equal(row.native_id, record.nativeId);
+            assert.deepEqual(JSON.parse(row.field_changes), record.changes);
+            assert.deepEqual(JSON.parse(row.update_policy), plan.updatePolicy);
+        }
+    }
+    async function executeControls(plan) {
+        const bodyResponse = page.waitForRequest(r => r.url().endsWith('/crm-writeback') && r.postDataJSON()?.action === 'execute');
+        // The imported values and native targets have already been checked above.
+        const rows = stage === 'controls-fill' ? [fillInput] : [marcus, tess];
+        const contacts = rows.map(row => ({ contactId: row.contactId, email: row.email, ...portable(row) }));
+        allowedControlRequest = { action: 'execute', contacts, plan };
+        const receipt = await execute();
+        await bodyResponse;
+        assert.equal(receipt.created, 0);
+        assert.equal(receipt.updated, plan.updates);
+        assert.equal(receipt.held, 0);
+        assert.equal(receipt.failed, 0);
+        assert.equal(receipt.records.length, plan.records.length);
+        for (const record of receipt.records) {
+            const proposed = plan.records.find(row => row.contactId === record.contactId);
+            assert.equal(record.nativeId, proposed.nativeId);
+            assert.equal(record.status, 'updated');
+        }
+        const data = await history(receipt);
+        const saved = data.runs.find(run => run.details?.writeback?.runId === receipt.runId);
+        assert.deepEqual(saved.details.writeback, receipt);
+        assert.deepEqual(saved.details.plan, plan);
+        checkpoint(stage + '-history', data);
+        return receipt;
+    }
+    async function resultsCsv(receipt, name) {
+        await page.goto(base + '/runs');
+        await page.reload();
+        const article = page.locator('article').filter({ hasText: receipt.runId });
+        await article.getByRole('button', { name: 'Download results CSV', exact: true }).waitFor();
+        const rows = await download(article.getByRole('button', { name: 'Download results CSV', exact: true }), name);
+        assert.equal(rows.length, receipt.records.length);
+        assert.deepEqual(rows.map(row => row.contact_id).sort(), receipt.records.map(row => row.contactId).sort());
+        for (const record of receipt.records) {
+            const row = rows.find(row => row.contact_id === record.contactId);
+            assert(row);
+            assert.equal(row.report_kind, 'results');
+            assert.equal(row.report_scope, 'current_batch');
+            assert.equal(row.run_id, receipt.runId);
+            assert.equal(row.native_id, record.nativeId);
+            assert.equal(row.outcome, record.status);
+        }
+    }
+    const titleChange = { field: 'jobTitle', before: beforeByEmail.get(marcus.email).jobTitle, after: marcus.jobTitle };
+    const clearChange = { field: 'website', before: beforeByEmail.get(tess.email).website, after: null };
+    const fillInput = { ...tess, website: clearChange.before, jobTitle: 'Vice President, Commercial Operations' };
+    stage = 'controls-selection';
+    await page.goto(base + '/app/lab');
+    await page.getByText('SQLite r0 · saved', { exact: false }).waitFor();
+    await page.getByLabel('Operator access key', { exact: true }).fill(env.CONTROL_TOWER_SYNC_KEY);
+    await load('enterprise-import-controls.csv', csv(inputs));
+    await page.getByLabel('Where should clean records go?').selectOption(provider);
+    await page.getByText(/SQLite r\d+ · saved/).waitFor();
+    const initialPlan = await preview();
+    validatePlan(initialPlan, inputs, {}, defaultPolicy);
+    checkpoint('controls-default-plan', initialPlan);
+    await compareCsv(initialPlan, 'controls-default-comparison');
+    await page.locator('summary').filter({ hasText: /^Choose rows to import ·/ }).click();
+    await savedSelection(true);
+    await page.reload();
+    await page.locator('summary').filter({ hasText: /^Choose rows to import ·/ }).click();
+    await selection.getByText(`Skipped: ${skipReason}`, { exact: true }).waitFor();
+    await savedSelection(false);
+    checkpoint('controls-selection', await savedSelection(true));
+    const skippedPlan = await preview();
+    validatePlan(skippedPlan, [marcus, tess], {}, defaultPolicy);
+    await compareCsv(skippedPlan, 'controls-skipped-comparison');
+    assert.deepEqual(stable(await native()), before, 'Skipping and default-policy comparisons must leave native state unchanged.');
+    await savedChange(() => mode.selectOption('replace'), 'crm_update_policy_changed');
+    for (const field of ['first name', 'last name', 'company', 'phone']) {
+        await savedChange(() => page.getByRole('checkbox', { name: `Update ${field}`, exact: true }).click(), 'crm_update_policy_changed');
+        assert.equal(await page.getByRole('checkbox', { name: `Update ${field}`, exact: true }).isChecked(), false);
+    }
+    await savedChange(() => page.getByLabel('Allow blank values to clear selected fields', { exact: true }).click(), 'crm_update_policy_changed');
+    assert.equal(await comparisonButton.count(), 0, 'Policy changes must invalidate comparison.');
+    stage = 'controls-replace';
+    const replacement = await preview();
+    validatePlan(replacement, [marcus, tess], { [marcus.contactId]: [titleChange], [tess.contactId]: [clearChange] }, selectedPolicy);
+    for (const record of replacement.records) {
+        const original = beforeByEmail.get(record.email);
+        assert.deepEqual(record.before, portable(original));
+        assert.deepEqual(record.after, { ...portable(original), ...Object.fromEntries(record.changes.map(change => [change.field, change.after])) });
+    }
+    checkpoint('controls-replace-plan', replacement);
+    await compareCsv(replacement, 'controls-replace-comparison');
+    for (const detail of await page.getByLabel('CRM comparison records', { exact: true }).locator('details').all()) {
+        if (await detail.getAttribute('open') === null) await detail.locator('summary').click();
+    }
+    await planShot('controls-replace');
+    const written = await executeControls(replacement);
+    assert.equal(written.rollback.records.length, 2);
+    assert.equal(written.rollback.createdRecordsSkipped, 0);
+    for (const record of written.rollback.records) {
+        const planRecord = replacement.records.find(row => row.contactId === record.contactId);
+        assert.equal(record.nativeId, planRecord.nativeId);
+        assert.deepEqual(record.changedFields, planRecord.changes.map(change => change.field));
+        assert.deepEqual(record.before, planRecord.before);
+        assert.deepEqual(record.after, planRecord.after);
+    }
+    const afterReplace = stable(await native());
+    const expectedReplace = before.map(row => row.email === marcus.email ? { ...row, jobTitle: marcus.jobTitle }
+        : row.email === tess.email ? { ...row, website: provider === 'hubspot' ? '' : null } : row);
+    assert.deepEqual(afterReplace.map(row => ({ ...row, website: clean(row.website) })), expectedReplace.map(row => ({ ...row, website: clean(row.website) })), 'Only approved native fields may change; skipped Elena and all other fixture records stay unchanged.');
+    checkpoint('controls-after-replace', afterReplace);
+    await resultsCsv(written, 'controls-replace-results');
+
+    stage = 'controls-fill';
+    await page.goto(base + '/app/lab');
+    await page.getByText(/SQLite r\d+ · saved/).waitFor();
+    await load('enterprise-import-controls-fill.csv', csv([fillInput]));
+    await savedChange(() => mode.selectOption('fill-empty'), 'crm_update_policy_changed');
+    for (const field of ['first name', 'last name', 'company', 'phone']) {
+        await savedChange(() => page.getByRole('checkbox', { name: `Update ${field}`, exact: true }).click(), 'crm_update_policy_changed');
+        assert.equal(await page.getByRole('checkbox', { name: `Update ${field}`, exact: true }).isChecked(), true);
+    }
+    const fill = await preview();
+    validatePlan(fill, [fillInput], { [tess.contactId]: [{ field: 'website', before: null, after: clearChange.before }] }, defaultPolicy);
+    assert.deepEqual(fill.records[0].before, { ...portable(beforeByEmail.get(tess.email)), website: null });
+    assert.deepEqual(fill.records[0].after, portable(beforeByEmail.get(tess.email)));
+    checkpoint('controls-fill-plan', fill);
+    await compareCsv(fill, 'controls-fill-comparison');
+    const filled = await executeControls(fill);
+    const afterFill = stable(await native());
+    assert.deepEqual(afterFill, before.map(row => row.email === marcus.email ? { ...row, jobTitle: marcus.jobTitle } : row));
+    checkpoint('controls-after-fill', afterFill);
+    await resultsCsv(filled, 'controls-fill-results');
+
+    stage = 'controls-rollback';
+    const originalRun = page.locator('article').filter({ hasText: written.runId });
+    await page.getByLabel('Operator access key for rollback', { exact: true }).fill(env.CONTROL_TOWER_SYNC_KEY);
+    allowedControlRequest = { action: 'rollback', rollback: written.rollback };
+    const response = page.waitForResponse(r => r.url().endsWith('/crm-writeback') && r.request().postDataJSON()?.action === 'rollback');
+    const saved = page.waitForResponse(r => r.url().endsWith('/runs') && r.request().method() === 'POST');
+    await originalRun.getByRole('button', { name: 'Roll back 2 updates', exact: true }).click();
+    const result = await response;
+    assert.equal(result.status(), 202);
+    const undone = await result.json();
+    checkpoint('controls-rollback-receipt', undone);
+    assert.equal((await saved).status(), 201);
+    assert.equal(undone.updated, 1);
+    assert.equal(undone.unchanged, 1);
+    assert.equal(undone.created, 0);
+    assert.equal(undone.held, 0);
+    assert.equal(undone.failed, 0);
+    assert.equal(undone.records.find(row => row.contactId === marcus.contactId)?.status, 'rolled_back');
+    assert.equal(undone.records.find(row => row.contactId === tess.contactId)?.status, 'unchanged');
+    checkpoint('controls-rollback-history', await history(undone));
+    await resultsCsv(undone, 'controls-rollback-results');
+    const restored = stable(await native());
+    checkpoint('controls-restored', restored);
+    assert.deepEqual(restored, before, 'All nine retained native records must equal the initial snapshot.');
+    assert.deepEqual(evidence.pageErrors, []);
+    evidence.finishedAt = new Date().toISOString();
+    const resultSummary = { provider, mode: 'controls-only', caseId: fixture.caseId, startedAt: evidence.startedAt, finishedAt: evidence.finishedAt,
+        developmentAccountVerified: true, baselineManifestVerified: true, nativeFixtureRecords: restored.length,
+        savedSkipRestoreVerified: true, skippedRecordUnchanged: true, defaultPolicyUpdates: initialPlan.updates,
+        selectedReplacement: { updated: written.updated, fields: ['jobTitle', 'website'], unselectedFieldsPreserved: true },
+        fillEmpty: { updated: filled.updated, fields: ['website'], populatedFieldsPreserved: true },
+        rollback: { restored: undone.updated, alreadyRestored: undone.unchanged, held: undone.held, failed: undone.failed },
+        comparisonCsvVerified: true, savedResultsCsvVerified: true, created: 0, deleted: 0, finalNativeStateIdentical: true, pageErrors: 0 };
+    evidence.result = resultSummary;
+    persist();
+    save(provider + '-controls-result', resultSummary);
+    console.log(JSON.stringify(resultSummary, null, 2));
+}
+
+function parseControlCsv(text) {
+    const records = [];
+    let row = [], cell = '', quoted = false;
+    for (let index = 0; index < text.length; index++) {
+        const char = text[index];
+        if (char === '"') {
+            if (quoted && text[index + 1] === '"') { cell += '"'; index++; } else quoted = !quoted;
+        } else if (char === ',' && !quoted) { row.push(cell); cell = ''; }
+        else if (char === '\r' && text[index + 1] === '\n' && !quoted) { records.push([...row, cell]); row = []; cell = ''; index++; }
+        else cell += char;
+    }
+    assert(!quoted && !cell && !row.length, 'Expected a complete CRLF CSV download.');
+    const [header, ...data] = records;
+    header[0] = header[0].replace(/^\uFEFF/u, '');
+    return data.map(cells => {
+        assert.equal(cells.length, header.length);
+        return Object.fromEntries(header.map((column, index) => [column, cells[index]]));
+    });
+}
+
 try {
-    if (holdsOnly) {
+    if (controlsOnly) {
+        await checkControls();
+    } else if (holdsOnly) {
         await checkHolds();
     } else {
     stage = 'before';
@@ -383,6 +721,7 @@ catch (error) {
     evidence.error = error.message;
     persist();
     await page.screenshot({ path: runtime + '/' + provider + '-failure.png', fullPage: true });
+    if (controlsOnly) throw new Error(`Native controls qualification stopped at ${stage}; reconcile the private evidence before any retry.`);
     throw error;
 }
 finally {

@@ -151,3 +151,27 @@ updates again; Nina is already present, so there is no new create. With the safe
 default policy, existing populated fields remain unchanged. The first-run browser
 check intentionally refuses that state instead of silently deleting or resetting
 records to manufacture another first run.
+
+## Repeat the operator controls check
+
+Against the restored nine-person case, `--controls-only` verifies saved skip and
+restore, default field protection, selected-field replacement and clearing,
+fill-empty restoration, comparison/results CSVs, and original update rollback.
+It uses three existing-email rows; it creates and deletes no records. It makes
+four field mutations per provider across replacement, filling and rollback,
+then requires the compared fields of all nine records to match their starting
+values. Unexpected state stops the check for reconciliation.
+
+```bash
+GTM_FIXTURE_MANIFEST="$PWD/outputs/enterprise-fixtures-private.json" \
+  GTM_FIXTURE_OUTPUT="$PWD/outputs/operator-controls-run" \
+  HUBSPOT_DEVELOPMENT_ACCOUNT_ID=YOUR_DEVELOPMENT_PORTAL_ID \
+  CONTROL_TOWER_BROWSER_BASE_URL=http://127.0.0.1:3000 \
+  node --env-file=.env.local scripts/check-enterprise-import.mjs hubspot --controls-only
+```
+
+Repeat with `salesforce` and the same designated-account manifest. Use a fresh
+local workspace and private output directory for each attempt. This mode checks
+the manifest's native IDs and baseline ownership markers before writes and
+requires a loopback app. It is mutually exclusive with `--holds-only`.
+See the [dated native results](import-operator-controls-native-check.md).

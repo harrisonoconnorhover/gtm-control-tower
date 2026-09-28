@@ -32,7 +32,7 @@
       </div>
 
       <nav class="jump" aria-label="Case study steps">
-        <a href="#review">01 Review</a><a href="#decide">02 Decide</a><a href="#write">03 Write</a><a href="#repeat">04 Repeat</a><a href="#rollback">05 Roll back</a>
+        <a href="#review">01 Review</a><a href="#decide">02 Decide</a><a href="#write">03 Write</a><a href="#repeat">04 Repeat</a><a href="#rollback">05 Roll back</a><a href="#controls">06 Protect fields</a>
       </nav>
 
       <section id="review" aria-labelledby="review-title">
@@ -79,7 +79,7 @@
         <p class="step-label">03 · Preview and execute</p>
         <h2 id="write-title">Write only the intended changes.</h2>
         <p class="copy">Create Nina. Update Marcus’s title and phone. Clear Tess’s website deliberately. Elena stays unchanged. Denise is unchanged in HubSpot; Salesforce holds her existing Contact, outside the Lead write path.</p>
-        <p class="small">Current controls protect populated CRM values by default. Repeating these intentional changes requires selecting replacement fields and explicitly permitting blank clearing for Tess. Comparison and saved-results CSVs make each batch reviewable in a spreadsheet. These newer controls passed local server and browser tests with simulated providers; the native results below retain their original date and scope. <a href="https://github.com/harrisonoconnorhover/gtm-control-tower/blob/main/docs/import-operator-controls.md">Inspect the controls and repeat the tests.</a></p>
+        <p class="small">Current controls protect populated CRM values by default. Repeating these intentional changes requires selecting replacement fields and explicitly permitting blank clearing for Tess. Comparison and saved-results CSVs make each batch reviewable in a spreadsheet. A separate <a href="#controls">native check of these controls</a> is shown below; this original import retains its date and scope.</p>
         <div class="table-wrap" role="region" aria-label="Initial import outcomes by CRM" tabindex="0">
           <table>
             <caption>Initial approved import · five rows per CRM</caption>
@@ -126,6 +126,33 @@
           <a href="./enterprise-import-evidence/salesforce-rollback.png" aria-label="Open full-size Salesforce rollback result"><img src="./enterprise-import-evidence/salesforce-rollback.png" alt="Salesforce rollback result restoring the two updated fictional records while retaining the newly created Lead." width="1440" height="900" loading="lazy"></a>
           <figcaption>Salesforce restores two updates. The newly created Lead remains.</figcaption>
         </figure>
+      </section>
+
+      <section id="controls" aria-labelledby="controls-title">
+        <p class="step-label">06 · Native follow-up · September 28, 2026 UTC</p>
+        <h2 id="controls-title">Keep good CRM data. Change only what you select.</h2>
+        <p class="copy">A separate three-row check reused the retained development records. Default fill-empty settings proposed no changes. Elena was skipped with a saved reason; reloading, restoring and skipping her again kept the decision inspectable.</p>
+        <p class="copy">Selecting only job title and website changed Marcus’s title and cleared Tess’s website. Marcus’s imported phone change stayed out. A second fill-empty import restored Tess’s website while preserving her existing title, even though the file proposed a different one.</p>
+        <div class="table-wrap" role="region" aria-label="Native operator controls outcomes by CRM" tabindex="0">
+          <table>
+            <caption>Observed in both development CRMs · no mocked responses</caption>
+            <thead><tr><th scope="col">Check</th><th scope="col">HubSpot</th><th scope="col">Salesforce</th></tr></thead>
+            <tbody>
+              <tr><th scope="row">Selected replacement / fill-empty</th><td>2 / 1 updated</td><td>2 / 1 updated</td></tr>
+              <tr><th scope="row">Original rollback</th><td>1 restored, 1 already restored</td><td>1 restored, 1 already restored</td></tr>
+              <tr><th scope="row">Final compared fields</th><td class="good">All 9 records match starting values</td><td class="good">All 9 records match starting values</td></tr>
+              <tr><th scope="row">Creates / deletes / failed rows</th><td>0 / 0 / 0</td><td>0 / 0 / 0</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <figure>
+          <a href="./enterprise-import-evidence/salesforce-operator-controls.png" aria-label="Open full-size native selected-field preview"><img src="./enterprise-import-evidence/salesforce-operator-controls.png" alt="Native Salesforce preview containing only Marcus’s title replacement and Tess’s explicitly permitted website clear." width="1294" height="396" loading="lazy"></a>
+          <figcaption>Only two selected fields may change. Native IDs masked; scroll area expanded for readability. <a href="./enterprise-import-evidence/hubspot-operator-controls.png">See the HubSpot preview.</a></figcaption>
+        </figure>
+        <p class="small">Results CSVs downloaded after reloading run history matched the saved receipts. The samples below retain observed outcomes and field changes; native, plan and run identifiers are redacted. Independent CRM reads checked portable fields, state, city, markers and owners. This is an existing-record workflow check, not a duplicate-detection benchmark.</p>
+        <a class="button" href="./import-controls-hubspot-results.csv" download>HubSpot results CSV</a>
+        <a class="button" href="./import-controls-salesforce-results.csv" download>Salesforce results CSV</a>
+        <p class="small"><a href="https://github.com/harrisonoconnorhover/gtm-control-tower/blob/main/docs/import-operator-controls-native-check.md">Inspect the dated evidence and repeat instructions ↗</a></p>
       </section>
 
       <aside class="limits" aria-labelledby="limits-title">

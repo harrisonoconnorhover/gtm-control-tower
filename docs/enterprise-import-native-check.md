@@ -16,6 +16,10 @@ development accounts, not formally provisioned sandbox accounts or production
 customer work. Account identifiers and native record IDs are excluded here and
 masked in the published screenshots.
 
+The later [operator-controls check](import-operator-controls-native-check.md)
+qualifies saved skip/restore, field protection and CSV reports on the retained
+records. Its three-row update-only case is separate from this original import.
+
 ## Case and operator decision
 
 The [fixture definition and CSVs](enterprise-import-fixtures.md) model eight

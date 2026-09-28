@@ -487,3 +487,13 @@ A comparison is not a receipt; blank outcomes and no_receipt must not imply a
 successful write. Keep import IDs, native IDs, candidate counts, evidence and
 update policy inspectable. Neutralize formula-like report cells without changing
 stored source data. Reuse saved runs rather than adding a reporting datastore.
+
+## September 27, 2026 — Qualify operator controls on retained development records
+
+Reuse the existing fictional case instead of deleting or resetting records to
+recreate a first import. Add a separate native update-only check: saved skips,
+selected replacement and clearing, a real fill-empty write, receipt CSVs, and
+restoration through the existing rollback path. Verify account and fixture
+ownership before writes and compare the nine records' observed fields afterward.
+Publish dated results with identifiers redacted; preserve earlier evidence and
+keep native coverage separate from simulated failure and mobile checks.

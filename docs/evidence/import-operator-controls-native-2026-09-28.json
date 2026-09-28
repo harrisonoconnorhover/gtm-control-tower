@@ -1,0 +1,109 @@
+{
+  "caseId": "enterprise-import-2026-09-27",
+  "qualification": "Native operator controls through the browser; no mocked CRM responses",
+  "applicationCommit": "a666b6c70efcece4b3b8876c9f2011704cf85465",
+  "providers": {
+    "hubspot": {
+      "provider": "hubspot",
+      "mode": "controls-only",
+      "caseId": "enterprise-import-2026-09-27",
+      "startedAt": "2026-09-28T00:12:05.002Z",
+      "finishedAt": "2026-09-28T00:12:14.349Z",
+      "developmentAccountVerified": true,
+      "baselineManifestVerified": true,
+      "nativeFixtureRecords": 9,
+      "savedSkipRestoreVerified": true,
+      "skippedRecordUnchanged": true,
+      "defaultPolicyUpdates": 0,
+      "selectedReplacement": {
+        "updated": 2,
+        "fields": [
+          "jobTitle",
+          "website"
+        ],
+        "unselectedFieldsPreserved": true
+      },
+      "fillEmpty": {
+        "updated": 1,
+        "fields": [
+          "website"
+        ],
+        "populatedFieldsPreserved": true
+      },
+      "rollback": {
+        "restored": 1,
+        "alreadyRestored": 1,
+        "held": 0,
+        "failed": 0
+      },
+      "comparisonCsvVerified": true,
+      "savedResultsCsvVerified": true,
+      "created": 0,
+      "deleted": 0,
+      "finalNativeStateIdentical": true,
+      "pageErrors": 0
+    },
+    "salesforce": {
+      "provider": "salesforce",
+      "mode": "controls-only",
+      "caseId": "enterprise-import-2026-09-27",
+      "startedAt": "2026-09-28T00:12:18.813Z",
+      "finishedAt": "2026-09-28T00:12:33.745Z",
+      "developmentAccountVerified": true,
+      "baselineManifestVerified": true,
+      "nativeFixtureRecords": 9,
+      "savedSkipRestoreVerified": true,
+      "skippedRecordUnchanged": true,
+      "defaultPolicyUpdates": 0,
+      "selectedReplacement": {
+        "updated": 2,
+        "fields": [
+          "jobTitle",
+          "website"
+        ],
+        "unselectedFieldsPreserved": true
+      },
+      "fillEmpty": {
+        "updated": 1,
+        "fields": [
+          "website"
+        ],
+        "populatedFieldsPreserved": true
+      },
+      "rollback": {
+        "restored": 1,
+        "alreadyRestored": 1,
+        "held": 0,
+        "failed": 0
+      },
+      "comparisonCsvVerified": true,
+      "savedResultsCsvVerified": true,
+      "created": 0,
+      "deleted": 0,
+      "finalNativeStateIdentical": true,
+      "pageErrors": 0
+    }
+  },
+  "comparedNativeFields": [
+    "id",
+    "type",
+    "email",
+    "firstName",
+    "lastName",
+    "company",
+    "phone",
+    "jobTitle",
+    "website",
+    "state",
+    "city",
+    "marker",
+    "owner"
+  ],
+  "boundaries": [
+    "HubSpot was a designated STANDARD development portal; Salesforce was Developer Edition with IsSandbox=false.",
+    "Three existing-record inputs; no new create or duplicate-recall qualification.",
+    "Final equality applies to the compared fields, not audit timestamps or all CRM properties.",
+    "Screenshots mask native identifiers. Sample CSVs replace native, plan and run identifiers with redacted labels.",
+    "Earlier simulated-provider tests retain coverage of failed saves, stale previews and mobile layout."
+  ]
+}
