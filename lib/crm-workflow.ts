@@ -80,6 +80,7 @@ export type NativeCrmRecord = {
   objectType: 'lead' | 'contact';
   isConverted?: boolean;
   email: string;
+  additionalEmails?: string[];
   fields: Record<PortableCrmFieldName, string | null>;
 };
 
@@ -185,7 +186,21 @@ export function combineCrmWritebackProgress(
 ): CrmWritebackProgress {
   const byContact = new Map(previous?.records.map((record) => [record.contactId, record]));
   for (const record of receipt.records) byContact.set(record.contactId, record);
-  const records = [...byContact.values()];
+  return summarizeCrmWritebackProgress([...byContact.values()]);
+}
+
+// A new saved match choice needs a fresh comparison, while other completed
+// rows stay completed. The original execution receipts remain in run history.
+export function reopenCrmWritebackContact(
+  previous: CrmWritebackProgress | null,
+  contactId: string,
+): CrmWritebackProgress | null {
+  if (!previous?.records.some((record) => record.contactId === contactId)) return previous;
+  const records = previous.records.filter((record) => record.contactId !== contactId);
+  return records.length ? summarizeCrmWritebackProgress(records) : null;
+}
+
+function summarizeCrmWritebackProgress(records: CrmWritebackReceipt['records']): CrmWritebackProgress {
   return {
     records,
     requested: records.length,

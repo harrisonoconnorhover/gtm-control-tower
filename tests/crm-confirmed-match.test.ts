@@ -47,6 +47,7 @@ function request(connectorId: Provider, selected = rows, plan?: CrmWritePlan): R
 function crm(connectorId: Provider) {
   const state = { current: native(connectorId) as NativeCrmRecord | null, exactConflict: null as NativeCrmRecord | null, writes: [] as Record<string, unknown>[], queriedEmails: [] as string[] };
   const hubspot = (record: NativeCrmRecord) => ({ id: record.nativeId, properties: { email: record.email,
+    hs_additional_emails: record.additionalEmails?.join(';'),
     firstname: record.fields.firstName, lastname: record.fields.lastName, company: record.fields.company,
     phone: record.fields.phone, jobtitle: record.fields.jobTitle, website: record.fields.website } });
   const salesforce = (record: NativeCrmRecord) => ({ Id: record.nativeId, Email: record.email, IsConverted: record.isConverted,
@@ -58,7 +59,8 @@ function crm(connectorId: Provider) {
     if (url.pathname.endsWith('/batch/read')) {
       const emails = body.inputs.map((item: { id: string }) => item.id);
       state.queriedEmails.push(...emails);
-      return Response.json({ status: 'COMPLETE', results: [state.current, state.exactConflict].filter((record) => record && emails.includes(record.email)).map((record) => hubspot(record!)) });
+      return Response.json({ status: 'COMPLETE', results: [state.current, state.exactConflict].filter((record) => record
+        && [record.email, ...record.additionalEmails ?? []].some((email) => emails.includes(email))).map((record) => hubspot(record!)) });
     }
     if (url.pathname.endsWith('/query')) {
       const query = url.searchParams.get('q')!;
@@ -190,4 +192,57 @@ it('holds a Salesforce Lead converted after confirmation', async () => {
   const plan = await (await POST(request('salesforce'))).json() as CrmWritePlan;
   expect(plan).toMatchObject({ creates: 0, updates: 0, held: 1 });
   expect(state.writes).toEqual([]);
+});
+
+describe('HubSpot secondary-email identities across import batches', () => {
+  const aliases = ['priya.events@example.com', 'priya.old@example.com'];
+
+  it.each(['confirmed person', 'primary email', 'another secondary email'] as const)(
+    'holds competing later-batch aliases against a row using %s, then releases an explicitly skipped peer', async (identity) => {
+      const state = crm('hubspot');
+      state.current!.additionalEmails = aliases;
+      if (identity !== 'confirmed person') rows = [source('first-batch', identity === 'primary email' ? targetEmail : aliases[1])];
+      else await confirm('hubspot', rows[0], structuredClone(state.current!));
+      const before = await (await POST(request('hubspot'))).json() as CrmWritePlan;
+      expect(before).toMatchObject({ updates: 1, held: 0 });
+      const peer = source('later-batch', aliases[0]);
+      peer.jobTitle = 'VP';
+      rows.push(peer);
+
+      expect((await POST(request('hubspot', [rows[0]], before))).status).toBe(409);
+      for (const row of rows) {
+        const held = await (await POST(request('hubspot', [row]))).json() as CrmWritePlan;
+        expect(held).toMatchObject({ creates: 0, updates: 0, held: 1, records: [{ reason: expect.stringContaining('later batches') }] });
+      }
+      expect(state.writes).toEqual([]);
+      peer.importExclusion = { reason: 'Keep the reviewed first row', excludedAt: new Date().toISOString() };
+      const released = await (await POST(request('hubspot', [rows[0]]))).json() as CrmWritePlan;
+      expect(released).toMatchObject({ creates: 0, updates: 1, held: 0 });
+    },
+  );
+
+  it('invalidates a confirmed preview when the current CRM alias set changes', async () => {
+    const state = crm('hubspot');
+    state.current!.additionalEmails = aliases;
+    await confirm('hubspot', rows[0], structuredClone(state.current!));
+    const before = await (await POST(request('hubspot'))).json() as CrmWritePlan;
+    expect(before.updates).toBe(1);
+    state.current!.additionalEmails = [aliases[0]];
+    expect((await POST(request('hubspot', rows, before))).status).toBe(409);
+    const held = await (await POST(request('hubspot'))).json() as CrmWritePlan;
+    expect(held).toMatchObject({ creates: 0, updates: 0, held: 1, records: [{ reason: expect.stringContaining('confirmed CRM record changed') }] });
+    expect(state.writes).toEqual([]);
+  });
+
+  it.each(['skipped', 'merged'] as const)('ignores a %s alias peer even when both rows are requested together', async (status) => {
+    const state = crm('hubspot');
+    state.current!.additionalEmails = aliases;
+    rows = [source('included', targetEmail), source('excluded', aliases[0])];
+    if (status === 'skipped') rows[1].importExclusion = { reason: 'Keep the other row', excludedAt: new Date().toISOString() };
+    else rows[1].recordStatus = 'merged';
+    const plan = await (await POST(request('hubspot'))).json() as CrmWritePlan;
+    expect(plan).toMatchObject({ creates: 0, updates: 1, held: 1 });
+    expect(plan.records.find((record) => record.contactId === 'included')?.operation).toBe('update');
+    expect(state.writes).toEqual([]);
+  });
 });

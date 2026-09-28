@@ -37,7 +37,7 @@ require explicit policy choices.
 | Confirmed source/target changed, or multiple included rows choose the same target | Hold | Hold |
 | Converted Lead | Not applicable | Hold |
 | Multiple matching records | Hold | Hold |
-| Multiple imported rows target one native record | Hold affected rows | Hold affected rows |
+| Multiple imported rows target one native record, including known HubSpot primary/additional emails in later batches | Hold affected rows | Hold affected rows |
 | No permitted field differences under the selected update policy | Unchanged; no write | Unchanged; no write |
 | Row is skipped in the saved import | Excluded from the batch; stale requests held | Excluded from the batch; stale requests held |
 | Failed, malformed, or incomplete lookup | Stop comparison | Stop comparison |
@@ -47,7 +47,9 @@ each row's latest result: created, updated, unchanged, held or failed. Completed
 rows stay out of subsequent batches; held and failed rows remain pending. A new
 import, local correction, repair, undo or reset clears this progress so the changed
 input is compared again. Reload also requires a fresh comparison; saved run
-receipts remain available under `/runs`.
+receipts remain available under `/runs`. Changing a saved match returns only the
+affected row to that connector’s pending comparison; other completed rows remain
+completed. The pre-write backup labels imported and actual CRM email separately.
 
 Local eligibility checks still apply. The comparison shows matched native IDs,
 field differences, and reasons for holds. It does not use fuzzy names or company

@@ -15,10 +15,11 @@ afterEach(() => vi.unstubAllGlobals());
 
 describe('HubSpot selected-record reads', () => {
   it('reads the requested ID with its primary email and portable fields, without an imported-email constraint', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(Response.json(native(' Primary@Example.com ')));
+    const fetchMock = vi.fn().mockResolvedValue(Response.json(native(' Primary@Example.com ', 'secondary@example.com; OTHER@example.com ;SECONDARY@example.com;primary@example.com')));
     vi.stubGlobal('fetch', fetchMock);
     expect(await readHubSpotRecordById('123', 'test-token')).toEqual({
       nativeId: '123', objectType: 'contact', email: 'primary@example.com',
+      additionalEmails: ['other@example.com', 'secondary@example.com'],
       fields: { firstName: 'Alex', lastName: 'Morgan', company: 'Example', phone: null, jobTitle: null, website: null },
     });
     const url = new URL(fetchMock.mock.calls[0][0]);
@@ -70,7 +71,8 @@ describe('HubSpot exact-email lookup', () => {
       idProperty: 'email', properties: expect.arrayContaining(['email', 'hs_additional_emails', 'company']),
     });
     for (const key of ['primary@example.com', 'secondary@example.com', 'other@example.com']) {
-      expect(found.get(key)).toEqual([expect.objectContaining({ nativeId: '123', objectType: 'contact', email: 'primary@example.com' })]);
+      expect(found.get(key)).toEqual([expect.objectContaining({ nativeId: '123', objectType: 'contact', email: 'primary@example.com',
+        additionalEmails: ['other@example.com', 'secondary@example.com'] })]);
     }
   });
 

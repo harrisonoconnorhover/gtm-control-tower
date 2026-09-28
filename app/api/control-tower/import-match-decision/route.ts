@@ -69,6 +69,7 @@ export async function POST(request: Request) {
       if (!target || target.objectType !== payload.objectType || target.isConverted) return failure('This CRM record is missing or no longer eligible. Refresh the snapshot.', 409);
       const snapshotTarget: NativeCrmRecord = {
         nativeId: candidate.nativeId, objectType: candidate.objectType, email: candidate.email,
+        additionalEmails: candidate.additionalEmails,
         isConverted: false,
         fields: Object.fromEntries(portableCrmFieldNames.map((field) => [field, candidate[field] || null])) as NativeCrmRecord['fields'],
       };

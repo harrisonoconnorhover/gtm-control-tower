@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildCrmWritePlan, combineCrmWritebackProgress, defaultCrmUpdatePolicy, isCrmRollbackPlan, isCrmUpdatePolicy, isSuccessfulCrmWritebackRecord, normalizeCrmUpdatePolicy, planStillMatches, portableCrmFieldNames, rollbackFromPlan, rollbackRecordAlreadyRestored, rollbackRecordStillMatches, type CrmMatchDecision, type CrmUpdatePolicy, type CrmWritebackReceipt, type NativeCrmRecord, type PortableCrmContact } from '../lib/crm-workflow';
+import { buildCrmWritePlan, combineCrmWritebackProgress, reopenCrmWritebackContact, defaultCrmUpdatePolicy, isCrmRollbackPlan, isCrmUpdatePolicy, isSuccessfulCrmWritebackRecord, normalizeCrmUpdatePolicy, planStillMatches, portableCrmFieldNames, rollbackFromPlan, rollbackRecordAlreadyRestored, rollbackRecordStillMatches, type CrmMatchDecision, type CrmUpdatePolicy, type CrmWritebackReceipt, type NativeCrmRecord, type PortableCrmContact } from '../lib/crm-workflow';
 import { sourceContactsToCsv } from '../lib/crm-source';
 import { importContactsCsv } from '../lib/csv-control-tower';
 
@@ -240,5 +240,14 @@ describe('direct CRM writeback progress', () => {
     expect(resolved).toMatchObject({ requested: 105, created: 5, updated: 1, unchanged: 99, held: 0, failed: 0 });
     expect(pending(resolved)).toEqual([]);
     expect(isSuccessfulCrmWritebackRecord(row(105, 'rolled_back'))).toBe(false);
+
+    const reopened = reopenCrmWritebackContact(resolved, '2')!;
+    expect(reopened).toMatchObject({ requested: 104, created: 5, updated: 0, unchanged: 99, held: 0, failed: 0 });
+    expect(pending(reopened)).toEqual(['2']);
+    expect(resolved.records.find((record) => record.contactId === '2')?.status).toBe('updated');
+    expect(first.records[1].status).toBe('updated');
+    expect(reopenCrmWritebackContact(reopened, 'missing')).toBe(reopened);
+    expect(reopenCrmWritebackContact(combineCrmWritebackProgress(null, receipt([row(2, 'unchanged')], 'single')), '2')).toBeNull();
+    expect(reopenCrmWritebackContact(null, '2')).toBeNull();
   });
 });
