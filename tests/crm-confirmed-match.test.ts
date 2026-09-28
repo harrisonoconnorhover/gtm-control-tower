@@ -98,10 +98,11 @@ beforeEach(() => {
   store.getLatestDuplicateScan.mockResolvedValue(null);
   store.getDuplicateScanRecords.mockResolvedValue([]);
 });
-afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); vi.resetAllMocks(); });
+afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllEnvs(); vi.resetAllMocks(); });
 
 describe.each(['hubspot', 'salesforce'] as const)('%s confirmed existing person', (connectorId) => {
   it('updates the selected ID, keeps both emails distinct, and rolls back only the changed field', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
     const state = crm(connectorId);
     await confirm(connectorId, rows[0]);
     const preview = await POST(request(connectorId));
@@ -110,11 +111,12 @@ describe.each(['hubspot', 'salesforce'] as const)('%s confirmed existing person'
     expect(plan).toMatchObject({ creates: 0, updates: 1, held: 0, records: [{ email: 'p.nair@example.com', nativeId: native(connectorId).nativeId,
       matchDecision: { email: targetEmail, reason: 'Reviewed name, employer and matching phone.' }, changes: [{ field: 'jobTitle', before: 'Manager', after: 'Director' }] }] });
     expect(state.writes).toEqual([]);
+    vi.setSystemTime(new Date(Date.now() + 1_000));
     const execution = await POST(request(connectorId, rows, plan));
     expect(execution.status).toBe(202);
     const receipt = await execution.json() as CrmWritebackReceipt;
-    expect(receipt).toMatchObject({ created: 0, updated: 1, failed: 0, records: [{ email: 'p.nair@example.com', nativeId: native(connectorId).nativeId }],
-      rollback: { records: [{ email: 'p.nair@example.com', targetEmail, changedFields: ['jobTitle'] }] } });
+    expect(receipt).toMatchObject({ planId: plan.planId, created: 0, updated: 1, failed: 0, records: [{ email: 'p.nair@example.com', nativeId: native(connectorId).nativeId }],
+      rollback: { sourcePlanId: plan.planId, records: [{ email: 'p.nair@example.com', targetEmail, changedFields: ['jobTitle'] }] } });
     expect(state.current?.email).toBe(targetEmail);
     expect(state.writes[0]).toMatchObject(connectorId === 'hubspot'
       ? { inputs: [{ id: '123', properties: { jobtitle: 'Director' } }] }

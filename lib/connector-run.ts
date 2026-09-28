@@ -1,4 +1,5 @@
 import type { ConnectorId, ConnectorReceipt, ConnectorStatus } from './connector-contract';
+import type { CrmRunVerification } from './crm-run-verification';
 import type { CrmRollbackPlan, CrmWritePlan, CrmWritebackReceipt } from './crm-workflow';
 
 export type ConnectorRunDetails = {
@@ -9,6 +10,7 @@ export type ConnectorRunDetails = {
   repairCounts?: { merged: number; rerouted: number; replayed: number };
   plan?: CrmWritePlan;
   writeback?: CrmWritebackReceipt;
+  verification?: CrmRunVerification;
   scan?: {
     scanId: string;
     sourceComplete: boolean;

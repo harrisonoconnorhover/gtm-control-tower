@@ -141,14 +141,57 @@ try {
   assert.equal(written.updated, 1); assert.equal(written.held, 1); assert.equal(written.created + written.failed, 0);
   const after = await readFixture(); save('after', after);
   assert.deepEqual(after, before.map(row => row.id === selected.nativeId ? { ...row, jobTitle: priya.jobTitle } : row));
+  const savedRun = { receipt: {
+    id: written.runId, connectorId: provider, phase: 'receipt', status: written.status,
+    summary: 'Fictional confirmed-match update; unresolved coworker held.',
+    recordsRead: written.requested, recordsWritten: written.created + written.updated,
+    recordsFailed: written.failed, createdAt: written.completedAt,
+    undoAvailable: Boolean(written.rollback?.records.length), nativeReceiptId: written.runId,
+  }, details: { sourceLabel: plan.sourceFile, plan, writeback: written }, undo: written.rollback };
+  await app('runs', { workspaceId: workspace.id, run: savedRun }, 201);
+  const verifyRequest = { workspaceId: workspace.id, runId: written.runId };
+  const { verification } = await app('runs/verify', verifyRequest);
+  save('verification', verification);
+  assert.equal(verification.verified, 1);
+  assert.equal(verification.different + verification.unavailable, 0);
+  assert.equal(verification.records.length, 1, 'Held Jordan must not be reported verified.');
+  assert.equal(verification.records[0].expected.email, owned.records.priya.email);
+  assert.equal(verification.records[0].actual.email, owned.records.priya.email);
+  const { verification: rechecked } = await app('runs/verify', verifyRequest);
+  assert.equal(rechecked.verified, 1);
+  assert.deepEqual(await readFixture(), after, 'Read-only recheck must leave all retained values unchanged.');
+  const { runs } = await app('runs?workspaceId=' + encodeURIComponent(workspace.id));
+  const saved = runs.find(run => run.id === written.runId);
+  assert.deepEqual(saved.details.verification, rechecked);
+  assert.deepEqual(saved.details.writeback, written);
+  assert.deepEqual(saved.receipt, savedRun.receipt);
+  save('saved-run', saved);
   // Reusing the earlier preview after the target changed must not write again.
   await app('crm-writeback', { ...request, action: 'execute', plan }, 409);
   const undone = await app('crm-writeback', { action: 'rollback', connectorId: provider, rollback: written.rollback }, 202);
   save('rollback', undone);
   assert.equal(undone.updated, 1); assert.equal(undone.failed + undone.held + undone.created, 0);
+  await app('runs', { workspaceId: workspace.id, run: { receipt: {
+    id: undone.runId, connectorId: provider, phase: 'undo', status: undone.status,
+    summary: 'Restored the fictional title update; no created records or deletions.',
+    recordsWritten: undone.updated, recordsFailed: undone.failed, createdAt: undone.completedAt,
+    undoAvailable: false, nativeReceiptId: undone.runId,
+  }, details: { writeback: undone } } }, 201);
   const restored = await readFixture(); save('restored', restored); assert.deepEqual(restored, before);
+  // Deliberately restored values now differ from this original update's expected result.
+  // A verification difference is an observation, not a failed write or a retry request.
+  const { verification: afterRollback } = await app('runs/verify', verifyRequest);
+  save('verification-after-rollback', afterRollback);
+  assert.equal(afterRollback.different, 1);
+  assert.equal(afterRollback.verified + afterRollback.unavailable, 0);
+  assert.deepEqual(afterRollback.records[0].differences, [{ field: 'jobTitle', expected: priya.jobTitle, actual: selected.before.jobTitle }]);
+  const { runs: finalRuns } = await app('runs?workspaceId=' + encodeURIComponent(workspace.id));
+  assert.deepEqual(finalRuns.find(run => run.id === written.runId).details.writeback, written);
+  assert.deepEqual(await readFixture(), before, 'Checking the restored value must not repeat the update.');
   Object.assign(evidence, { finishedAt: new Date().toISOString(), retainedRecords: before.length, confirmedUpdates: 1, unresolvedHeld: 1,
-    creates: 0, deletes: 0, primaryEmailPreserved: true, decisionReloaded: true, staleExecutionBlocked: true, rollbackRestored: 1, comparedFieldsRestored: true });
+    creates: 0, deletes: 0, primaryEmailPreserved: true, decisionReloaded: true, staleExecutionBlocked: true, rollbackRestored: 1, comparedFieldsRestored: true,
+    verifiedUpdatedRecords: verification.verified, verificationReloaded: true, readOnlyRecheck: true, differenceAfterRollback: afterRollback.different,
+    originalWriteReceiptUnchanged: true });
   save('result', evidence);
   console.log(JSON.stringify(evidence));
 } catch (error) {

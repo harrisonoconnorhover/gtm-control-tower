@@ -1,6 +1,7 @@
 import { ensureWorkspaceSchema, getDatabase, type DatabaseAdapter } from '@/db';
 import type { ConnectorReceipt } from './connector-contract';
 import type { ConnectorRun, ConnectorRunInput } from './connector-run';
+import type { CrmRunVerification } from './crm-run-verification';
 import {
   emptyWorkspaceState,
   validateWorkspaceState,
@@ -192,31 +193,73 @@ export async function saveConnectorRun(workspaceId: string, input: ConnectorRunI
     .run();
 }
 
+type ConnectorRunRow = {
+  id: string; workspace_id: string; connector_id: string; phase: string; status: string;
+  receipt_json: string; undo_json: string | null; created_at: string;
+};
+
+const connectorRunColumns = 'id, workspace_id, connector_id, phase, status, receipt_json, undo_json, created_at';
+
+export async function getConnectorRun(workspaceId: string, runId: string): Promise<ConnectorRun | null> {
+  await ensureWorkspaceSchema();
+  const db = await getDatabase();
+  const row = await db.prepare(`SELECT ${connectorRunColumns} FROM connector_runs WHERE workspace_id = ? AND id = ?`)
+    .bind(workspaceId, runId).first<ConnectorRunRow>();
+  return row ? parseConnectorRun(row) : null;
+}
+
+/** Save a readback without replacing its write receipt, status, rollback, or other details. */
+export async function saveCrmRunVerification(
+  workspaceId: string,
+  baseline: ConnectorRun,
+  verification: CrmRunVerification,
+): Promise<boolean> {
+  if (baseline.workspaceId !== workspaceId || verification.runId !== baseline.id
+    || verification.planId !== baseline.details?.plan?.planId || verification.connectorId !== baseline.connectorId) return false;
+  await ensureWorkspaceSchema();
+  const db = await getDatabase();
+  const row = await db.prepare(`SELECT ${connectorRunColumns} FROM connector_runs WHERE workspace_id = ? AND id = ?`)
+    .bind(workspaceId, baseline.id).first<ConnectorRunRow>();
+  const current = row ? parseConnectorRun(row) : null;
+  if (!row || !current || current.connectorId !== baseline.connectorId
+    || JSON.stringify(current.details?.plan) !== JSON.stringify(baseline.details?.plan)
+    || JSON.stringify(current.details?.writeback) !== JSON.stringify(baseline.details?.writeback)) return false;
+  // The receipt may be reconciled while provider reads are running. Only attach the
+  // result if the compared evidence is unchanged, including across this last write.
+  const saved = await db.prepare(`UPDATE connector_runs
+    SET receipt_json = json_set(receipt_json, '$.details.verification', json(?))
+    WHERE workspace_id = ? AND id = ? AND receipt_json = ? RETURNING id`)
+    .bind(JSON.stringify(verification), workspaceId, baseline.id, row.receipt_json).first<{ id: string }>();
+  return Boolean(saved);
+}
+
 export async function listConnectorRuns(workspaceId: string, limit = 50): Promise<ConnectorRun[]> {
   await ensureWorkspaceSchema();
   const db = await getDatabase();
   const boundedLimit = Number.isFinite(limit) ? Math.max(1, Math.min(100, Math.floor(limit))) : 50;
-  const result = await db.prepare(`SELECT id, workspace_id, connector_id, phase, status, receipt_json, undo_json, created_at
+  const result = await db.prepare(`SELECT ${connectorRunColumns}
     FROM connector_runs WHERE workspace_id = ? ORDER BY created_at DESC LIMIT ?`)
-    .bind(workspaceId, boundedLimit).all<{
-      id: string; workspace_id: string; connector_id: string; phase: string; status: string;
-      receipt_json: string; undo_json: string | null; created_at: string;
-    }>();
+    .bind(workspaceId, boundedLimit).all<ConnectorRunRow>();
   return result.results.flatMap((row): ConnectorRun[] => {
-    try {
-      const parsed = JSON.parse(row.receipt_json) as { receipt?: ConnectorReceipt; details?: ConnectorRun['details'] } | ConnectorReceipt;
-      const receipt = 'receipt' in parsed && parsed.receipt ? parsed.receipt : parsed as ConnectorReceipt;
-      return [{
-        id: row.id, workspaceId: row.workspace_id, connectorId: row.connector_id as ConnectorRun['connectorId'],
-        phase: row.phase as ConnectorRun['phase'], status: row.status as ConnectorRun['status'], receipt,
-        details: 'details' in parsed ? parsed.details ?? null : null,
-        undo: row.undo_json ? JSON.parse(row.undo_json) as ConnectorRun['undo'] : null,
-        createdAt: row.created_at,
-      }];
-    } catch {
-      return [];
-    }
+    const parsed = parseConnectorRun(row);
+    return parsed ? [parsed] : [];
   });
+}
+
+function parseConnectorRun(row: ConnectorRunRow): ConnectorRun | null {
+  try {
+    const parsed = JSON.parse(row.receipt_json) as { receipt?: ConnectorReceipt; details?: ConnectorRun['details'] } | ConnectorReceipt;
+    const receipt = 'receipt' in parsed && parsed.receipt ? parsed.receipt : parsed as ConnectorReceipt;
+    return {
+      id: row.id, workspaceId: row.workspace_id, connectorId: row.connector_id as ConnectorRun['connectorId'],
+      phase: row.phase as ConnectorRun['phase'], status: row.status as ConnectorRun['status'], receipt,
+      details: 'details' in parsed ? parsed.details ?? null : null,
+      undo: row.undo_json ? JSON.parse(row.undo_json) as ConnectorRun['undo'] : null,
+      createdAt: row.created_at,
+    };
+  } catch {
+    return null;
+  }
 }
 
 async function readRevision(db: DatabaseAdapter, workspaceId: string, revision: number): Promise<WorkspaceState> {

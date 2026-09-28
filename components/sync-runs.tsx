@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { ConnectorId, ConnectorReceipt } from '@/lib/connector-contract';
 import type { ConnectorRun } from '@/lib/connector-run';
 import type { CrmWritebackReceipt } from '@/lib/crm-workflow';
+import { canVerifyCrmRun, type CrmRunVerification } from '@/lib/crm-run-verification';
 import { downloadCrmReviewCsv } from '@/lib/crm-review-export';
 import { saveConnectorRunReceipt, type PendingConnectorRun } from '@/lib/save-connector-run';
 import { UnsavedRuns } from '@/components/unsaved-runs';
@@ -17,6 +18,8 @@ export function SyncRuns() {
   const [filter, setFilter] = useState<'all' | ConnectorId>('all');
   const [rollingBack, setRollingBack] = useState<string | null>(null);
   const [rollbackError, setRollbackError] = useState<string | null>(null);
+  const [verifying, setVerifying] = useState<string | null>(null);
+  const [verificationError, setVerificationError] = useState<{ runId: string; message: string } | null>(null);
   const [accessKey, setAccessKey] = useState(() => typeof window === 'undefined' ? '' : window.sessionStorage.getItem('gtm-control-tower-operator-key') ?? '');
   const [workspaceId] = useState<string | null>(() => typeof window === 'undefined' ? null : window.localStorage.getItem('gtm-control-tower-workspace-id'));
 
@@ -47,6 +50,7 @@ export function SyncRuns() {
   const visible = useMemo(() => filter === 'all' ? runs : runs.filter((run) => run.connectorId === filter), [filter, runs]);
   const unsavedRollbackPlanIds = useMemo(() => new Set(unsavedRuns.flatMap((pending) => pending.run.details?.writeback?.planId ? [pending.run.details.writeback.planId] : [])), [unsavedRuns]);
   const rolledBackPlanIds = useMemo(() => new Set(runs.flatMap((run) => run.phase === 'undo' && run.status === 'undone' && run.details?.writeback?.planId ? [run.details.writeback.planId] : [])), [runs]);
+  const verifiableRunIds = useMemo(() => new Set(savedRuns.filter((run) => run.phase !== 'undo' && canVerifyCrmRun(run)).map((run) => run.id)), [savedRuns]);
   const summary = useMemo(() => ({
     runs: savedRuns.length,
     written: runs.reduce((sum, run) => sum + (run.receipt.recordsWritten ?? 0), 0),
@@ -62,7 +66,7 @@ export function SyncRuns() {
   }
 
   async function rollback(run: ConnectorRun) {
-    if (!workspaceId || !run.undo || rollingBack || unsavedRollbackPlanIds.has(run.undo.sourcePlanId) || rolledBackPlanIds.has(run.undo.sourcePlanId)) return;
+    if (!workspaceId || !run.undo || rollingBack || verifying || unsavedRollbackPlanIds.has(run.undo.sourcePlanId) || rolledBackPlanIds.has(run.undo.sourcePlanId)) return;
     setRollingBack(run.id);
     setRollbackError(null);
     try {
@@ -94,6 +98,27 @@ export function SyncRuns() {
     } finally { setRollingBack(null); }
   }
 
+  async function verify(run: ConnectorRun) {
+    if (!workspaceId || verifying || rollingBack || !verifiableRunIds.has(run.id)) return;
+    setVerifying(run.id);
+    setVerificationError(null);
+    try {
+      const response = await fetch('/api/control-tower/runs/verify', {
+        method: 'POST', headers: { 'content-type': 'application/json', ...(accessKey ? { 'x-control-tower-key': accessKey } : {}) },
+        body: JSON.stringify({ workspaceId, runId: run.id }),
+      });
+      const result = await response.json() as { verification?: CrmRunVerification; error?: string };
+      if (!response.ok || !result.verification) throw new Error(result.error ?? 'CRM verification could not be saved.');
+      const verification = result.verification;
+      if (verification.runId !== run.id || verification.planId !== run.details?.writeback?.planId || verification.connectorId !== run.connectorId) {
+        throw new Error('CRM verification did not match this saved run. Refresh run history before trying again.');
+      }
+      setRuns((current) => current.map((item) => item.id === run.id ? { ...item, details: { ...item.details, verification } } : item));
+    } catch (error) {
+      setVerificationError({ runId: run.id, message: error instanceof Error ? error.message : 'CRM verification could not be saved.' });
+    } finally { setVerifying(null); }
+  }
+
   return (
     <main className="min-h-screen bg-[#06100d] text-[#edf8f2]">
       <div className="mx-auto max-w-[1400px] px-5 sm:px-8 lg:px-12">
@@ -104,11 +129,11 @@ export function SyncRuns() {
 
         <section className="py-12">
           <div className="flex flex-wrap items-end justify-between gap-5">
-            <div><p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#83bcff]">Durable evidence</p><h1 className="mt-2 text-5xl font-semibold tracking-[-0.055em]">Every batch should explain itself.</h1><p className="mt-4 max-w-2xl text-sm leading-6 text-[#8ca096]">Imports, repairs, holds, write plans, native receipts, and eligible rollback backups remain attached to the local workspace.</p></div>
+            <div><p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#83bcff]">Durable evidence</p><h1 className="mt-2 text-5xl font-semibold tracking-[-0.055em]">Every batch should explain itself.</h1><p className="mt-4 max-w-2xl text-sm leading-6 text-[#8ca096]">Imports, repairs, holds, write plans, native receipts, saved CRM checks, and eligible rollback backups remain attached to the local workspace.</p></div>
             <div className="flex gap-2"><select value={filter} onChange={(event) => setFilter(event.target.value as typeof filter)} className="rounded-full border border-white/10 bg-[#0b1b16] px-4 py-2.5 text-xs"><option value="all">All connectors</option>{['csv', 'google-sheets', 'hubspot', 'salesforce', 'bigquery'].map((id) => <option key={id} value={id}>{id}</option>)}</select><button onClick={exportHistory} disabled={!visible.length} className="rounded-full bg-[#d8ff67] px-4 py-2.5 text-xs font-bold text-[#06100d] disabled:opacity-40">Export evidence</button></div>
           </div>
           <div className="mt-8 grid grid-cols-2 gap-3 lg:grid-cols-4"><RunStat label="Recorded runs" value={summary.runs} /><RunStat label="Records written" value={summary.written} /><RunStat label="Failures retained" value={summary.failed} warning={summary.failed > 0} /><RunStat label="Rollback ready" value={summary.undoable} /></div>
-          {summary.undoable > 0 && <div className="mt-4 rounded-2xl border border-white/10 bg-[#0b1b16] p-4"><label className="grid max-w-lg gap-2 text-xs font-semibold text-[#9fb2a8]">Operator access key for rollback<input type="password" value={accessKey} onChange={(event) => { const value = event.target.value; setAccessKey(value); if (value) window.sessionStorage.setItem('gtm-control-tower-operator-key', value); else window.sessionStorage.removeItem('gtm-control-tower-operator-key'); }} className="rounded-xl border border-white/10 bg-[#06100d] px-4 py-3 text-sm outline-none focus:border-[#83bcff]/50" /></label><p className="mt-2 text-[10px] text-[#71877c]">Leave blank when this local self-host does not require a key.</p></div>}
+          {(summary.undoable > 0 || verifiableRunIds.size > 0) && <div className="mt-4 rounded-2xl border border-white/10 bg-[#0b1b16] p-4"><label className="grid max-w-lg gap-2 text-xs font-semibold text-[#9fb2a8]">{summary.undoable > 0 ? 'Operator access key for rollback' : 'Operator access key for verification'}<input type="password" value={accessKey} onChange={(event) => { const value = event.target.value; setAccessKey(value); if (value) window.sessionStorage.setItem('gtm-control-tower-operator-key', value); else window.sessionStorage.removeItem('gtm-control-tower-operator-key'); }} className="rounded-xl border border-white/10 bg-[#06100d] px-4 py-3 text-sm outline-none focus:border-[#83bcff]/50" /></label><p className="mt-2 text-[10px] text-[#71877c]">Used for CRM verification and eligible rollback. Leave blank when this local self-host does not require a key.</p></div>}
         </section>
 
         <section className="pb-16">
@@ -121,7 +146,7 @@ export function SyncRuns() {
           {status === 'error' && <p className="rounded-2xl border border-[#ff9c82]/20 p-8 text-center text-sm text-[#ff9c82]">Run history could not be loaded from this self-host.</p>}
           {rollbackError && <p className="mb-3 rounded-2xl border border-[#ff9c82]/20 bg-[#ff9c82]/[0.05] p-4 text-sm text-[#ff9c82]">{rollbackError}</p>}
           <div className="space-y-3">
-            {visible.map((run) => <RunCard key={run.id} run={run} rolledBack={Boolean(run.undo && rolledBackPlanIds.has(run.undo.sourcePlanId))} receiptUnsaved={Boolean(run.undo && unsavedRollbackPlanIds.has(run.undo.sourcePlanId))} rollingBack={rollingBack === run.id} onRollback={() => void rollback(run)} />)}
+            {visible.map((run) => <RunCard key={run.id} run={run} rolledBack={Boolean(run.undo && rolledBackPlanIds.has(run.undo.sourcePlanId))} receiptUnsaved={Boolean(run.undo && unsavedRollbackPlanIds.has(run.undo.sourcePlanId))} rollingBack={rollingBack === run.id} onRollback={() => void rollback(run)} canVerify={verifiableRunIds.has(run.id)} verifying={verifying === run.id} crmBusy={Boolean(verifying || rollingBack)} verificationError={verificationError?.runId === run.id ? verificationError.message : null} onVerify={() => void verify(run)} />)}
           </div>
         </section>
       </div>
@@ -129,24 +154,58 @@ export function SyncRuns() {
   );
 }
 
-function RunCard({ run, rolledBack, receiptUnsaved, rollingBack, onRollback }: { run: ConnectorRun; rolledBack: boolean; receiptUnsaved: boolean; rollingBack: boolean; onRollback: () => void }) {
+function RunCard({ run, rolledBack, receiptUnsaved, rollingBack, onRollback, canVerify, verifying, crmBusy, verificationError, onVerify }: { run: ConnectorRun; rolledBack: boolean; receiptUnsaved: boolean; rollingBack: boolean; onRollback: () => void; canVerify: boolean; verifying: boolean; crmBusy: boolean; verificationError: string | null; onVerify: () => void }) {
   const plan = run.details?.plan;
   const writeback = run.details?.writeback;
   const scan = run.details?.scan;
+  const savedVerification = run.details?.verification;
+  const verification = savedVerification && plan && writeback && savedVerification.runId === run.id
+    && savedVerification.runId === writeback.runId && savedVerification.planId === plan.planId
+    && savedVerification.planId === writeback.planId && savedVerification.connectorId === run.connectorId
+    && savedVerification.connectorId === writeback.connectorId && savedVerification.connectorId === plan.connectorId
+    ? savedVerification : undefined;
   return (
     <article className="rounded-[24px] border border-white/10 bg-[#0b1b16] p-5">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="flex items-start gap-3"><span className={`mt-1 h-2.5 w-2.5 rounded-full ${run.status === 'failed' || run.status === 'partial' ? 'bg-[#ff9c82]' : run.status === 'undone' ? 'bg-[#83bcff]' : 'bg-[#d8ff67]'}`} /><div><div className="flex flex-wrap items-center gap-2"><h2 className="font-semibold capitalize">{run.connectorId} · {run.phase}</h2><span className="rounded-full bg-white/[0.05] px-2.5 py-1 font-mono text-[8px] uppercase text-[#8ca096]">{run.status}</span></div><p className="mt-2 text-xs text-[#8ca096]">{run.receipt.summary}</p><p className="mt-2 font-mono text-[8px] text-[#566b61]">{new Date(run.createdAt).toLocaleString()} · {run.receipt.nativeReceiptId ?? run.id}</p></div></div>
-        {run.undo?.records.length ? <button onClick={onRollback} disabled={rollingBack || rolledBack || receiptUnsaved} className="rounded-full border border-[#83bcff]/30 px-4 py-2 text-xs font-semibold text-[#83bcff] disabled:opacity-50">{rollingBack ? 'Rolling back…' : rolledBack ? 'Rollback completed' : receiptUnsaved ? 'Receipt save needed' : `Roll back ${run.undo.records.length} updates`}</button> : null}
+        {run.undo?.records.length ? <button onClick={onRollback} disabled={crmBusy || rolledBack || receiptUnsaved} className="rounded-full border border-[#83bcff]/30 px-4 py-2 text-xs font-semibold text-[#83bcff] disabled:opacity-50">{rollingBack ? 'Rolling back…' : rolledBack ? 'Rollback completed' : receiptUnsaved ? 'Receipt save needed' : `Roll back ${run.undo.records.length} updates`}</button> : null}
       </div>
       {(plan || writeback) && <div className="mt-4 grid gap-2 border-t border-white/[0.06] pt-4 sm:grid-cols-3 lg:grid-cols-6">
         <Mini label="Input" value={plan?.requested ?? writeback?.requested ?? 0} /><Mini label="Create" value={writeback?.created ?? plan?.creates ?? 0} /><Mini label="Update" value={writeback?.updated ?? plan?.updates ?? 0} /><Mini label="Unchanged" value={writeback?.unchanged ?? plan?.unchanged ?? 0} /><Mini label="Held" value={writeback?.held ?? plan?.held ?? 0} /><Mini label="Failed" value={writeback?.failed ?? 0} />
       </div>}
-      {(plan || writeback) && <div className="mt-3 flex flex-wrap items-center gap-3"><button onClick={() => downloadCrmReviewCsv({ plan, writeback })} className="rounded-full border border-white/15 px-4 py-2 text-xs font-semibold text-[#a8bbb1]">{writeback ? 'Download results CSV' : 'Download comparison CSV'}</button><p className="text-[10px] text-[#71877c]">This batch only · one row per contact · {writeback ? 'actual recorded outcomes' : 'comparison, not execution'}</p></div>}
+      {(plan || writeback) && <div className="mt-3 flex flex-wrap items-center gap-3"><button onClick={() => downloadCrmReviewCsv({ plan, writeback, verification })} className="rounded-full border border-white/15 px-4 py-2 text-xs font-semibold text-[#a8bbb1]">{writeback ? 'Download results CSV' : 'Download comparison CSV'}</button><p className="text-[10px] text-[#71877c]">This batch only · one row per contact · {writeback ? 'actual recorded outcomes' : 'comparison, not execution'}{verification ? ' · includes latest saved CRM check' : ''}</p></div>}
+      {(canVerify || verification) && <section aria-label="CRM result verification" className="mt-4 rounded-2xl border border-[#83bcff]/20 bg-[#06100d]/60 p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="text-sm font-semibold text-[#c5dbef]">CRM result verification</h3><p className="mt-2 max-w-2xl text-xs leading-5 text-[#8ca096]">Read created and updated records from the current CRM connection. Compare primary email and all six reviewed fields with the saved plan. Rechecking never repeats a write.</p></div>{canVerify && <button onClick={onVerify} disabled={crmBusy} className="rounded-full border border-[#83bcff]/30 px-4 py-2 text-xs font-semibold text-[#83bcff] disabled:opacity-50">{verifying ? 'Checking CRM…' : verification ? 'Recheck CRM results' : 'Verify CRM results'}</button>}</div>
+        {rolledBack && <p className="mt-3 text-xs leading-5 text-[#eac485]">This run has been rolled back. A recheck still compares with the original import plan, so restored values can appear as differences.</p>}
+        {verificationError && <p role="alert" className="mt-3 text-xs leading-5 text-[#ff9c82]">{verificationError} The recorded write outcome is unchanged.</p>}
+        {verification ? <VerificationResults verification={verification} writeback={writeback!} /> : <p className="mt-3 text-xs text-[#71877c]">Not checked yet. The provider receipt records accepted writes; it does not confirm current CRM values.</p>}
+      </section>}
       {scan && <div className="mt-4 grid gap-2 border-t border-white/[0.06] pt-4 sm:grid-cols-3 lg:grid-cols-6"><Mini label="Scanned" value={run.receipt.recordsRead ?? 0} /><Mini label="Groups" value={scan.clusterCount} /><Mini label="High" value={scan.highConfidenceClusters} /><Mini label="Review" value={scan.reviewClusters} /><Mini label="Possible" value={scan.possibleClusters} /><Mini label="Pages" value={scan.pagesScanned} /></div>}
       {plan?.records.some((record) => record.changes.length) && <details className="mt-4 rounded-xl bg-[#06100d]/60 p-3"><summary className="cursor-pointer text-xs font-semibold text-[#a8bbb1]">Review field-level changes</summary><div className="mt-3 max-h-64 space-y-2 overflow-y-auto">{plan.records.filter((record) => record.changes.length).slice(0, 25).map((record) => <div key={record.contactId} className="font-mono text-[9px] leading-5 text-[#71877c]"><span className="text-[#a8bbb1]">{record.email}</span> · {record.changes.map((change) => `${change.field}: ${change.before ?? '∅'} → ${change.after ?? '∅'}`).join(' · ')}</div>)}</div></details>}
     </article>
   );
+}
+
+function VerificationResults({ verification, writeback }: { verification: CrmRunVerification; writeback: CrmWritebackReceipt }) {
+  const receivedById = new Map(writeback.records.map((record) => [record.contactId, record]));
+  const records = verification.records.filter((record) => {
+    const received = receivedById.get(record.contactId);
+    return received && ['created', 'updated'].includes(received.status) && received.nativeId === record.nativeId;
+  });
+  const count = (status: CrmRunVerification['records'][number]['status']) => records.filter((record) => record.status === status).length;
+  const fieldLabels = { email: 'Primary email', firstName: 'First name', lastName: 'Last name', company: 'Company', phone: 'Phone', jobTitle: 'Job title', website: 'Website' };
+  return <div className="mt-4" aria-live="polite">
+    <p className="text-sm font-semibold text-[#c5dbef]">{count('verified')} verified · {count('different')} values differ · {count('unavailable')} couldn’t verify</p>
+    <p className="mt-1 text-[11px] leading-5 text-[#71877c]">Checked {new Date(verification.checkedAt).toLocaleString()} · saved with this run. This is an observation at that time; later CRM changes are possible. Differences do not change the recorded write outcome.</p>
+    <details className="mt-3" open={records.some((record) => record.status !== 'verified')}><summary className="cursor-pointer text-xs font-semibold text-[#a8bbb1]">Review {records.length} checked {records.length === 1 ? 'record' : 'records'}</summary><div className="mt-3 max-h-[32rem] space-y-3 overflow-y-auto">
+      {records.map((record) => <div key={record.contactId} data-contact-id={record.contactId} className="rounded-xl border border-white/[0.06] bg-white/[0.025] p-3">
+        <div className="flex flex-wrap items-center justify-between gap-2"><div><p className="break-all text-xs font-semibold text-[#a8bbb1]">{receivedById.get(record.contactId)?.email ?? record.contactId}</p><p className="mt-1 break-all font-mono text-[9px] text-[#71877c]">CRM record {record.nativeId ?? 'unavailable'}</p></div><span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold ${record.status === 'verified' ? 'bg-[#d8ff67]/10 text-[#d8ff67]' : record.status === 'different' ? 'bg-[#eac485]/10 text-[#eac485]' : 'bg-[#ff9c82]/10 text-[#ff9c82]'}`}>{record.status === 'verified' ? 'Verified' : record.status === 'different' ? 'Values differ' : 'Couldn’t verify'}</span></div>
+        {record.status === 'verified' && <p className="mt-2 text-[11px] text-[#8ca096]">Primary email and all six reviewed fields match.</p>}
+        {record.error && <p className="mt-2 text-xs leading-5 text-[#ff9c82]">{record.error}</p>}
+        {record.differences.length > 0 && <div className="mt-3 overflow-x-auto"><table className="w-full text-left text-[11px]"><caption className="sr-only">Expected and observed CRM values</caption><thead className="text-[#71877c]"><tr><th className="py-2 pr-3 font-medium">Field</th><th className="py-2 pr-3 font-medium">Expected</th><th className="py-2 font-medium">Observed in CRM</th></tr></thead><tbody className="text-[#a8bbb1]">{record.differences.map((difference) => <tr key={difference.field} className="border-t border-white/[0.06]"><th className="py-2 pr-3 align-top font-medium">{fieldLabels[difference.field]}</th><td className="min-w-28 break-words py-2 pr-3 align-top">{difference.expected ?? 'Empty'}</td><td className="min-w-28 break-words py-2 align-top">{difference.actual ?? 'Empty'}</td></tr>)}</tbody></table></div>}
+      </div>)}
+    </div></details>
+  </div>;
 }
 
 function RunStat({ label, value, warning = false }: { label: string; value: number; warning?: boolean }) { return <div className="rounded-2xl border border-white/10 bg-[#0b1b16] p-4"><p className="text-xs text-[#71877c]">{label}</p><p className={`mt-2 text-3xl font-semibold ${warning ? 'text-[#ff9c82]' : 'text-[#d8ff67]'}`}>{value}</p></div>; }

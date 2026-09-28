@@ -25,6 +25,8 @@ There is no automatic merge, Lead conversion, or confidence-based approval.
    the imported and existing CRM emails separate, then execute the reviewed changes.
 6. Inspect the receipt and use update rollback if needed. Rollback locates the
    existing CRM email and native ID, and retains the imported email in the receipt.
+   In **Sync Runs**, use [**Verify CRM results**](crm-run-verification.md) to read
+   the result back and compare it with the saved plan without another write.
 
 A reason records the operator's judgment; it does not prove identity. Scores
 remain ranking signals, not probabilities. Leave ambiguous rows held or skip
@@ -107,6 +109,9 @@ HUBSPOT_DEVELOPMENT_ACCOUNT_ID=YOUR_DEVELOPMENT_PORTAL_ID \
 The app and script must use the same operator key and CRM credentials. The check
 verifies ownership markers and restored fixture values, confirms changed-email
 Priya, updates only her title, keeps sparse Jordan held, checks email preservation,
-rejects a stale replay and rolls back. It makes no creates or deletes. If it stops,
+rejects a stale replay and rolls back. It now also saves and verifies the run,
+rechecks without writing, and detects the deliberately restored title after
+rollback. These additional checks are separate from the earlier dated evidence
+above. It makes no creates or deletes. If it stops,
 reconcile the private receipts and native records before retrying; it does not
 retry mutations or reset data automatically.

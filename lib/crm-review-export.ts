@@ -1,6 +1,7 @@
 import type { CrmWritebackReceipt, CrmWritePlan } from './crm-workflow';
+import type { CrmRunVerification } from './crm-run-verification';
 
-export type CrmReviewExport = { plan?: CrmWritePlan; writeback?: CrmWritebackReceipt };
+export type CrmReviewExport = { plan?: CrmWritePlan; writeback?: CrmWritebackReceipt; verification?: CrmRunVerification };
 
 const columns = [
   'report_kind', 'report_scope', 'provider', 'plan_id', 'run_id', 'source_file',
@@ -12,6 +13,8 @@ const columns = [
   'snapshot_id', 'snapshot_started_at', 'review_rule_version', 'review_warnings', 'update_policy',
   'plan_requested', 'plan_creates', 'plan_updates', 'plan_unchanged', 'plan_held',
   'receipt_requested', 'receipt_created', 'receipt_updated', 'receipt_unchanged', 'receipt_held', 'receipt_failed',
+  'verification_status', 'verification_checked_at', 'verification_expected', 'verification_actual',
+  'verification_differences', 'verification_error',
 ] as const;
 
 // These reports are for spreadsheet review, not re-import. Protect only the report
@@ -24,14 +27,22 @@ function spreadsheetCell(value: string | number | null | undefined): string {
 }
 
 /** One row per contact in this comparison/receipt, not the whole import. */
-export function buildCrmReviewCsv({ plan, writeback }: CrmReviewExport): string {
+export function buildCrmReviewCsv({ plan, writeback, verification }: CrmReviewExport): string {
   const plannedById = new Map(plan?.records.map((record) => [record.contactId, record]));
   const receivedById = new Map(writeback?.records.map((record) => [record.contactId, record]));
+  const verificationMatches = Boolean(plan && writeback && verification
+    && plan.planId === writeback.planId && plan.connectorId === writeback.connectorId
+    && verification.runId === writeback.runId && verification.planId === writeback.planId
+    && verification.connectorId === writeback.connectorId);
+  const verifiedById = new Map(verificationMatches ? verification!.records.map((record) => [record.contactId, record]) : []);
   const contactIds = new Set([...plannedById.keys(), ...receivedById.keys()]);
   const lines = [columns.map(spreadsheetCell).join(',')];
   for (const contactId of contactIds) {
     const planned = plannedById.get(contactId);
     const received = receivedById.get(contactId);
+    const check = verifiedById.get(contactId);
+    const verified = check && planned && received && ['created', 'updated'].includes(received.status)
+      && check.nativeId === received.nativeId ? check : undefined;
     const crmCandidates = planned?.possibleMatches ?? [];
     const importCandidates = planned?.possibleImportMatches ?? [];
     const review = planned?.createReview;
@@ -63,6 +74,11 @@ export function buildCrmReviewCsv({ plan, writeback }: CrmReviewExport): string 
       plan_unchanged: plan?.unchanged, plan_held: plan?.held,
       receipt_requested: writeback?.requested, receipt_created: writeback?.created, receipt_updated: writeback?.updated,
       receipt_unchanged: writeback?.unchanged, receipt_held: writeback?.held, receipt_failed: writeback?.failed,
+      verification_status: verified?.status, verification_checked_at: verified?.checkedAt,
+      verification_expected: verified ? JSON.stringify(verified.expected) : '',
+      verification_actual: verified ? JSON.stringify(verified.actual) : '',
+      verification_differences: verified ? JSON.stringify(verified.differences) : '',
+      verification_error: verified?.error,
     };
     lines.push(columns.map((column) => spreadsheetCell(values[column])).join(','));
   }

@@ -1,0 +1,64 @@
+{
+  "checkedAt": "2026-09-28",
+  "scope": "Native saved-run verification of retained fictional records; no mocked CRM responses. Browser error/create checks use simulated responses separately.",
+  "providers": {
+    "hubspot": {
+      "provider": "hubspot",
+      "startedAt": "2026-09-28T15:03:51.314Z",
+      "caseId": "enterprise-import-2026-09-27",
+      "accountType": "STANDARD",
+      "finishedAt": "2026-09-28T15:04:02.339Z",
+      "retainedRecords": 9,
+      "confirmedUpdates": 1,
+      "unresolvedHeld": 1,
+      "creates": 0,
+      "deletes": 0,
+      "primaryEmailPreserved": true,
+      "decisionReloaded": true,
+      "staleExecutionBlocked": true,
+      "rollbackRestored": 1,
+      "comparedFieldsRestored": true,
+      "verifiedUpdatedRecords": 1,
+      "verificationReloaded": true,
+      "readOnlyRecheck": true,
+      "differenceAfterRollback": 1,
+      "originalWriteReceiptUnchanged": true
+    },
+    "salesforce": {
+      "provider": "salesforce",
+      "startedAt": "2026-09-28T15:04:02.394Z",
+      "caseId": "enterprise-import-2026-09-27",
+      "accountType": "Developer Edition",
+      "isSandbox": false,
+      "finishedAt": "2026-09-28T15:04:15.090Z",
+      "retainedRecords": 9,
+      "confirmedUpdates": 1,
+      "unresolvedHeld": 1,
+      "creates": 0,
+      "deletes": 0,
+      "primaryEmailPreserved": true,
+      "decisionReloaded": true,
+      "staleExecutionBlocked": true,
+      "rollbackRestored": 1,
+      "comparedFieldsRestored": true,
+      "verifiedUpdatedRecords": 1,
+      "verificationReloaded": true,
+      "readOnlyRecheck": true,
+      "differenceAfterRollback": 1,
+      "originalWriteReceiptUnchanged": true
+    }
+  },
+  "initialAttempt": {
+    "provider": "hubspot",
+    "outcome": "Verification refused an existing preview/receipt plan-ID mismatch after the title update. The saved rollback restored the title; direct reads confirmed all nine retained records matched starting compared fields before rerunning.",
+    "fix": "Execution retains the reviewed preview ID after current-state validation. Both-provider regression tests reproduce the old mismatch and pass with the correction."
+  },
+  "limits": [
+    "HubSpot STANDARD and Salesforce Developer Edition are designated development accounts, not formally provisioned sandboxes.",
+    "Native product verification compared primary email and six portable fields for one updated person per provider; no create-result qualification in this run.",
+    "The independent fixture read compared portable fields, primary email, state, city, markers and owners for nine records per provider; audit timestamps and other fields were not compared.",
+    "The difference after rollback was intentional. No claim that a CRM automation caused it.",
+    "Rechecks use the current connection and save only the latest observation. There is no continuous monitoring, automatic repair, or account identity binding for historical runs.",
+    "Provider read failures, missing records, converted Leads and created-record verification were exercised with simulated responses."
+  ]
+}
