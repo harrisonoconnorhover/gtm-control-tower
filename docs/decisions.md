@@ -515,3 +515,34 @@ identity. Credential rotation requires confirmation again. Store the decision in
 workspace revisions, not source CSV round-trips. Check competing decisions and
 known target-email rows across the entire included import, not only the current
 batch. This does not provide cross-workspace locks or atomic CRM writes.
+
+
+## September 28, 2026 — Keep HubSpot email aliases in collision checks
+
+The CRM reader validated additional emails but dropped them from the native
+record used by confirmed-match and cross-batch checks. An import could therefore
+contain two addresses for one Contact and propose competing updates in separate
+batches. Retain normalized aliases from the existing provider read; compare
+known primary/additional identities against the whole included saved import.
+Use native IDs to connect exact matches to saved selections. No account-wide
+extra lookup or new write path is needed.
+
+Include the canonical alias set in confirmation freshness and signatures. An
+alias change requires renewed review; ordering and case alone do not. Preserve
+existing signatures where there are no aliases. Qualify this correction with
+simulated provider regressions and preserve the scope of the earlier native
+Priya/Jordan evidence; no new native alias qualification is claimed.
+
+
+## September 28, 2026 — Re-review the row whose match decision changes
+
+Keeping all completed progress after confirmation hid a changed target from the
+next preview. Remove only that row from the selected connector's current progress
+when a confirmation or clear saves successfully, recomputing counts from the
+remaining results. Keep other rows, other connectors and saved receipts intact.
+A failed save preserves progress. A new preview and explicit execution remain
+required; changing a decision must never replay a CRM write automatically.
+
+Pre-write backup JSON must distinguish the imported email from the actual CRM
+email beside its native ID. Both are needed for a changed-email identity review;
+the existing portable before-values alone do not establish the target address.

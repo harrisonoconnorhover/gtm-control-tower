@@ -21,14 +21,18 @@ There is no automatic merge, Lead conversion, or confidence-based approval.
 4. Choose which fields may change. The default fills empty fields only. To replace
    a populated title, choose replacement and select **Job title**.
 5. Select **Compare N with CRM** and inspect the human-confirmed target and field
-   differences. Download the comparison CSV or execute the reviewed changes.
+   differences. Download the comparison CSV or the pre-write backup, which keeps
+   the imported and existing CRM emails separate, then execute the reviewed changes.
 6. Inspect the receipt and use update rollback if needed. Rollback locates the
    existing CRM email and native ID, and retains the imported email in the receipt.
 
 A reason records the operator's judgment; it does not prove identity. Scores
 remain ranking signals, not probabilities. Leave ambiguous rows held or skip
 them with a reason. **Clear confirmed match** removes the choice and requires a
-new preview; it does not undo an earlier CRM update.
+new preview; it does not undo an earlier CRM update. Changing or clearing a saved
+match returns that row to the pending comparison even if it was already processed.
+Other completed rows and saved receipts remain intact. No CRM operation repeats
+until a new preview is explicitly executed.
 
 ## When a confirmation stops being usable
 
@@ -42,7 +46,12 @@ new preview; it does not undo an earlier CRM update.
   the row. A changed preview cannot execute.
 - Multiple included active rows selecting the same native target hold their
   writes, including rows in later batches. An included source row using the
-  selected target's CRM email also conflicts. Skip or resolve the competing row.
+  selected target's primary or additional HubSpot email also conflicts. Exact-email
+  rows using different known addresses for one Contact are checked across the
+  saved import too. Skip or resolve the competing row.
+- HubSpot additional-email changes invalidate a saved confirmation; changing
+  only alias order or letter case does not change identity. Older confirmations
+  that did not capture an existing alias set require renewed review.
 - Decisions are bound to the workspace and connector credential. Editing a saved
   JSON decision or rotating a credential requires a new confirmation. CSV exports
   retain source data, not transferable native-ID approval.
@@ -78,7 +87,8 @@ Focused route tests cover authenticated confirmation, rejected or stale choices,
 workspace persistence and decision signatures. Writeback tests cover native-ID
 updates, field protection, collisions and rollback. The browser check uses
 simulated CRM responses with real local workspace persistence; it is separate
-from native API evidence.
+from native API evidence. Additional-email collision and freshness cases use
+simulated HubSpot responses; they are not covered by the earlier native run.
 
 Run `node scripts/check-import-match-decision.mjs` against a disposable local app
 with persistence enabled to exercise the browser workflow. The native check

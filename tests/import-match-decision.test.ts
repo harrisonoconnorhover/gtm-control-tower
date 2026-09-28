@@ -150,6 +150,18 @@ describe.each(['hubspot', 'salesforce'] as const)('%s human-confirmed import mat
 });
 
 describe('confirmation boundaries', () => {
+  it('compares the snapshot alias set with the current CRM before saving a confirmation', async () => {
+    candidate.additionalEmails = ['events@example.com'];
+    target.additionalEmails = ['events@example.com', 'new@example.com'];
+    expect((await POST(request())).status).toBe(409);
+    expect(store.saveWorkspace).not.toHaveBeenCalled();
+    candidate.additionalEmails = ['NEW@example.com', ' events@example.com ', candidate.email];
+    const result = await POST(request());
+    expect(result.status).toBe(200);
+    const saved = (await result.json() as { workspace: SavedWorkspace }).workspace;
+    expect(saved.state.contacts[0].crmMatchDecisions?.hubspot?.target.additionalEmails).toEqual(target.additionalEmails);
+  });
+
   it.each([null, 'incorrect-key'])('requires the configured operator key (%s)', async (key) => {
     expect((await POST(request('hubspot', {}, key))).status).toBe(401);
     expect(store.getWorkspace).not.toHaveBeenCalled();
@@ -223,6 +235,18 @@ describe('confirmation boundaries', () => {
 });
 
 describe('saved-decision integrity', () => {
+  it('binds the canonical alias set while preserving signatures for targets without aliases', async () => {
+    const legacy = await decision();
+    expect(await verifyImportMatch(workspace.id, { ...legacy, target: { ...target, additionalEmails: [] } })).toBe(true);
+    expect(await verifyImportMatch(workspace.id, { ...legacy, target: { ...target, additionalEmails: [target.email.toUpperCase()] } })).toBe(true);
+    target.additionalEmails = ['events@example.com', 'old@example.com'];
+    const confirmed = await decision();
+    expect(await verifyImportMatch(workspace.id, { ...confirmed, target: { ...target,
+      additionalEmails: [' OLD@EXAMPLE.COM ', target.email, 'events@example.com', 'old@example.com'] } })).toBe(true);
+    expect(await verifyImportMatch(workspace.id, { ...confirmed, target: { ...target, additionalEmails: ['events@example.com'] } })).toBe(false);
+    expect(await verifyImportMatch(workspace.id, { ...confirmed, target: { ...target, additionalEmails: undefined } })).toBe(false);
+  });
+
   it('binds an authentic confirmation to its source, target, reason, workspace, and current credential', async () => {
     const confirmed = await decision();
     expect(await verifyImportMatch(workspace.id, confirmed)).toBe(true);
@@ -252,6 +276,8 @@ describe('saved-decision integrity', () => {
       { hubspot: { ...confirmed, signature: 'unsigned' } }, { salesforce: confirmed }, { unknown: confirmed },
       { hubspot: { ...confirmed, reason: '   ' } }, { hubspot: { ...confirmed, confirmedAt: 'yesterday' } },
       { hubspot: { ...confirmed, target: { ...target, fields: { ...target.fields, phone: 123 } } } },
+      { hubspot: { ...confirmed, target: { ...target, additionalEmails: 'events@example.com' } } },
+      { hubspot: { ...confirmed, target: { ...target, additionalEmails: ['not-an-email'] } } },
     ]) {
       expect(validImportMatchDecisions(invalid)).toBe(false);
       expect(() => validateWorkspaceState({ ...workspace.state, contacts: [{ ...workspace.state.contacts[0], crmMatchDecisions: invalid }] })).toThrow('Confirmed CRM matches');

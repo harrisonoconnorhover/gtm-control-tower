@@ -20,8 +20,13 @@ export function importMatchSourceKey(contact: LiveContactState): string {
 }
 
 export function nativeMatchTargetKey(record: NativeCrmRecord): string {
-  return JSON.stringify([record.nativeId, record.objectType, record.email.trim().toLowerCase(),
-    Boolean(record.isConverted), ...portableCrmFieldNames.map((field) => record.fields[field]?.trim() || null)]);
+  const email = record.email.trim().toLowerCase();
+  const aliases = [...new Set((record.additionalEmails ?? []).map((alias) => alias.trim().toLowerCase()))]
+    .filter((alias) => alias !== email).sort();
+  const identity = [record.nativeId, record.objectType, email,
+    Boolean(record.isConverted), ...portableCrmFieldNames.map((field) => record.fields[field]?.trim() || null)];
+  // Keep existing confirmations usable when the target has no additional emails.
+  return JSON.stringify(aliases.length ? [...identity, aliases] : identity);
 }
 
 export function isConfirmedImportMatch(value: unknown): value is ConfirmedImportMatch {
@@ -39,6 +44,8 @@ export function isConfirmedImportMatch(value: unknown): value is ConfirmedImport
     && target.objectType === (value.connectorId === 'hubspot' ? 'contact' : 'lead')
     && (value.connectorId !== 'salesforce' || target.isConverted === false)
     && typeof target.email === 'string' && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(target.email)
+    && (target.additionalEmails === undefined || (Array.isArray(target.additionalEmails)
+      && target.additionalEmails.every((email) => typeof email === 'string' && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim()))))
     && portableCrmFieldNames.every((field) => fields[field] === null || typeof fields[field] === 'string');
 }
 

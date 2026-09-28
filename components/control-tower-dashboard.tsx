@@ -59,7 +59,7 @@ import {
 } from '@/lib/live-control-tower';
 import type { MappingPreset, SavedWorkspace, WorkspaceState } from '@/lib/workspace';
 import type { ConnectorRunDetails } from '@/lib/connector-run';
-import { combineCrmWritebackProgress, isSuccessfulCrmWritebackRecord, defaultCrmUpdatePolicy, normalizeCrmUpdatePolicy, type CrmUpdatePolicy, type CrmWritePlan, type CrmWritebackReceipt, type CrmWritebackProgress, type PortableCrmContact } from '@/lib/crm-workflow';
+import { combineCrmWritebackProgress, reopenCrmWritebackContact, isSuccessfulCrmWritebackRecord, defaultCrmUpdatePolicy, normalizeCrmUpdatePolicy, type CrmUpdatePolicy, type CrmWritePlan, type CrmWritebackReceipt, type CrmWritebackProgress, type PortableCrmContact } from '@/lib/crm-workflow';
 
 const dbtTests = [
   ['unique_account_domain', '2 duplicates contained'],
@@ -601,6 +601,11 @@ export function ControlTowerDashboard() {
       setCsvContacts(payload.workspace.state.contacts);
       setWorkspaceRevision(payload.workspace.revision);
       setPersistenceStatus('saved');
+      if (action.connectorId === 'hubspot') {
+        setHubSpotWritebackProgress((current) => reopenCrmWritebackContact(current, action.contactId));
+      } else {
+        setSalesforceWritebackProgress((current) => reopenCrmWritebackContact(current, action.contactId));
+      }
       invalidateCrmReview(true);
     } finally { crmRequestInFlight.current = false; setCorrectionSaving(false); }
   }
@@ -1750,8 +1755,12 @@ function ChangePlanCard({ plan, onRefresh }: { plan: CrmWritePlan; onRefresh: ()
   function downloadBackup() {
     const backup = {
       exportedAt: new Date().toISOString(), connectorId: plan.connectorId, planId: plan.planId,
-      notice: 'This backup contains only portable fields for records scheduled to update. Newly created records are never auto-deleted by rollback.',
-      updates: plan.records.filter((record) => record.operation === 'update').map(({ contactId, email, nativeId, before }) => ({ contactId, email, nativeId, before })),
+      notice: 'This backup contains only portable fields for records scheduled to update. email is the imported address (also named importedEmail); crmEmail identifies the existing CRM record. Newly created records are never auto-deleted by rollback.',
+      updates: plan.records.filter((record) => record.operation === 'update').map(({ contactId, email, nativeId, before, matchDecision, matches }) => ({
+        contactId, email, importedEmail: email,
+        crmEmail: matchDecision?.email ?? (matches.length === 1 ? matches[0].email : null),
+        nativeId, before,
+      })),
     };
     const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob); const link = document.createElement('a');

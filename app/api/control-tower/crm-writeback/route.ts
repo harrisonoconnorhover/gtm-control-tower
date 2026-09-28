@@ -108,6 +108,7 @@ async function applyConfirmedMatches(
   rowHolds: Map<string, string>,
 ): Promise<Map<string, CrmMatchDecision>> {
   const included = workspace.state.contacts.filter((row) => row.recordStatus === 'active' && !row.importExclusion);
+  const includedIds = new Set(included.map((row) => row.contactId));
   const requestedIds = new Set(contacts.map((row) => row.contactId));
   const selections = new Map<string, ConfirmedImportMatch>();
   const claims = new Map<string, Set<string>>();
@@ -135,11 +136,23 @@ async function applyConfirmedMatches(
     rows.add(row.contactId);
     claims.set(key, rows);
   }
-  // Include rows outside the current batch. Two separately executed batches must
-  // not apply competing updates to the same selected CRM person.
-  for (const decision of selections.values()) {
-    const key = `${decision.target.objectType}:${decision.target.nativeId}`;
-    const rows = new Set([...claims.get(key) ?? [], ...importedEmails.get(decision.target.email.trim().toLowerCase()) ?? []]);
+  // Reuse the identities already read for this batch and saved confirmations.
+  // Primary and additional emails can identify one person in separate batches.
+  const includeTarget = (target: NativeCrmRecord, contactId?: string) => {
+    const key = `${target.objectType}:${target.nativeId}`;
+    const rows = claims.get(key) ?? new Set<string>();
+    if (contactId) rows.add(contactId);
+    for (const email of [target.email, ...target.additionalEmails ?? []]) {
+      for (const rowId of importedEmails.get(email.trim().toLowerCase()) ?? []) rows.add(rowId);
+    }
+    claims.set(key, rows);
+  };
+  for (const decision of selections.values()) includeTarget(decision.target);
+  for (const contact of contacts) {
+    if (!includedIds.has(contact.contactId)) continue;
+    for (const target of existing.get(contact.email.toLowerCase()) ?? []) includeTarget(target, contact.contactId);
+  }
+  for (const rows of claims.values()) {
     if (rows.size > 1) for (const contactId of rows) {
       hold(contactId, 'Multiple included import rows target this CRM person. Skip or resolve the other row before writing, including rows in later batches.');
     }

@@ -107,6 +107,7 @@ function parseContact(value: unknown): { record: NativeCrmRecord; identities: Se
   }
   const record: NativeCrmRecord = {
     nativeId: value.id, objectType: 'contact', email: primary,
+    additionalEmails: [...identities].filter((email) => email !== primary).sort(),
     fields: {
       firstName: fieldValue(properties.firstname), lastName: fieldValue(properties.lastname),
       company: fieldValue(properties.company), phone: fieldValue(properties.phone),
