@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildCrmReviewCsv } from '../lib/crm-review-export';
+import type { CrmRunVerification } from '../lib/crm-run-verification';
 import { buildCrmWritePlan, type CrmPlanRecord, type CrmWritebackReceipt, type CrmWritePlan } from '../lib/crm-workflow';
 
 const fields = { firstName: 'Nina', lastName: 'Shah', company: 'Costco', phone: null, jobTitle: 'Director', website: null };
@@ -143,6 +144,58 @@ describe('CRM spreadsheet review reports', () => {
       exact_match_count: '', exact_matches: '', outcome: '' });
     expect(exported[1]).toMatchObject({ match_basis: 'exact_email', matched_native_email: 'exact@example.com', exact_match_count: '1',
       match_confirmation_reason: '', match_confirmed_at: '' });
+  });
+
+  it('keeps saved verification separate from write outcomes and exports expected, observed, and unavailable evidence', () => {
+    const comparison = plan([row('verified'), row('different', 'update'), row('unavailable', 'update'), row('held', 'hold')]);
+    const writeback = { ...receipt([result('verified', 'created'), result('different', 'updated'), result('unavailable', 'updated'), result('held', 'held')]), planId: comparison.planId };
+    const expected = { email: 'existing@example.com', ...fields };
+    const actual = { ...expected, jobTitle: 'VP' };
+    const checkTime = '2026-09-28T00:05:00.000Z';
+    const verification: CrmRunVerification = { runId: writeback.runId, planId: comparison.planId, connectorId: 'hubspot', checkedAt: checkTime,
+      verified: 1, different: 1, unavailable: 1, records: [
+        { contactId: 'different', nativeId: 'native-different', status: 'different', checkedAt: checkTime, expected, actual,
+          differences: [{ field: 'jobTitle', expected: 'Director', actual: 'VP' }], error: null },
+        { contactId: 'unavailable', nativeId: 'native-unavailable', status: 'unavailable', checkedAt: checkTime, expected, actual: null,
+          differences: [], error: '=Provider unavailable' },
+        { contactId: 'verified', nativeId: 'native-verified', status: 'verified', checkedAt: checkTime, expected, actual: expected, differences: [], error: null },
+      ] };
+    const unchangedInput = structuredClone({ comparison, writeback, verification });
+    const exported = decode(buildCrmReviewCsv({ plan: comparison, writeback, verification }));
+    expect(exported.map((item) => [item.outcome, item.verification_status])).toEqual([
+      ['created', 'verified'], ['updated', 'different'], ['updated', 'unavailable'], ['held', ''],
+    ]);
+    expect(exported[0]).toMatchObject({ verification_checked_at: checkTime, verification_error: '' });
+    expect(JSON.parse(exported[1].verification_expected)).toEqual(expected);
+    expect(JSON.parse(exported[1].verification_actual)).toEqual(actual);
+    expect(JSON.parse(exported[1].verification_differences)).toEqual(verification.records[0].differences);
+    expect(exported[2]).toMatchObject({ verification_actual: 'null', verification_error: "'=Provider unavailable", outcome: 'updated' });
+    expect(exported[3]).toMatchObject({ verification_checked_at: '', verification_expected: '', verification_actual: '', verification_differences: '' });
+    expect({ comparison, writeback, verification }).toEqual(unchangedInput);
+  });
+
+  it('omits verification from other runs, plans, providers, targets, or unwritten rows', () => {
+    const comparison = plan([row('one')]);
+    const writeback = { ...receipt([result('one', 'created')]), planId: comparison.planId };
+    const expected = { email: 'one@example.com', ...fields };
+    const verification: CrmRunVerification = { runId: writeback.runId, planId: comparison.planId, connectorId: 'hubspot', checkedAt: now.toISOString(),
+      verified: 1, different: 0, unavailable: 0,
+      records: [{ contactId: 'one', nativeId: 'native-one', status: 'verified', checkedAt: now.toISOString(), expected, actual: expected, differences: [], error: null }] };
+    const unrelated: CrmRunVerification[] = [
+      { ...verification, runId: 'another-run' }, { ...verification, planId: 'another-plan' },
+      { ...verification, connectorId: 'salesforce' },
+      { ...verification, records: [{ ...verification.records[0], nativeId: 'another-target' }] },
+      { ...verification, records: [{ ...verification.records[0], contactId: 'another-contact' }] },
+    ];
+    for (const check of unrelated) {
+      expect(decode(buildCrmReviewCsv({ plan: comparison, writeback, verification: check }))[0].verification_status).toBe('');
+    }
+    for (const status of ['unchanged', 'held', 'failed', 'rolled_back'] as const) {
+      expect(decode(buildCrmReviewCsv({ plan: comparison, writeback: { ...writeback, records: [{ ...writeback.records[0], status }] }, verification }))[0].verification_status).toBe('');
+    }
+    expect(decode(buildCrmReviewCsv({ plan: comparison, verification }))[0].verification_status).toBe('');
+    expect(decode(buildCrmReviewCsv({ writeback, verification }))[0].verification_status).toBe('');
+    expect(decode(buildCrmReviewCsv({ plan: { ...comparison, planId: 'another-plan' }, writeback, verification }))[0].verification_status).toBe('');
   });
 
   it('returns a header-only report when no contact evidence is available', () => {

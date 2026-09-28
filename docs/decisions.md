@@ -546,3 +546,22 @@ required; changing a decision must never replay a CRM write automatically.
 Pre-write backup JSON must distinguish the imported email from the actual CRM
 email beside its native ID. Both are needed for a changed-email identity review;
 the existing portable before-values alone do not establish the target address.
+
+## September 28, 2026 — Separate write acceptance from observed CRM values
+
+Add an on-demand read-back check to saved governed create/update runs, reusing
+the native-ID readers and existing run JSON storage. Compare the plan's six
+portable after-values, including protected existing fields, plus the expected
+primary email. Keep provider acceptance immutable when a read fails or values
+differ; never requeue or replay a write as part of verification.
+
+Persist only the latest check with per-record timestamps and differences. Reads
+use the current connection, and rollback can deliberately cause a difference
+from the original plan. This slice adds no background monitoring, automatic
+repair, probability scoring, or new CRM write path.
+
+The first native check exposed a prior linkage bug: execution regenerated the
+plan ID although the saved UI evidence retained the preview. After current-state
+revalidation, retain the reviewed plan ID in the receipt and rollback. Keep older
+mismatched history unchanged and unavailable for verification. Regression checks
+cover both providers with time advanced between preview and execution.

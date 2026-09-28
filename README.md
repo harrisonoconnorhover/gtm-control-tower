@@ -72,6 +72,9 @@ That original run used advisory approximate review. A later [native follow-up](d
 - Keeps returned CRM outcomes separate from local receipt-save failures. Failed
   history saves expose the full receipt for download or storage-only retry;
   retrying receipt storage does not repeat CRM writes or rollback.
+- Offers [read-only verification of saved CRM writes](docs/crm-run-verification.md):
+  compare expected fields and primary email with current native records, retain
+  timestamped differences or read errors, and export results without replaying writes.
 - Includes a source-driven Salesforce development slice: a published read-only
   Agentforce triage path plus a separate human-approved Screen Flow, invocable
   Apex planner, Queueable executor, Custom Metadata policies, stale-record

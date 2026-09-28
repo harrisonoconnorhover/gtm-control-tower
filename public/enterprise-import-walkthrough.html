@@ -33,7 +33,7 @@
 
       <nav class="jump" aria-label="Case study steps">
         <a href="#review">01 Review</a><a href="#decide">02 Decide</a><a href="#write">03 Write</a><a href="#repeat">04 Repeat</a><a href="#rollback">05 Roll back</a><a href="#controls">06 Protect fields</a>
-        <a href="#confirm">Confirm a person</a>
+        <a href="#confirm">Confirm a person</a><a href="#verify">Verify the result</a>
       </nav>
 
       <section id="review" aria-labelledby="review-title">
@@ -179,6 +179,31 @@
         <a class="button" href="./confirmed-match-hubspot-results.csv" download>HubSpot confirmed-match results</a>
         <a class="button" href="./confirmed-match-salesforce-results.csv" download>Salesforce confirmed-match results</a>
         <p class="small"><a href="https://github.com/harrisonoconnorhover/gtm-control-tower/blob/main/docs/confirmed-import-matches.md">Inspect the workflow, dated native results and limits ↗</a></p>
+      </section>
+
+      <section id="verify" aria-labelledby="verify-title">
+        <p class="step-label">Native follow-up · September 28, 2026 UTC</p>
+        <h2 id="verify-title">Check what the CRM actually saved.</h2>
+        <p class="copy">Saved runs now offer a read-only check of created and updated records. Control Tower compares primary email and six reviewed fields with the saved plan, then reports <strong>Verified</strong>, <strong>Values differ</strong>, or <strong>Couldn’t verify</strong>. The original write receipt stays intact.</p>
+        <p class="copy">In both development CRMs, Priya’s title update verified and her existing email was preserved. After deliberately rolling back her title, rechecking reported that difference without reapplying the update. Unresolved Jordan remained held and was never counted as verified.</p>
+        <div class="table-wrap" role="region" aria-label="Native saved-run verification outcomes" tabindex="0"><table>
+          <caption>Observed in HubSpot and Salesforce · real API reads</caption>
+          <thead><tr><th scope="col">Check</th><th scope="col">HubSpot</th><th scope="col">Salesforce</th></tr></thead>
+          <tbody>
+            <tr><th scope="row">Title update and read-only recheck</th><td class="good">1 verified</td><td class="good">1 verified</td></tr>
+            <tr><th scope="row">Recheck after deliberate rollback</th><td>1 value difference</td><td>1 value difference</td></tr>
+            <tr><th scope="row">Original write receipt</th><td>Preserved</td><td>Preserved</td></tr>
+            <tr><th scope="row">Final compared fixture fields</th><td class="good">All 9 records restored</td><td class="good">All 9 records restored</td></tr>
+          </tbody>
+        </table></div>
+        <figure>
+          <a href="./enterprise-import-evidence/salesforce-run-verification.png" aria-label="Open saved Salesforce verification after rollback"><img src="./enterprise-import-evidence/salesforce-run-verification.png" alt="Saved Salesforce run showing a completed rollback and the expected versus observed title difference, separately from its successful update receipt." loading="lazy"></a>
+          <figcaption>Actual saved run after rollback; record and run IDs masked. The difference is intentional: the check reports current values without repeating the import.</figcaption>
+        </figure>
+        <p class="small">These CSVs contain the latest check, after rollback, alongside the original write outcome and expected versus observed values. This is a timestamped observation using the current CRM connection, not continuous monitoring or proof of what caused a difference. Older receipts without matching plan IDs cannot be checked. Missing-record, read-error and create-result cases were tested separately with simulated responses.</p>
+        <a class="button" href="./hubspot-run-verification-results.csv" download>HubSpot verification CSV</a>
+        <a class="button" href="./salesforce-run-verification-results.csv" download>Salesforce verification CSV</a>
+        <p class="small"><a href="https://github.com/harrisonoconnorhover/gtm-control-tower/blob/main/docs/crm-run-verification.md">Inspect the workflow, dated results and limits ↗</a></p>
       </section>
 
       <aside class="limits" aria-labelledby="limits-title">

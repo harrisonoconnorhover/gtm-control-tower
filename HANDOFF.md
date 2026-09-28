@@ -2,40 +2,39 @@
 
 ## Finished
 
-- Closed a HubSpot alternate-email gap: rows using different known addresses for the same Contact now conflict across batches, including human-confirmed matches.
-- Included the canonical alias set in confirmation freshness. Changed aliases require review again; reordered/case-only aliases and older confirmations without aliases remain valid.
-- Changing or clearing a saved match returns only that row to its connector's pending comparison. Other completed rows and saved receipts remain intact.
-- Pre-write backup JSON now distinguishes the imported email from the actual CRM email beside the native ID.
-- Updated the walkthrough and operator documentation while preserving the scope of the earlier native evidence.
+- Added **Verify CRM results** and read-only rechecks to saved governed HubSpot Contact and Salesforce Lead runs. Results distinguish verified values, differences and unavailable reads from the original write outcome.
+- Persisted timestamped expected/observed fields, differences and errors; included them in saved JSON and results CSVs.
+- Fixed a preview/receipt linkage bug found in native qualification: execution now retains the reviewed plan ID after checking fresh CRM values. Historical mismatched receipts remain unchanged.
+- Qualified actual title updates, saved verification, rechecks and deliberate post-rollback differences in both development CRMs. All nine retained records per CRM were restored; no creates or deletes.
+- Added workflow documentation and native evidence to the public walkthrough.
 
 ## Try It
 
-1. Read the [confirmed-match workflow](https://gtm-control-tower.pages.dev/enterprise-import-walkthrough#confirm).
-2. In a configured `/app/lab`, process a confirmed row, then clear or change its match: that row becomes pending again and requires a new preview.
-3. Download **Download pre-write backup** and inspect `importedEmail`, `crmEmail`, the native ID and before-values. See [workflow details](docs/confirmed-import-matches.md).
+1. Read the [verification case](https://gtm-control-tower.pages.dev/enterprise-import-walkthrough#verify).
+2. After a governed import in a configured self-host, open `/runs`, enter its operator key if required, and select **Verify CRM results**.
+3. Inspect differences, download the results CSV, reload, then **Recheck CRM results**. Rechecking does not write to the CRM. See [workflow and limits](docs/crm-run-verification.md).
 
 ## Checks
 
-- Four cross-batch regressions reproduced the old defect by accepting execution instead of returning HTTP 409, then passed after the fix with no writes.
-- 146 focused alias/confirmation/workflow tests passed, along with TypeScript, focused ESLint and diff checks.
-- All 413 tests across 29 suites passed. TypeScript, full ESLint, application/public builds, secret scan and diff checks passed.
-- Both-provider browser regression passed with real local workspace/run storage and simulated CRM responses: affected-row re-review, failed-save retention, unchanged historical receipts, backup emails, reload and mobile checks. No live CRM requests were made. Temporary runtime removed.
-- Walkthrough anchors/local targets and built HTML match verified.
+- All 448 tests across 30 suites passed; TypeScript, full ESLint, application/public builds, secret scan and diff checks passed.
+- Both-provider plan-ID regressions failed before the fix and passed afterward; all 29 confirmed-match tests passed.
+- Both-provider browser checks passed: real local persistence, simulated verification responses, reload, failure retention, JSON/CSV and desktop/mobile layouts. No CRM writes.
+- Native checks passed September 28, 2026, 15:03:51–15:04:15 UTC. Each verified one updated person, preserved email, detected the deliberate rollback difference and retained the original receipt. The initial HubSpot linkage failure was restored and reconciled before rerunning.
 
 ## Decisions
 
-- Reuse native identities already returned by CRM reads; add no account-wide lookup or new write path.
-- A saved identity decision changes only the affected row's current progress, never historical receipts or CRM data by itself.
-- The additional-email and recovery checks use simulated CRM responses. Earlier native Priya/Jordan evidence remains dated and unchanged; no new native alias qualification is claimed.
+- Compare primary email and all six portable planned values, including protected fields. Keep verification separate from provider acceptance.
+- Save the latest on-demand observation; no monitoring, automatic repair or write retry.
+- Native evidence covers updates. Created-record and read-error cases use simulated providers.
 
 ## Remaining
 
-- Changes between the last read and the actual CRM write are not atomic; other workspaces and external writers remain outside these controls.
-- Alias checks cover addresses visible to the connected CRM account. They cannot infer unknown alternate addresses.
-- Salesforce Contacts remain review-only; there is no native merge, conversion or email replacement.
+- Verification uses the current CRM connection; historical runs do not bind a separately verified account identity.
+- Later automation or external changes can alter values; differences do not establish their cause.
+- Older missing/mismatched plans, Salesforce Contacts and converted Leads cannot be verified through this workflow. Malformed or cleared email reports unavailable.
 
 ## Review First
 
-- `app/api/control-tower/crm-writeback/route.ts` and `tests/crm-confirmed-match.test.ts`.
-- `lib/import-match-decision.ts` and `tests/import-match-decision.test.ts`.
-- `components/control-tower-dashboard.tsx` and `scripts/check-import-match-decision.mjs`.
+- `lib/crm-run-verification.ts` and `app/api/control-tower/runs/verify/route.ts`.
+- `components/sync-runs.tsx` and `lib/crm-review-export.ts`.
+- `docs/crm-run-verification.md` and its dated native evidence.

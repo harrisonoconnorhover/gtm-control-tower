@@ -61,7 +61,9 @@ export async function POST(request: Request) {
     if (payload.action !== 'execute' || !isCrmWritePlan(payload.plan) || !planStillMatches(payload.plan, current)) {
       return Response.json({ error: 'The preview is stale. Refresh the change plan before writing.' }, { status: 409 });
     }
-    return Response.json(await executePlan(current, contacts), { status: 202, headers: { 'Cache-Control': 'no-store' } });
+    // Revalidate current values, then retain the identity of the reviewed preview
+    // so its receipt, rollback and later verification all refer to that same plan.
+    return Response.json(await executePlan({ ...current, planId: payload.plan.planId }, contacts), { status: 202, headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
     console.error('CRM write-back failed', error);
     return Response.json({ error: error instanceof Error ? error.message : 'CRM write-back failed.' }, { status: 502 });
