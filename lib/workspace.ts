@@ -3,6 +3,7 @@ import type { ConnectorId, ConnectorReceipt } from './connector-contract';
 import type { LiveContactState, RepairRun } from './live-control-tower';
 import { defaultCrmUpdatePolicy, normalizeCrmUpdatePolicy, type CrmUpdatePolicy } from './crm-workflow';
 import { validImportMatchDecisions } from './import-match-decision';
+import { validPomadeOrigins } from './pomade-handoff';
 import { isImportExclusion } from './import-exclusions';
 
 export const MAX_PERSISTED_CONTACTS = 5_000;
@@ -65,6 +66,9 @@ export function validateWorkspaceState(value: unknown): WorkspaceState {
     throw new Error(`A saved workspace can contain at most ${MAX_PERSISTED_CONTACTS.toLocaleString()} contacts.`);
   }
   for (const row of [...state.contacts, ...state.originalContacts]) {
+    if (row && typeof row === 'object' && !validPomadeOrigins(row.sourceOrigins)) {
+      throw new Error('Pomade source context is invalid or exceeds its bounded updates-only format.');
+    }
     if (row && typeof row === 'object' && !validImportMatchDecisions(row.crmMatchDecisions)) {
       throw new Error('Confirmed CRM matches require a valid saved decision.');
     }

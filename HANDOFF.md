@@ -2,39 +2,38 @@
 
 ## Finished
 
-- Added **Verify CRM results** and read-only rechecks to saved governed HubSpot Contact and Salesforce Lead runs. Results distinguish verified values, differences and unavailable reads from the original write outcome.
-- Persisted timestamped expected/observed fields, differences and errors; included them in saved JSON and results CSVs.
-- Fixed a preview/receipt linkage bug found in native qualification: execution now retains the reviewed plan ID after checking fresh CRM values. Historical mismatched receipts remain unchanged.
-- Qualified actual title updates, saved verification, rechecks and deliberate post-rollback differences in both development CRMs. All nine retained records per CRM were restored; no creates or deletes.
-- Added workflow documentation and native evidence to the public walkthrough.
+- Added optional Pomade JSON preview and import into a new saved workspace. Ordinary CSV create/update workflows remain independent.
+- Version 1 and legacy files retain updates-only scope; source status, original proposals and evidence survive corrections, local duplicate repair, reload, saved results, CSV exports and eligible rollback receipts.
+- Governed preview and fresh execution hold unmatched Pomade rows. Legacy sync routes reject their reserved IDs; source Review/error/stale rows use existing exclusion controls.
+- Added a fictional download and dated native qualification to the public walkthrough at `#pomade`.
 
 ## Try It
 
-1. Read the [verification case](https://gtm-control-tower.pages.dev/enterprise-import-walkthrough#verify).
-2. After a governed import in a configured self-host, open `/runs`, enter its operator key if required, and select **Verify CRM results**.
-3. Inspect differences, download the results CSV, reload, then **Recheck CRM results**. Rechecking does not write to the CRM. See [workflow and limits](docs/crm-run-verification.md).
+1. Open the [optional handoff walkthrough](https://gtm-control-tower.pages.dev/enterprise-import-walkthrough#pomade) or [detailed guide](docs/pomade-handoff.md).
+2. In a persistent self-host at `/app/lab`, choose CSV file → Import Pomade handoff → inspect all proposals → Load in new saved workspace.
+3. Resolve holds, compare using a direct CRM connector, explicitly approve existing-record updates, then inspect `/runs` for source context, receipts, verification and rollback.
 
 ## Checks
 
-- All 448 tests across 30 suites passed; TypeScript, full ESLint, application/public builds, secret scan and diff checks passed.
-- Both-provider plan-ID regressions failed before the fix and passed afterward; all 29 confirmed-match tests passed.
-- Both-provider browser checks passed: real local persistence, simulated verification responses, reload, failure retention, JSON/CSV and desktop/mobile layouts. No CRM writes.
-- Native checks passed September 28, 2026, 15:03:51–15:04:15 UTC. Each verified one updated person, preserved email, detected the deliberate rollback difference and retained the original receipt. The initial HubSpot linkage failure was restored and reconciled before rerunning.
+- All 475 tests across 31 suites, TypeScript, ESLint, application/public builds, secret scan and diff checks passed.
+- Both-provider browser qualification passed with real local persistence and simulated CRM responses: ordinary CSV, preview without side effects, failed-save preservation, new workspace, reload, exclusions, malformed/oversized files, updates-only comparison, CSV context and disabled delegated sync. No CRM writes or live requests.
+- An actual file downloaded from Pomade passed browser preview/load/reload; its missing email remained held.
+- Native exporter/API qualification passed September 28, 2026, 16:53:37–16:53:55 UTC. Each development CRM updated and verified one fictional title; unmatched/Review rows held; zero creates/deletes. Rollback restored all nine retained fixtures' compared fields. See [dated summary](docs/evidence/pomade-handoff-native-2026-09-28.json).
 
 ## Decisions
 
-- Compare primary email and all six portable planned values, including protected fields. Keep verification separate from provider acceptance.
-- Save the latest on-demand observation; no monitoring, automatic repair or write retry.
-- Native evidence covers updates. Created-record and read-error cases use simulated providers.
+- Keep the file handoff optional; no shared credentials, sessions, services or accounts.
+- Source status and citations are context, never accuracy, CRM identity or approval. Edited values retain explicitly historical evidence.
+- Initial handoffs update existing HubSpot Contacts and unconverted Salesforce Leads only. Ordinary CSV creates keep their existing controls.
 
 ## Remaining
 
-- Verification uses the current CRM connection; historical runs do not bind a separately verified account identity.
-- Later automation or external changes can alter values; differences do not establish their cause.
-- Older missing/mismatched plans, Salesforce Contacts and converted Leads cannot be verified through this workflow. Malformed or cleared email reports unavailable.
+- The public site is a static walkthrough; saving and CRM operations require a configured persistent self-host.
+- Legacy files lack source installation/time/status/evidence. Salesforce Contacts remain review-only; no automatic transfer or two-way sync.
+- Existing verification uses the current CRM connection and does not independently bind historical account identity.
 
 ## Review First
 
-- `lib/crm-run-verification.ts` and `app/api/control-tower/runs/verify/route.ts`.
-- `components/sync-runs.tsx` and `lib/crm-review-export.ts`.
-- `docs/crm-run-verification.md` and its dated native evidence.
+- `lib/pomade-handoff.ts` and `app/api/control-tower/crm-writeback/route.ts`.
+- `components/self-host-console.tsx`, `components/pomade-source-context.tsx` and saved result exports.
+- `docs/pomade-handoff.md` and `scripts/check-pomade-handoff.mjs`.

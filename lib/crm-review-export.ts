@@ -1,7 +1,8 @@
 import type { CrmWritebackReceipt, CrmWritePlan } from './crm-workflow';
 import type { CrmRunVerification } from './crm-run-verification';
+import type { PomadeOrigin } from './pomade-handoff';
 
-export type CrmReviewExport = { plan?: CrmWritePlan; writeback?: CrmWritebackReceipt; verification?: CrmRunVerification };
+export type CrmReviewExport = { plan?: CrmWritePlan; writeback?: CrmWritebackReceipt; verification?: CrmRunVerification; originsByContactId?: Record<string, PomadeOrigin[]> };
 
 const columns = [
   'report_kind', 'report_scope', 'provider', 'plan_id', 'run_id', 'source_file',
@@ -15,6 +16,7 @@ const columns = [
   'receipt_requested', 'receipt_created', 'receipt_updated', 'receipt_unchanged', 'receipt_held', 'receipt_failed',
   'verification_status', 'verification_checked_at', 'verification_expected', 'verification_actual',
   'verification_differences', 'verification_error',
+  'source_context', 'source_context_basis', 'source_create_scope',
 ] as const;
 
 // These reports are for spreadsheet review, not re-import. Protect only the report
@@ -27,7 +29,7 @@ function spreadsheetCell(value: string | number | null | undefined): string {
 }
 
 /** One row per contact in this comparison/receipt, not the whole import. */
-export function buildCrmReviewCsv({ plan, writeback, verification }: CrmReviewExport): string {
+export function buildCrmReviewCsv({ plan, writeback, verification, originsByContactId }: CrmReviewExport): string {
   const plannedById = new Map(plan?.records.map((record) => [record.contactId, record]));
   const receivedById = new Map(writeback?.records.map((record) => [record.contactId, record]));
   const verificationMatches = Boolean(plan && writeback && verification
@@ -46,6 +48,7 @@ export function buildCrmReviewCsv({ plan, writeback, verification }: CrmReviewEx
     const crmCandidates = planned?.possibleMatches ?? [];
     const importCandidates = planned?.possibleImportMatches ?? [];
     const review = planned?.createReview;
+    const origins = originsByContactId?.[contactId];
     const values: Record<(typeof columns)[number], string | number | null | undefined> = {
       report_kind: writeback ? 'results' : 'comparison', report_scope: 'current_batch',
       provider: writeback?.connectorId ?? plan?.connectorId, plan_id: writeback?.planId ?? plan?.planId,
@@ -79,6 +82,9 @@ export function buildCrmReviewCsv({ plan, writeback, verification }: CrmReviewEx
       verification_actual: verified ? JSON.stringify(verified.actual) : '',
       verification_differences: verified ? JSON.stringify(verified.differences) : '',
       verification_error: verified?.error,
+      source_context: origins?.length ? JSON.stringify(origins) : '',
+      source_context_basis: origins?.length ? 'original_pomade_snapshot_not_proof_of_current_values' : '',
+      source_create_scope: origins?.length ? 'existing_record_updates_only' : '',
     };
     lines.push(columns.map((column) => spreadsheetCell(values[column])).join(','));
   }

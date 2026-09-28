@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createHubSpotContacts, syncDirectlyToHubSpot } from '../app/api/control-tower/hubspot-sync/route';
+import { POST, createHubSpotContacts, syncDirectlyToHubSpot } from '../app/api/control-tower/hubspot-sync/route';
 import { executeCsvRepair, importContactsCsv } from '../lib/csv-control-tower';
 import {
   combineHubSpotSyncReceipts,
@@ -164,4 +164,21 @@ describe('direct HubSpot sync identity safeguards', () => {
     expect(receipt.records[1]).toMatchObject({ status: 'synced', hubSpotId: '456', created: true });
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
+});
+
+
+it('rejects a Pomade handoff in legacy HubSpot sync before reading or writing the CRM', async () => {
+  vi.stubEnv('NODE_ENV', 'test');
+  vi.stubEnv('HUBSPOT_ACCESS_TOKEN', 'fictional-token');
+  vi.stubEnv('CONTROL_TOWER_SYNC_KEY', '');
+  const fetch = vi.fn();
+  vi.stubGlobal('fetch', fetch);
+  try {
+    const response = await POST(new Request('http://localhost/api/control-tower/hubspot-sync', { method: 'POST',
+      headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...directBatch,
+        contacts: [{ ...directBatch.contacts[0], contactId: `pomade-v1-${'a'.repeat(64)}` }] }) }));
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ error: expect.stringContaining('governed CRM') });
+    expect(fetch).not.toHaveBeenCalled();
+  } finally { vi.unstubAllEnvs(); }
 });

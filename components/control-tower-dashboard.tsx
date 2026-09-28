@@ -31,6 +31,8 @@ import { ImportRowDecisions } from '@/components/import-row-decisions';
 import { CrmUpdatePolicyControls } from '@/components/crm-update-policy';
 import { excludeImportRow, restoreImportRow } from '@/lib/import-exclusions';
 import { downloadCrmReviewCsv } from '@/lib/crm-review-export';
+import { PomadeSourceContext } from '@/components/pomade-source-context';
+import type { PomadeHandoffImport, PomadeOrigin } from '@/lib/pomade-handoff';
 import { saveConnectorRunReceipt, type PendingConnectorRun } from '@/lib/save-connector-run';
 import type { ConnectorCatalog, ConnectorId, ConnectorReceipt } from '@/lib/connector-contract';
 import {
@@ -162,6 +164,14 @@ function formatRouteTime(seconds: number): string {
   return `${String(minutes).padStart(2, '0')}:${remainder}`;
 }
 
+function originsForBatch(contacts: LiveContactState[], plan: CrmWritePlan | null): Record<string, PomadeOrigin[]> | undefined {
+  if (!plan) return undefined;
+  const included = new Set(plan.records.map((record) => record.contactId));
+  const entries = contacts.filter((contact) => included.has(contact.contactId) && contact.sourceOrigins?.length)
+    .map((contact) => [contact.contactId, contact.sourceOrigins!] as const);
+  return entries.length ? Object.fromEntries(entries) : undefined;
+}
+
 export function ControlTowerDashboard() {
   const [activeScenario, setActiveScenario] = useState<ScenarioKey | null>(null);
   const [repaired, setRepaired] = useState(false);
@@ -181,6 +191,7 @@ export function ControlTowerDashboard() {
   const [correctionHistory, setCorrectionHistory] = useState<CsvContactCorrection[]>([]);
   const [reviewEpoch, setReviewEpoch] = useState(0);
   const [correctionSaving, setCorrectionSaving] = useState(false);
+  const [pomadeLoading, setPomadeLoading] = useState(false);
   const [csvRepairHistory, setCsvRepairHistory] = useState<RepairRun[]>([]);
   const [csvFileName, setCsvFileName] = useState<string | null>(null);
   const [, setCsvStatus] = useState<'idle' | 'reading' | 'ready' | 'error'>('idle');
@@ -199,6 +210,7 @@ export function ControlTowerDashboard() {
   const [salesforcePlan, setSalesforcePlan] = useState<CrmWritePlan | null>(null);
   const [connectorCatalog, setConnectorCatalog] = useState<ConnectorCatalog | null>(null);
   const [sourceType, setSourceType] = useState<ConnectorId>('csv');
+  const [sourceLabel, setSourceLabel] = useState<string | undefined>();
   const [destinationType, setDestinationType] = useState<ConnectorId>('csv');
   const [csvMapping, setCsvMapping] = useState<CsvColumnMapping>({});
   const [connectorReceipts, setConnectorReceipts] = useState<ConnectorReceipt[]>([]);
@@ -212,7 +224,7 @@ export function ControlTowerDashboard() {
   const [persistenceStatus, setPersistenceStatus] = useState<'loading' | 'saved' | 'saving' | 'disabled' | 'error'>('loading');
   const crmRequestInFlight = useRef(false);
   const crmRequestPending = hubSpotSyncStatus === 'sending' || salesforceSyncStatus === 'sending';
-  const workspaceBusy = correctionSaving || persistenceStatus === 'loading' || persistenceStatus === 'saving'
+  const workspaceBusy = pomadeLoading || correctionSaving || persistenceStatus === 'loading' || persistenceStatus === 'saving'
     || repairStatus === 'sending' || crmRequestPending;
   const hubSpotEligibleContacts = useMemo(() => csvContacts.filter(isHubSpotEligible), [csvContacts]);
   const syncedHubSpotContactIds = useMemo(
@@ -248,6 +260,7 @@ export function ControlTowerDashboard() {
     .filter((connector) => connector.id !== 'csv' && connector.configured)
     .map((connector) => connector.label).join(' · ');
   const showWarehouseDemo = dataMode === 'warehouse' && bigQueryConfigured;
+  const pomadeImport = csvContacts.some((contact) => contact.sourceOrigins?.length);
   function rememberOperatorKey(value: string) {
     setHubSpotSyncKey(value);
     setSalesforceSyncKey(value);
@@ -349,6 +362,7 @@ export function ControlTowerDashboard() {
     setWorkspaceRevision(workspace.revision);
     setMappingPresets(workspace.presets);
     setSourceType(workspace.state.sourceType);
+    setSourceLabel(workspace.state.sourceLabel);
     setDestinationType(workspace.state.destinationType);
     setCsvMapping(workspace.state.mapping);
     setConnectorReceipts(workspace.state.receipts);
@@ -401,7 +415,7 @@ export function ControlTowerDashboard() {
         fileName: overrides.fileName === undefined ? csvFileName : overrides.fileName,
         sourceType: overrides.sourceType ?? sourceType,
         destinationType: overrides.destinationType ?? destinationType,
-        sourceLabel: overrides.sourceLabel,
+        sourceLabel: overrides.sourceLabel ?? sourceLabel,
         crmUpdatePolicy: overrides.crmUpdatePolicy ?? updatePolicy,
       };
       const response = await fetch('/api/control-tower/workspace', {
@@ -447,6 +461,7 @@ export function ControlTowerDashboard() {
     setCsvMapping(mapping);
     setConnectorReceipts(receipts);
     setSourceType(importedSource);
+    setSourceLabel(fileName);
     setCsvStatus('ready');
     setCsvError(null);
     setDataMode('csv');
@@ -460,8 +475,48 @@ export function ControlTowerDashboard() {
     await persistWorkspace('import_validated', {
       contacts: snapshot,
       originalContacts: snapshot.map((contact) => ({ ...contact, qualityFlags: [...contact.qualityFlags] })),
-      repairHistory: [], correctionHistory: [], receipts, mapping, fileName, sourceType: importedSource,
+      repairHistory: [], correctionHistory: [], receipts, mapping, fileName, sourceType: importedSource, sourceLabel: fileName,
     });
+  }
+
+  async function loadPomadeWorkspace(imported: PomadeHandoffImport, fileName: string) {
+    if (workspaceBusy || persistenceStatus !== 'saved') throw new Error('Wait until your current workspace is saved before loading this handoff.');
+    const label = `Pomade · ${imported.workspaceName ?? fileName}`;
+    const snapshot = structuredClone(imported.contacts);
+    const receipt: ConnectorReceipt = {
+      id: globalThis.crypto.randomUUID(), connectorId: 'csv', phase: 'validate', status: 'executed',
+      summary: `Loaded ${snapshot.length} Pomade proposals for review; ${snapshot.filter((contact) => contact.importExclusion).length} source-review rows skipped. Existing-record updates only.`,
+      recordsRead: snapshot.length, createdAt: new Date().toISOString(), undoAvailable: false,
+    };
+    const state: WorkspaceState = {
+      contacts: snapshot, originalContacts: structuredClone(snapshot), repairHistory: [], correctionHistory: [],
+      receipts: [receipt], mapping: {}, fileName, sourceType: 'csv', sourceLabel: label,
+      destinationType: connectorCatalog?.connectors.some((connector) => connector.id === imported.destination.provider && connector.configured)
+        ? imported.destination.provider : 'csv',
+      crmUpdatePolicy: defaultCrmUpdatePolicy(),
+    };
+    // Switch only after the new workspace is fully saved; the active import is not overwritten.
+    setPomadeLoading(true);
+    try {
+      const createdResponse = await fetch('/api/control-tower/workspace', {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'create', name: label }),
+      });
+      const created = await createdResponse.json() as { workspace?: SavedWorkspace; error?: string };
+      if (!createdResponse.ok || !created.workspace) throw new Error(created.error ?? 'A new saved workspace could not be created.');
+      const savedResponse = await fetch('/api/control-tower/workspace', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action: 'save', id: created.workspace.id, state, reason: 'pomade_handoff_loaded' }),
+      });
+      const saved = await savedResponse.json() as { workspace?: SavedWorkspace; error?: string };
+      if (!savedResponse.ok || !saved.workspace) throw new Error(saved.error ?? 'The Pomade import could not be saved. Your previous workspace is still active.');
+      applySavedWorkspace(saved.workspace);
+      setCsvError(null);
+      setActiveScenario(null);
+      setRepaired(false);
+      setRepairStatus('idle');
+      setRepairReceipt(null);
+      setRepairError(null);
+    } finally { setPomadeLoading(false); }
   }
 
   useEffect(() => {
@@ -720,6 +775,10 @@ export function ControlTowerDashboard() {
 
   async function syncNextCsvBatchToHubSpot() {
     if (crmRequestInFlight.current || workspaceBusy || !pendingHubSpotContacts.length) return;
+    if (pendingHubSpotContacts.some((contact) => contact.sourceOrigins?.length)) {
+      setHubSpotSyncError('Pomade proposals require the direct CRM connector and a reviewed updates-only comparison.');
+      return;
+    }
     const batch = pendingHubSpotContacts.slice(0, 100).map(toHubSpotSyncContact);
     const parentSyncId = hubSpotSyncReceipt?.syncId ?? globalThis.crypto.randomUUID();
     crmRequestInFlight.current = true;
@@ -828,7 +887,7 @@ export function ControlTowerDashboard() {
         setSalesforcePlan(null);
       }
       await recordDetailedRun(receipt, {
-        sourceLabel: csvFileName ?? 'imported-contacts.csv', inputCount: csvContacts.length,
+        sourceLabel: sourceLabel ?? csvFileName ?? 'imported-contacts.csv', inputCount: csvContacts.length,
         activeCount: csvContacts.filter((contact) => contact.recordStatus === 'active').length,
         heldCount: csvContacts.filter((contact) => contact.recordStatus === 'active').length - result.requested,
         repairCounts: {
@@ -836,7 +895,7 @@ export function ControlTowerDashboard() {
           rerouted: csvRepairHistory.find((run) => run.scenario === 'routing-overload')?.affectedRecords ?? 0,
           replayed: csvRepairHistory.find((run) => run.scenario === 'stage-regression')?.affectedRecords ?? 0,
         },
-        plan, writeback: result,
+        plan, writeback: result, originsByContactId: originsForBatch(csvContacts, plan),
       }, result.rollback);
       if (connectorId === 'hubspot') {
         setHubSpotSyncStatus(progress.failed || progress.held ? 'partial' : 'complete');
@@ -854,6 +913,10 @@ export function ControlTowerDashboard() {
 
   async function syncNextCsvBatchToSalesforce() {
     if (crmRequestInFlight.current || workspaceBusy || !pendingSalesforceContacts.length) return;
+    if (pendingSalesforceContacts.some((contact) => contact.sourceOrigins?.length)) {
+      setSalesforceSyncError('Pomade proposals require the direct CRM connector and a reviewed updates-only comparison.');
+      return;
+    }
     const batch = pendingSalesforceContacts.slice(0, 100).map(toSalesforceSyncLead);
     const parentSyncId = salesforceSyncReceipt?.syncId ?? globalThis.crypto.randomUUID();
     crmRequestInFlight.current = true;
@@ -979,7 +1042,7 @@ export function ControlTowerDashboard() {
               Open source · GitHub ↗
             </a>
             <span className="rounded-full border border-[#cdfc54]/20 bg-[#cdfc54]/[0.07] px-3 py-2 font-mono text-[10px] uppercase tracking-wider text-[#cdfc54]">Self-hosted · MIT</span>
-            <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 font-mono text-[10px] uppercase tracking-wider text-[#9db1a7]">{dataMode === 'csv' ? 'CSV workspace' : 'Synthetic warehouse demo'}</span>
+            <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 font-mono text-[10px] uppercase tracking-wider text-[#9db1a7]">{dataMode === 'csv' ? pomadeImport ? 'Pomade proposal workspace' : 'CSV workspace' : 'Synthetic warehouse demo'}</span>
           </div>
         </header>
 
@@ -987,10 +1050,10 @@ export function ControlTowerDashboard() {
           <div>
             <div className="mb-4 flex items-center gap-2 font-mono text-xs uppercase tracking-[0.2em] text-[#cdfc54]">
               <span className={`h-2 w-2 rounded-full ${demoRunning ? 'animate-pulse bg-[#cdfc54]' : 'bg-[#4fa782]'}`} />
-              {demoRunning ? `Processing · ${demoStages[Math.max(demoStage, 0)].label}` : dataMode === 'csv' ? 'CSV cleanup lab' : 'Synthetic warehouse walkthrough'}
+              {demoRunning ? `Processing · ${demoStages[Math.max(demoStage, 0)].label}` : dataMode === 'csv' ? pomadeImport ? 'Pomade handoff review' : 'CSV cleanup lab' : 'Synthetic warehouse walkthrough'}
             </div>
             <h2 className="max-w-[980px] text-4xl font-semibold leading-[0.98] tracking-[-0.05em] sm:text-6xl lg:text-[72px]">
-              {dataMode === 'csv' ? 'Inspect and repair your CSV before choosing a destination.' : 'Review the synthetic warehouse batch.'}
+              {dataMode === 'csv' ? pomadeImport ? 'Review proposed updates before comparing them with your CRM.' : 'Inspect and repair your CSV before choosing a destination.' : 'Review the synthetic warehouse batch.'}
             </h2>
             <p className="mt-6 max-w-2xl text-base leading-7 text-[#9cb0a7] sm:text-lg">
               {dataMode === 'csv' ? 'Import a file or try the sample, map its columns, inspect quality flags, run local repairs, and export the result. No CRM connection is required for this workflow.' : 'Load the configured BigQuery snapshot and inspect returned repair receipts. The illustrative walkthrough below explains the architecture; its example counters are not current execution results.'}
@@ -1048,6 +1111,7 @@ export function ControlTowerDashboard() {
           operatorKey={hubSpotSyncKey}
           onOperatorKeyChange={rememberOperatorKey}
           onMappedImport={(csv, fileName, mapping, source) => loadCsvWorkspace(csv, fileName, mapping, source)}
+          onPomadeImport={loadPomadeWorkspace}
           onSourceChange={changeSourceType}
           onDestinationChange={changeDestinationType}
           onSavePreset={saveMappingPreset}
@@ -1183,7 +1247,7 @@ export function ControlTowerDashboard() {
 
         <div className="mt-7 flex items-center justify-between gap-4">
           <div>
-            <p className="text-sm text-[#8fa99d]">{dataMode === 'csv' ? 'Imported CSV metrics' : visibleScenario ? 'Scenario impact model' : liveState ? 'Last returned warehouse snapshot' : 'Illustrative baseline'}</p>
+            <p className="text-sm text-[#8fa99d]">{dataMode === 'csv' ? pomadeImport ? 'Imported proposal metrics' : 'Imported CSV metrics' : visibleScenario ? 'Scenario impact model' : liveState ? 'Last returned warehouse snapshot' : 'Illustrative baseline'}</p>
             <h3 className="mt-1 text-xl font-semibold">{dataMode === 'csv' ? 'What the imported rows show' : visibleScenario ? 'How this failure changes the model' : liveState ? 'What BigQuery returned' : 'No warehouse data loaded · example values below'}</h3>
           </div>
           <span className={`rounded-full px-3 py-1 font-mono text-[9px] uppercase tracking-wider ${dataMode === 'csv' ? 'bg-[#83bcff]/10 text-[#83bcff]' : visibleScenario ? 'bg-[#ff7b55]/10 text-[#ff9d7f]' : liveState ? 'bg-[#cdfc54]/10 text-[#cdfc54]' : 'bg-white/[0.05] text-[#8fa99d]'}`}>
@@ -1434,7 +1498,7 @@ function FunkyCrmLab({
     <section className="mb-6 overflow-hidden rounded-[30px] border border-white/10 bg-[#0c1d17]" aria-label="Funky CRM contact lab">
       <div className="flex flex-wrap items-start justify-between gap-4 border-b border-white/10 px-5 py-5 sm:px-6">
         <div>
-          <p className="text-sm text-[#8fa99d]">{mode === 'csv' ? 'CSV contact workspace' : 'Warehouse contact snapshot'}</p>
+          <p className="text-sm text-[#8fa99d]">{mode === 'csv' ? contacts.some((contact) => contact.sourceOrigins?.length) ? 'Pomade proposal workspace' : 'CSV contact workspace' : 'Warehouse contact snapshot'}</p>
           <h3 className="mt-1 text-xl font-semibold">{mode === 'csv' ? `${contacts.length} imported contacts · no warehouse required` : `${contacts.length} contacts loaded from BigQuery`}</h3>
           <p className="mt-2 max-w-3xl text-xs leading-5 text-[#71877c]">{mode === 'csv' ? 'Review mapped imports, quality flags, local repairs, and receipts here. Saving depends on configured local persistence. External writes require explicit destination actions.' : 'These rows show the last returned warehouse snapshot. Native repair results appear only after a valid execution receipt is returned.'}</p>
         </div>
@@ -1472,6 +1536,8 @@ function FunkyCrmLab({
             error={hubSpotSyncError}
             accessKey={hubSpotSyncKey}
             safeMode={hubSpotSafeWriteback}
+            requiresGoverned={contacts.some((contact) => contact.sourceOrigins?.length)}
+            originsByContactId={originsForBatch(contacts, hubSpotPlan)}
             plan={hubSpotPlan}
             onAccessKeyChange={onHubSpotSyncKeyChange}
             onSync={onHubSpotSync}
@@ -1488,6 +1554,8 @@ function FunkyCrmLab({
             error={salesforceSyncError}
             accessKey={salesforceSyncKey}
             safeMode={salesforceSafeWriteback}
+            requiresGoverned={contacts.some((contact) => contact.sourceOrigins?.length)}
+            originsByContactId={originsForBatch(contacts, salesforcePlan)}
             plan={salesforcePlan}
             onAccessKeyChange={onSalesforceSyncKeyChange}
             onSync={onSalesforceSync}
@@ -1516,6 +1584,7 @@ function FunkyCrmLab({
                   <p className="font-semibold">{contact.fullName}</p>
                   <p className="mt-1 font-mono text-[9px] text-[#71877c]">{contact.contactId}</p>
                   {contact.importExclusion && <p className="mt-2 max-w-[240px] break-words text-xs text-[#e6bd68]">Skipped: {contact.importExclusion.reason}</p>}
+                  <PomadeSourceContext origins={contact.sourceOrigins} contact={contact} />
                 </td>
                 <td className="px-4 py-3.5 align-top">
                   <p className="max-w-[240px] break-all">{contact.rawEmail}</p>
@@ -1582,6 +1651,8 @@ function HubSpotSyncPanel({
   error,
   accessKey,
   safeMode,
+  requiresGoverned,
+  originsByContactId,
   plan,
   onAccessKeyChange,
   onSync,
@@ -1597,6 +1668,8 @@ function HubSpotSyncPanel({
   error: string | null;
   accessKey: string;
   safeMode: boolean;
+  requiresGoverned: boolean;
+  originsByContactId?: Record<string, PomadeOrigin[]>;
   plan: CrmWritePlan | null;
   onAccessKeyChange: (value: string) => void;
   onSync: () => Promise<void>;
@@ -1631,14 +1704,15 @@ function HubSpotSyncPanel({
           </label>
           <button
             onClick={() => void (safeMode ? plan ? onExecute() : onPreview() : onSync())}
-            disabled={status === 'sending' || pendingCount === 0}
+            disabled={status === 'sending' || pendingCount === 0 || (requiresGoverned && !safeMode)}
             className="rounded-full bg-[#cdfc54] px-5 py-3 text-xs font-bold text-[#07130f] transition hover:bg-[#dcff83] disabled:cursor-not-allowed disabled:opacity-50"
           >
             {status === 'sending' ? (plan ? 'Writing approved plan…' : 'Inspecting HubSpot…') : pendingCount ? safeMode ? plan ? (plan.creates + plan.updates ? `Execute ${plan.creates + plan.updates} approved changes` : 'Record comparison result') : `Compare ${batchCount} with CRM` : `Sync ${batchCount}${pendingCount > 100 ? ` of ${pendingCount}` : ''} to HubSpot` : eligibleCount ? safeMode ? 'All clean contacts processed' : 'All clean contacts synced' : 'Fix held records first'}
           </button>
         </div>
       </div>
-      {safeMode && plan && <ChangePlanCard plan={plan} onRefresh={onPreview} />}
+      {requiresGoverned && !safeMode && <p className="mt-3 text-xs leading-5 text-[#e6bd68]">Pomade proposals need the direct CRM connector for reviewed, existing-record updates. Delegated sync is unavailable for this import.</p>}
+      {safeMode && plan && <ChangePlanCard plan={plan} originsByContactId={originsByContactId} onRefresh={onPreview} />}
       <div aria-live="polite" className="mt-4">
         {writebackProgress && <CrmWritebackProgressCard label="HubSpot" progress={writebackProgress} pendingCount={pendingCount} />}
         {!writebackProgress && receipt && (
@@ -1668,6 +1742,8 @@ function SalesforceSyncPanel({
   error,
   accessKey,
   safeMode,
+  requiresGoverned,
+  originsByContactId,
   plan,
   onAccessKeyChange,
   onSync,
@@ -1683,6 +1759,8 @@ function SalesforceSyncPanel({
   error: string | null;
   accessKey: string;
   safeMode: boolean;
+  requiresGoverned: boolean;
+  originsByContactId?: Record<string, PomadeOrigin[]>;
   plan: CrmWritePlan | null;
   onAccessKeyChange: (value: string) => void;
   onSync: () => Promise<void>;
@@ -1716,14 +1794,15 @@ function SalesforceSyncPanel({
           </label>
           <button
             onClick={() => void (safeMode ? plan ? onExecute() : onPreview() : onSync())}
-            disabled={status === 'sending' || pendingCount === 0}
+            disabled={status === 'sending' || pendingCount === 0 || (requiresGoverned && !safeMode)}
             className="rounded-full bg-[#83bcff] px-5 py-3 text-xs font-bold text-[#07130f] transition hover:bg-[#a7d0ff] disabled:cursor-not-allowed disabled:opacity-50"
           >
             {status === 'sending' ? (plan ? 'Writing approved plan…' : 'Inspecting Salesforce…') : pendingCount ? safeMode ? plan ? (plan.creates + plan.updates ? `Execute ${plan.creates + plan.updates} approved changes` : 'Record comparison result') : `Compare ${batchCount} with CRM` : `Sync ${batchCount}${pendingCount > 100 ? ` of ${pendingCount}` : ''} to Salesforce` : eligibleCount ? safeMode ? 'All clean Leads processed' : 'All clean Leads synced' : 'Fix held records first'}
           </button>
         </div>
       </div>
-      {safeMode && plan && <ChangePlanCard plan={plan} onRefresh={onPreview} />}
+      {requiresGoverned && !safeMode && <p className="mt-3 text-xs leading-5 text-[#e6bd68]">Pomade proposals need the direct CRM connector for reviewed, existing-record updates. Delegated sync is unavailable for this import.</p>}
+      {safeMode && plan && <ChangePlanCard plan={plan} originsByContactId={originsByContactId} onRefresh={onPreview} />}
       <div aria-live="polite" className="mt-4">
         {writebackProgress && <CrmWritebackProgressCard label="Salesforce" progress={writebackProgress} pendingCount={pendingCount} />}
         {!writebackProgress && receipt && (
@@ -1751,7 +1830,7 @@ function CrmWritebackProgressCard({ label, progress, pendingCount }: { label: st
   );
 }
 
-function ChangePlanCard({ plan, onRefresh }: { plan: CrmWritePlan; onRefresh: () => Promise<void> }) {
+function ChangePlanCard({ plan, originsByContactId, onRefresh }: { plan: CrmWritePlan; originsByContactId?: Record<string, PomadeOrigin[]>; onRefresh: () => Promise<void> }) {
   function downloadBackup() {
     const backup = {
       exportedAt: new Date().toISOString(), connectorId: plan.connectorId, planId: plan.planId,
@@ -1774,7 +1853,7 @@ function ChangePlanCard({ plan, onRefresh }: { plan: CrmWritePlan; onRefresh: ()
           <p className="mt-1 text-xs text-[#a8bbb1]">{plan.creates} create · {plan.updates} update · {plan.unchanged} unchanged · {plan.held} held</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <button onClick={() => downloadCrmReviewCsv({ plan })} className="rounded-full border border-white/10 px-3 py-2 text-xs text-[#b8d8ff]">Download comparison CSV</button>
+          <button onClick={() => downloadCrmReviewCsv({ plan, originsByContactId })} className="rounded-full border border-white/10 px-3 py-2 text-xs text-[#b8d8ff]">Download comparison CSV</button>
           <button onClick={downloadBackup} className="rounded-full border border-white/10 px-3 py-2 text-xs text-[#b8d8ff]">Download pre-write backup</button>
           <button onClick={() => void onRefresh()} className="rounded-full border border-white/10 px-3 py-2 text-xs text-[#a8bbb1]">Refresh comparison</button>
         </div>
@@ -1797,6 +1876,7 @@ function ChangePlanCard({ plan, onRefresh }: { plan: CrmWritePlan; onRefresh: ()
               ? `${record.matchDecision ? 'CRM records checked' : 'Matched CRM records'}: ${record.matches.map((match) => `${match.isConverted ? 'Converted Lead' : match.objectType === 'lead' ? 'Lead' : 'Contact'} ${match.nativeId} (${match.email})`).join('; ')}`
               : 'No exact email match returned by the completed lookup.'}</p>}
             {record.reason && <p className="mt-2 leading-5 text-[#a8bbb1]">{record.reason}</p>}
+            <PomadeSourceContext origins={originsByContactId?.[record.contactId]} />
             {record.createReview?.startedAt && <p className="mt-2 text-[#a8bbb1]">Possible-duplicate check · snapshot started {new Date(record.createReview.startedAt).toLocaleString()} · scores rank evidence, not identity probability.</p>}
             {record.possibleMatches?.map((candidate) => (
               <div key={`${candidate.objectType}:${candidate.nativeId}`} className="mt-3 rounded-lg border border-[#ffb19a]/20 p-3">

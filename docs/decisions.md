@@ -565,3 +565,20 @@ plan ID although the saved UI evidence retained the preview. After current-state
 revalidation, retain the reviewed plan ID in the receipt and rollback. Keep older
 mismatched history unchanged and unavailable for verification. Regression checks
 cover both providers with time advanced between preview and execution.
+
+## September 28, 2026 — Keep the Pomade handoff optional and updates-only
+
+Extend Pomade's existing preview file rather than coupling the products through
+shared services or credentials. Validate all 1–100 rows before loading them into
+a new saved Control Tower workspace. Preserve `allowCreate: false` through
+comparison and execution, including legacy files; ordinary CSV imports keep
+their existing create capability. Pomade proposals require the governed direct
+CRM path, not delegated legacy sync.
+
+Keep original proposed values and bounded source context separate from Control
+Tower's normalized fields and CRM outcomes. Upstream Ready is not approval or an
+accuracy measurement; known review/error/stale statuses use existing exclusions.
+Retain origins through correction, reload, local merge, and batch evidence while
+labeling source evidence historical when values change. Missing legacy metadata
+remains unknown. Local and hosted Pomade stay independent; this adds no research
+execution, automatic CRM write, shared database, or two-way synchronization.

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildCrmReviewCsv } from '../lib/crm-review-export';
 import type { CrmRunVerification } from '../lib/crm-run-verification';
+import type { PomadeOrigin } from '../lib/pomade-handoff';
 import { buildCrmWritePlan, type CrmPlanRecord, type CrmWritebackReceipt, type CrmWritePlan } from '../lib/crm-workflow';
 
 const fields = { firstName: 'Nina', lastName: 'Shah', company: 'Costco', phone: null, jobTitle: 'Director', website: null };
@@ -200,5 +201,27 @@ describe('CRM spreadsheet review reports', () => {
 
   it('returns a header-only report when no contact evidence is available', () => {
     expect(decode(buildCrmReviewCsv({}))).toEqual([]);
+  });
+
+  it('exports only this batch’s Pomade context and preserves original claims separately from edited values', () => {
+    const origin: PomadeOrigin = {
+      source: 'pomade', schemaVersion: 1, exportId: 'export-1', exportedAt: now.toISOString(), sourceInstanceId: 'install-1',
+      workspaceId: 'table-1', workspaceName: 'Conference research', sourceRevision: null, rowId: 'row-1', externalKey: 'nina@example.com',
+      sourceStatus: 'Ready', reviewReason: null, proposedFields: { ...fields, fullName: 'Nina Shah', email: 'nina@example.com' },
+      evidence: [{ field: 'jobTitle', value: 'Director', sourceUrl: 'https://example.com/team', quote: 'Nina leads the team.', observedAt: null, reference: 'manual note' }],
+      fieldMappings: [], destination: { provider: 'hubspot', objectType: 'contact' }, allowCreate: false, legacyImportId: null,
+    };
+    const comparison = plan([{ ...row('source-row', 'update'), after: { ...fields, jobTitle: 'Reviewed title' }, changes: [{ field: 'jobTitle', before: null, after: 'Reviewed title' }] }, row('ordinary-csv')]);
+    const sourceContext = { 'source-row': [origin], 'outside-batch': [{ ...origin, rowId: 'unrelated-row' }] };
+    const exported = decode(buildCrmReviewCsv({ plan: comparison, originsByContactId: sourceContext }));
+    expect(exported).toHaveLength(2);
+    expect(exported[0]).toMatchObject({ source_create_scope: 'existing_record_updates_only', source_context_basis: 'original_pomade_snapshot_not_proof_of_current_values', outcome: '' });
+    expect(JSON.parse(exported[0].source_context)).toEqual([origin]);
+    expect(JSON.parse(exported[0].field_changes)[0].after).toBe('Reviewed title');
+    expect(exported[0].source_context).not.toContain('unrelated-row');
+    expect(exported[1]).toMatchObject({ planned_action: 'create', source_context: '', source_context_basis: '', source_create_scope: '' });
+    expect(origin.proposedFields.jobTitle).toBe('Director');
+    const writeback = receipt([result('source-row', 'updated')]);
+    expect(JSON.parse(decode(buildCrmReviewCsv({ writeback, originsByContactId: sourceContext }))[0].source_context)).toEqual([origin]);
   });
 });

@@ -33,6 +33,10 @@ That original run used advisory approximate review. A later [native follow-up](d
 - Previews any CSV, lets the operator map arbitrary headers, saves reusable
   mapping presets, and diagnoses duplicate
   identity, missing fields, bad email, owner gaps, and lifecycle regression.
+- Optionally imports a [Pomade JSON handoff](docs/pomade-handoff.md) into a new
+  saved review workspace, retaining original proposals and source context.
+  These files permit existing-record updates only; ordinary CSV imports retain
+  their create workflow. Neither product requires the other to operate.
 - Lets the operator [correct held imported rows](docs/held-record-review.md) in
   `/app/lab` with a reason, revalidation, and before/after history. Email changes
   recheck active-row duplicates; unresolved holds remain.

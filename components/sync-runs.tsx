@@ -9,6 +9,7 @@ import { canVerifyCrmRun, type CrmRunVerification } from '@/lib/crm-run-verifica
 import { downloadCrmReviewCsv } from '@/lib/crm-review-export';
 import { saveConnectorRunReceipt, type PendingConnectorRun } from '@/lib/save-connector-run';
 import { UnsavedRuns } from '@/components/unsaved-runs';
+import { PomadeSourceContext } from '@/components/pomade-source-context';
 
 export function SyncRuns() {
   const [savedRuns, setRuns] = useState<ConnectorRun[]>([]);
@@ -82,7 +83,10 @@ export function SyncRuns() {
         recordsWritten: result.updated, recordsFailed: result.failed, createdAt: result.completedAt, undoAvailable: false,
         nativeReceiptId: result.runId,
       };
-      const details = { writeback: result };
+      const originEntries = result.records.flatMap((record) => run.details?.originsByContactId?.[record.contactId]
+        ? [[record.contactId, run.details.originsByContactId[record.contactId]] as const] : []);
+      const details = { writeback: result, sourceLabel: run.details?.sourceLabel,
+        ...(originEntries.length ? { originsByContactId: Object.fromEntries(originEntries) } : {}) };
       const pending: PendingConnectorRun = { workspaceId, run: { receipt, details } };
       const completed: ConnectorRun = { id: receipt.id, workspaceId, connectorId: receipt.connectorId, phase: receipt.phase,
         status: receipt.status, receipt, details, undo: null, createdAt: receipt.createdAt };
@@ -158,6 +162,7 @@ function RunCard({ run, rolledBack, receiptUnsaved, rollingBack, onRollback, can
   const plan = run.details?.plan;
   const writeback = run.details?.writeback;
   const scan = run.details?.scan;
+  const originsByContactId = run.details?.originsByContactId;
   const savedVerification = run.details?.verification;
   const verification = savedVerification && plan && writeback && savedVerification.runId === run.id
     && savedVerification.runId === writeback.runId && savedVerification.planId === plan.planId
@@ -173,7 +178,8 @@ function RunCard({ run, rolledBack, receiptUnsaved, rollingBack, onRollback, can
       {(plan || writeback) && <div className="mt-4 grid gap-2 border-t border-white/[0.06] pt-4 sm:grid-cols-3 lg:grid-cols-6">
         <Mini label="Input" value={plan?.requested ?? writeback?.requested ?? 0} /><Mini label="Create" value={writeback?.created ?? plan?.creates ?? 0} /><Mini label="Update" value={writeback?.updated ?? plan?.updates ?? 0} /><Mini label="Unchanged" value={writeback?.unchanged ?? plan?.unchanged ?? 0} /><Mini label="Held" value={writeback?.held ?? plan?.held ?? 0} /><Mini label="Failed" value={writeback?.failed ?? 0} />
       </div>}
-      {(plan || writeback) && <div className="mt-3 flex flex-wrap items-center gap-3"><button onClick={() => downloadCrmReviewCsv({ plan, writeback, verification })} className="rounded-full border border-white/15 px-4 py-2 text-xs font-semibold text-[#a8bbb1]">{writeback ? 'Download results CSV' : 'Download comparison CSV'}</button><p className="text-[10px] text-[#71877c]">This batch only · one row per contact · {writeback ? 'actual recorded outcomes' : 'comparison, not execution'}{verification ? ' · includes latest saved CRM check' : ''}</p></div>}
+      {(plan || writeback) && <div className="mt-3 flex flex-wrap items-center gap-3"><button onClick={() => downloadCrmReviewCsv({ plan, writeback, verification, originsByContactId })} className="rounded-full border border-white/15 px-4 py-2 text-xs font-semibold text-[#a8bbb1]">{writeback ? 'Download results CSV' : 'Download comparison CSV'}</button><p className="text-[10px] text-[#71877c]">This batch only · one row per contact · {writeback ? 'actual recorded outcomes' : 'comparison, not execution'}{verification ? ' · includes latest saved CRM check' : ''}</p></div>}
+      {originsByContactId && <details className="mt-4 rounded-xl border border-white/10 p-3"><summary className="cursor-pointer text-xs font-semibold text-[#a8bbb1]">Review Pomade source context</summary><p className="mt-2 text-xs text-[#71877c]">{run.details?.sourceLabel ?? 'Pomade handoff'} · source snapshots remain separate from CRM outcomes.</p>{[...new Set([...(plan?.records.map((record) => record.contactId) ?? []), ...(writeback?.records.map((record) => record.contactId) ?? [])])].filter((contactId) => originsByContactId[contactId]?.length).map((contactId) => <div key={contactId} className="mt-3"><p className="break-all font-mono text-[9px] text-[#71877c]">{contactId}</p><PomadeSourceContext origins={originsByContactId[contactId]} /></div>)}</details>}
       {(canVerify || verification) && <section aria-label="CRM result verification" className="mt-4 rounded-2xl border border-[#83bcff]/20 bg-[#06100d]/60 p-4">
         <div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="text-sm font-semibold text-[#c5dbef]">CRM result verification</h3><p className="mt-2 max-w-2xl text-xs leading-5 text-[#8ca096]">Read created and updated records from the current CRM connection. Compare primary email and all six reviewed fields with the saved plan. Rechecking never repeats a write.</p></div>{canVerify && <button onClick={onVerify} disabled={crmBusy} className="rounded-full border border-[#83bcff]/30 px-4 py-2 text-xs font-semibold text-[#83bcff] disabled:opacity-50">{verifying ? 'Checking CRM…' : verification ? 'Recheck CRM results' : 'Verify CRM results'}</button>}</div>
         {rolledBack && <p className="mt-3 text-xs leading-5 text-[#eac485]">This run has been rolled back. A recheck still compares with the original import plan, so restored values can appear as differences.</p>}

@@ -1,9 +1,11 @@
 import type { ConnectorId, ConnectorReceipt, ConnectorStatus } from './connector-contract';
 import type { CrmRunVerification } from './crm-run-verification';
 import type { CrmRollbackPlan, CrmWritePlan, CrmWritebackReceipt } from './crm-workflow';
+import type { PomadeOrigin } from './pomade-handoff';
 
 export type ConnectorRunDetails = {
   sourceLabel?: string;
+  originsByContactId?: Record<string, PomadeOrigin[]>;
   inputCount?: number;
   activeCount?: number;
   heldCount?: number;

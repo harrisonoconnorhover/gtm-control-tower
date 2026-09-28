@@ -42,7 +42,8 @@
     "test:import-holds": "node scripts/check-import-holds.mjs",
     "test:import-controls": "node scripts/check-import-controls.mjs",
     "test:confirmed-matches": "node scripts/check-import-match-decision.mjs",
-    "test:run-verification": "node scripts/check-run-verification.mjs"
+    "test:run-verification": "node scripts/check-run-verification.mjs",
+    "test:pomade-handoff": "node scripts/check-pomade-handoff.mjs"
   },
   "dependencies": {
     "better-sqlite3": "^12.11.1",
