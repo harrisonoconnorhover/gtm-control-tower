@@ -17,6 +17,8 @@ import {
   type CrmWritebackReceipt,
   type PortableCrmContact,
   type CrmUpdatePolicy,
+  type CrmMatchDecision,
+  type NativeCrmRecord,
 } from '@/lib/crm-workflow';
 import { toHubSpotFieldPayload, toSalesforceFieldPayload } from '@/lib/crm-field-mapping';
 import { operatorAccessError } from '@/lib/operator-auth';
@@ -26,6 +28,8 @@ import { reviewImportCreates, snapshotCoverageIssue } from '@/lib/import-create-
 import type { SavedWorkspace } from '@/lib/workspace';
 import { toHubSpotSyncContact } from '@/lib/hubspot-sync';
 import { toSalesforceSyncLead } from '@/lib/salesforce-sync';
+import { importMatchSourceKey, isConfirmedImportMatch, nativeMatchTargetKey, type ConfirmedImportMatch } from '@/lib/import-match-decision';
+import { readConfirmedTarget, verifyImportMatch } from '@/lib/import-match-decision-server';
 
 const DEFAULT_API_VERSION = '67.0';
 
@@ -84,15 +88,81 @@ async function createPlan(connectorId: CrmWritePlan['connectorId'], sourceFile: 
     } catch { rowHolds.set(contact.contactId, 'This saved row is not eligible for this CRM. Resolve its import issues before writing.'); }
   }
   const existing = await readExisting(connectorId, contacts);
+  const matchDecisions = await applyConfirmedMatches(connectorId, contacts, workspace, existing, rowHolds);
   const now = new Date();
-  const exactPlan = buildCrmWritePlan(connectorId, sourceFile, contacts, existing, now, undefined, updatePolicy, rowHolds);
+  const exactPlan = buildCrmWritePlan(connectorId, sourceFile, contacts, existing, now, undefined, updatePolicy, rowHolds, matchDecisions);
   if (!exactPlan.creates) return exactPlan;
   const createIds = new Set(exactPlan.records.filter((record) => record.operation === 'create').map((record) => record.contactId));
   const scan = await getLatestDuplicateScan(workspace.id, connectorId);
   const records = scan && !snapshotCoverageIssue(workspace.id, connectorId, scan, now)
     ? await getDuplicateScanRecords(scan.id) : null;
   const reviews = reviewImportCreates(connectorId, contacts.filter((contact) => createIds.has(contact.contactId)), workspace, scan, records, now);
-  return buildCrmWritePlan(connectorId, sourceFile, contacts, existing, now, reviews, updatePolicy, rowHolds);
+  return buildCrmWritePlan(connectorId, sourceFile, contacts, existing, now, reviews, updatePolicy, rowHolds, matchDecisions);
+}
+
+async function applyConfirmedMatches(
+  connectorId: CrmWritePlan['connectorId'],
+  contacts: PortableCrmContact[],
+  workspace: SavedWorkspace,
+  existing: Map<string, NativeCrmRecord[]>,
+  rowHolds: Map<string, string>,
+): Promise<Map<string, CrmMatchDecision>> {
+  const included = workspace.state.contacts.filter((row) => row.recordStatus === 'active' && !row.importExclusion);
+  const requestedIds = new Set(contacts.map((row) => row.contactId));
+  const selections = new Map<string, ConfirmedImportMatch>();
+  const claims = new Map<string, Set<string>>();
+  const importedEmails = new Map<string, Set<string>>();
+  const hold = (contactId: string, reason: string) => {
+    if (requestedIds.has(contactId) && !rowHolds.has(contactId)) rowHolds.set(contactId, reason);
+  };
+  for (const row of included) {
+    const email = (row.normalizedEmail || row.rawEmail).trim().toLowerCase();
+    if (email) {
+      const rows = importedEmails.get(email) ?? new Set<string>();
+      rows.add(row.contactId);
+      importedEmails.set(email, rows);
+    }
+    const decision: unknown = row.crmMatchDecisions?.[connectorId];
+    if (decision === undefined) continue;
+    if (!isConfirmedImportMatch(decision) || decision.connectorId !== connectorId
+      || decision.sourceKey !== importMatchSourceKey(row) || !await verifyImportMatch(workspace.id, decision)) {
+      hold(row.contactId, 'The saved match confirmation is invalid or the imported row changed. Review and confirm this person again before importing.');
+      continue;
+    }
+    selections.set(row.contactId, decision);
+    const key = `${decision.target.objectType}:${decision.target.nativeId}`;
+    const rows = claims.get(key) ?? new Set<string>();
+    rows.add(row.contactId);
+    claims.set(key, rows);
+  }
+  // Include rows outside the current batch. Two separately executed batches must
+  // not apply competing updates to the same selected CRM person.
+  for (const decision of selections.values()) {
+    const key = `${decision.target.objectType}:${decision.target.nativeId}`;
+    const rows = new Set([...claims.get(key) ?? [], ...importedEmails.get(decision.target.email.trim().toLowerCase()) ?? []]);
+    if (rows.size > 1) for (const contactId of rows) {
+      hold(contactId, 'Multiple included import rows target this CRM person. Skip or resolve the other row before writing, including rows in later batches.');
+    }
+  }
+  const decisions = new Map<string, CrmMatchDecision>();
+  for (const contact of contacts) {
+    const decision = selections.get(contact.contactId);
+    if (!decision || rowHolds.has(contact.contactId)) continue;
+    const current = await readConfirmedTarget(connectorId, decision.target.nativeId);
+    if (!current || current.objectType !== (connectorId === 'hubspot' ? 'contact' : 'lead')
+      || (connectorId === 'salesforce' && current.isConverted !== false)
+      || nativeMatchTargetKey(current) !== nativeMatchTargetKey(decision.target)) {
+      hold(contact.contactId, 'The confirmed CRM record changed or is no longer an eligible update target. Review and confirm this person again before importing.');
+      continue;
+    }
+    if ((existing.get(contact.email.toLowerCase()) ?? []).some((match) => match.nativeId !== current.nativeId || match.objectType !== current.objectType)) {
+      hold(contact.contactId, 'This imported email now matches a different CRM record than the person you confirmed. Resolve that identity conflict before importing.');
+      continue;
+    }
+    existing.set(contact.email.toLowerCase(), [current]);
+    decisions.set(contact.contactId, { nativeId: current.nativeId, email: current.email, reason: decision.reason, confirmedAt: decision.confirmedAt });
+  }
+  return decisions;
 }
 
 async function readExisting(connectorId: CrmWritePlan['connectorId'], contacts: PortableCrmContact[]) {
@@ -230,7 +300,7 @@ async function executeSalesforcePlan(plan: CrmWritePlan, runId: string): Promise
 
 async function executeRollback(rollback: CrmRollbackPlan): Promise<CrmWritebackReceipt> {
   const proposed = rollback.records.map((record): PortableCrmContact => ({
-    contactId: record.contactId, email: record.email,
+    contactId: record.contactId, email: record.targetEmail ?? record.email,
     firstName: record.after.firstName ?? '', lastName: record.after.lastName ?? '',
     company: record.after.company, phone: record.after.phone, jobTitle: record.after.jobTitle, website: record.after.website,
   }));
@@ -239,7 +309,7 @@ async function executeRollback(rollback: CrmRollbackPlan): Promise<CrmWritebackR
   const alreadyRestored: CrmWritebackReceipt['records'] = [];
   const conflicts: CrmWritebackReceipt['records'] = [];
   for (const record of rollback.records) {
-    const native = (current.get(record.email.toLowerCase()) ?? []).find((candidate) => candidate.nativeId === record.nativeId) ?? null;
+    const native = (current.get((record.targetEmail ?? record.email).toLowerCase()) ?? []).find((candidate) => candidate.nativeId === record.nativeId) ?? null;
     if (rollbackRecordStillMatches(record, native)) eligible.push(record);
     else if (rollbackRecordAlreadyRestored(record, native)) alreadyRestored.push({
       contactId: record.contactId, email: record.email, nativeId: record.nativeId, status: 'unchanged', error: null,

@@ -497,3 +497,21 @@ restoration through the existing rollback path. Verify account and fixture
 ownership before writes and compare the nine records' observed fields afterward.
 Publish dated results with identifiers redacted; preserve earlier evidence and
 keep native coverage separate from simulated failure and mobile checks.
+
+
+## September 28, 2026 — Confirm an existing person without replacing their email
+
+Resolve a held import row only through an explicit candidate choice and saved
+reason. Support HubSpot Contacts and unconverted Salesforce Leads; preserve the
+CRM email and reuse existing field policy, native-ID updates, receipts and rollback.
+Require a fresh complete snapshot when confirming. Re-read the selected native
+record at confirmation, preview and execution; source or target changes hold the
+row until renewed review. Include the decision in the preview fingerprint.
+
+Workspace JSON is independently editable, so the authenticated endpoint signs
+its decision using the current connector credential, bound to workspace, source,
+target and reason. Imported or tampered JSON cannot manufacture an approved
+identity. Credential rotation requires confirmation again. Store the decision in
+workspace revisions, not source CSV round-trips. Check competing decisions and
+known target-email rows across the entire included import, not only the current
+batch. This does not provide cross-workspace locks or atomic CRM writes.

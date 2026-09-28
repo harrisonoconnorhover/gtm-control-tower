@@ -25,7 +25,7 @@ import {
 } from '@/lib/csv-control-tower';
 import { HeldContactReview } from '@/components/held-contact-review';
 import { SelfHostConsole } from '@/components/self-host-console';
-import { ImportMatchReview } from '@/components/import-match-review';
+import { ImportMatchReview, type ImportMatchDecisionAction } from '@/components/import-match-review';
 import { UnsavedRuns } from '@/components/unsaved-runs';
 import { ImportRowDecisions } from '@/components/import-row-decisions';
 import { CrmUpdatePolicyControls } from '@/components/crm-update-policy';
@@ -582,6 +582,29 @@ export function ControlTowerDashboard() {
     finally { crmRequestInFlight.current = false; setCorrectionSaving(false); }
   }
 
+  async function changeImportMatchDecision(action: ImportMatchDecisionAction) {
+    if (crmRequestInFlight.current || workspaceBusy) throw new Error('Wait for the current workspace operation to finish.');
+    if (!workspaceId || workspaceRevision === null || persistenceStatus !== 'saved') throw new Error('Save this workspace before confirming a CRM match.');
+    crmRequestInFlight.current = true;
+    setCorrectionSaving(true);
+    try {
+      const accessKey = action.connectorId === 'hubspot' ? hubSpotSyncKey : salesforceSyncKey;
+      const response = await fetch('/api/control-tower/import-match-decision', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...(accessKey ? { 'x-control-tower-key': accessKey } : {}) },
+        body: JSON.stringify({ ...action, workspaceId, revision: workspaceRevision }),
+      });
+      const payload = await response.json() as { workspace?: SavedWorkspace; error?: string };
+      if (!response.ok || !payload.workspace || payload.workspace.id !== workspaceId) {
+        throw new Error(payload.error || 'The CRM match decision could not be saved. Your previous selection and preview are unchanged.');
+      }
+      setCsvContacts(payload.workspace.state.contacts);
+      setWorkspaceRevision(payload.workspace.revision);
+      setPersistenceStatus('saved');
+      invalidateCrmReview(true);
+    } finally { crmRequestInFlight.current = false; setCorrectionSaving(false); }
+  }
+
   async function correctHeldContact(contactId: string, input: CsvContactCorrectionInput, reason: string): Promise<string> {
     if (crmRequestInFlight.current || workspaceBusy) {
       throw new Error('Wait for the current workspace operation to finish.');
@@ -1065,6 +1088,7 @@ export function ControlTowerDashboard() {
             workspaceId={workspaceId}
             accessKey={destinationType === 'hubspot' ? hubSpotSyncKey : salesforceSyncKey}
             disabled={persistenceStatus !== 'saved' || workspaceBusy}
+            onDecision={changeImportMatchDecision}
           />}
 
         <FunkyCrmLab
@@ -1583,7 +1607,7 @@ function HubSpotSyncPanel({
         <div>
           <div className="flex flex-wrap items-center gap-2">
             <p className="text-sm font-semibold">Governed HubSpot destination</p>
-            <span className="rounded-full bg-[#cdfc54]/10 px-3 py-1 font-mono text-[9px] uppercase text-[#cdfc54]">{safeMode ? 'Compare exact email' : 'n8n email upsert'}</span>
+            <span className="rounded-full bg-[#cdfc54]/10 px-3 py-1 font-mono text-[9px] uppercase text-[#cdfc54]">{safeMode ? 'Compare CRM records' : 'n8n email upsert'}</span>
           </div>
           <p className="mt-2 max-w-3xl text-xs leading-5 text-[#71877c]">{eligibleCount} clean active contacts qualify; {heldCount} merged or unresolved rows stay out. {safeMode ? 'Compare up to 100 contacts before approving creates or updates.' : 'Each sync sends at most 100 contacts.'} Portable fields: name, company, phone, job title, and website.</p>
           <p className="mt-1 text-[10px] leading-5 text-[#566b61]">Lifecycle and symbolic owner routes remain local because safely changing those fields requires reading each portal’s current stages and owner IDs first.</p>
@@ -1749,14 +1773,20 @@ function ChangePlanCard({ plan, onRefresh }: { plan: CrmWritePlan; onRefresh: ()
       {plan.updatePolicy && <p className="mt-3 text-xs leading-5 text-[#b8d8ff]">Existing-record policy: {plan.updatePolicy.mode === 'fill-empty' ? 'fill empty fields only' : 'replace selected fields'} · {plan.updatePolicy.fields.length} selected fields · blank clearing {plan.updatePolicy.clearBlanks ? 'allowed' : 'off'}. This comparison and its CSV cover this batch only.</p>}
       <p className="mt-3 text-xs leading-5 text-[#a8bbb1]">{plan.connectorId === 'hubspot'
         ? 'Checks exact primary and additional email addresses. Two imported rows matching the same Contact are held.'
-        : 'Checks exact email across Leads and Contacts. Contact matches, converted Leads and ambiguous matches are held.'} New records are also checked against the CRM snapshot and other active rows in the saved import, including later batches, using name, email, phone, state and company. A possible match holds creation for review; it never links or updates that person automatically. Creates require a complete CRM snapshot started within the last 15 minutes. These checks run again before execution.</p>
+        : 'Checks exact email across Leads and Contacts. Contact matches, converted Leads and ambiguous matches are held.'} Human-confirmed matches check the selected existing record and preserve its CRM email. New records are also checked against the CRM snapshot and other active rows in the saved import, including later batches, using name, email, phone, state and company. A possible match holds creation for review; it never links or updates that person automatically. Creates require a complete CRM snapshot started within the last 15 minutes. These checks run again before execution.</p>
       <div className="mt-3 max-h-80 space-y-2 overflow-y-auto" aria-label="CRM comparison records">
         {plan.records.map((record) => (
           <details key={record.contactId} className="rounded-xl border border-white/10 p-3 text-xs">
             <summary className="cursor-pointer break-words leading-5"><span className={record.operation === 'hold' ? 'text-[#ffb19a]' : 'text-[#cdfc54]'}>{record.operation}</span> · {record.email} · {record.contactId}</summary>
-            <p className="mt-2 break-words leading-5 text-[#b8d8ff]">{record.matches?.length
-              ? `Matched CRM records: ${record.matches.map((match) => `${match.isConverted ? 'Converted Lead' : match.objectType === 'lead' ? 'Lead' : 'Contact'} ${match.nativeId} (${match.email})`).join('; ')}`
-              : 'No exact email match returned by the completed lookup.'}</p>
+            {record.matchDecision && <div className="mt-2 rounded-lg border border-[#83bcff]/20 p-3 leading-5 text-[#b8d8ff]">
+              <p className="break-words font-semibold">Human-confirmed existing record · <span className="font-mono [overflow-wrap:anywhere]">{record.matchDecision.nativeId}</span></p>
+              <p className="mt-1">Existing CRM email preserved: <span className="[overflow-wrap:anywhere]">{record.matchDecision.email}</span></p>
+              <p className="mt-1 break-words">Reason: {record.matchDecision.reason}</p>
+              <p className="mt-1">Confirmed {new Date(record.matchDecision.confirmedAt).toLocaleString()}.</p>
+            </div>}
+            {(Boolean(record.matches?.length) || !record.matchDecision) && <p className="mt-2 break-words leading-5 text-[#b8d8ff]">{record.matches?.length
+              ? `${record.matchDecision ? 'CRM records checked' : 'Matched CRM records'}: ${record.matches.map((match) => `${match.isConverted ? 'Converted Lead' : match.objectType === 'lead' ? 'Lead' : 'Contact'} ${match.nativeId} (${match.email})`).join('; ')}`
+              : 'No exact email match returned by the completed lookup.'}</p>}
             {record.reason && <p className="mt-2 leading-5 text-[#a8bbb1]">{record.reason}</p>}
             {record.createReview?.startedAt && <p className="mt-2 text-[#a8bbb1]">Possible-duplicate check · snapshot started {new Date(record.createReview.startedAt).toLocaleString()} · scores rank evidence, not identity probability.</p>}
             {record.possibleMatches?.map((candidate) => (

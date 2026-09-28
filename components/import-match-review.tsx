@@ -11,6 +11,23 @@ import {
 } from '@/lib/import-match';
 import type { LiveContactState } from '@/lib/live-control-tower';
 import { isSalesforceEligible, toSalesforceSyncLead } from '@/lib/salesforce-sync';
+import { importMatchSourceKey, type ConfirmedImportMatch } from '@/lib/import-match-decision';
+
+export type ImportMatchDecisionAction = {
+  action: 'confirm';
+  connectorId: 'hubspot' | 'salesforce';
+  contactId: string;
+  sourceKey: string;
+  scanId: string;
+  nativeId: string;
+  objectType: 'contact' | 'lead';
+  fields: MatchField[];
+  reason: string;
+} | {
+  action: 'clear';
+  connectorId: 'hubspot' | 'salesforce';
+  contactId: string;
+};
 
 type Props = {
   contacts: LiveContactState[];
@@ -18,6 +35,7 @@ type Props = {
   workspaceId: string | null;
   accessKey: string;
   disabled?: boolean;
+  onDecision: (action: ImportMatchDecisionAction) => Promise<void>;
 };
 
 type MatchResponse = {
@@ -52,10 +70,10 @@ export function ImportMatchReview({ contacts, ...props }: Props) {
   // A different import, provider, workspace, or authorization discards the old
   // review and aborts its pending requests instead of showing stale suggestions.
   const reviewKey = JSON.stringify([props.connectorId, props.workspaceId, props.accessKey, inputs]);
-  return <MatchReview key={reviewKey} {...props} inputs={inputs} />;
+  return <MatchReview key={reviewKey} {...props} contacts={contacts} inputs={inputs} />;
 }
 
-function MatchReview({ inputs, connectorId, workspaceId, accessKey, disabled = false }: Omit<Props, 'contacts'> & { inputs: ImportMatchInput[] }) {
+function MatchReview({ contacts, inputs, connectorId, workspaceId, accessKey, disabled = false, onDecision }: Props & { inputs: ImportMatchInput[] }) {
   const suggestions = useMemo(() => suggestMatchFields(inputs), [inputs]);
   const [fields, setFields] = useState<MatchField[]>(() => suggestions.filter((field) => field.recommended).map((field) => field.field));
   const [page, setPage] = useState(0);
@@ -73,6 +91,8 @@ function MatchReview({ inputs, connectorId, workspaceId, accessKey, disabled = f
   const start = page * pageSize;
   const batch = inputs.slice(start, start + pageSize);
   const end = start + batch.length;
+  const contactById = new Map(contacts.map((contact) => [contact.contactId, contact]));
+  const confirmedContacts = contacts.filter((contact) => contact.crmMatchDecisions?.[connectorId]);
 
   useEffect(() => {
     if (!workspaceId) return;
@@ -190,13 +210,20 @@ function MatchReview({ inputs, connectorId, workspaceId, accessKey, disabled = f
     <section aria-label="Approximate CRM matches" className="mb-6 rounded-[28px] border border-white/10 bg-[#0c1d17] p-5 sm:p-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-xs font-semibold uppercase tracking-wider text-[#83bcff]">Read-only review · {connectorName}</p>
+          <p className="text-xs font-semibold uppercase tracking-wider text-[#83bcff]">Match review · {connectorName}</p>
           <h3 className="mt-2 text-xl font-semibold">Find possible CRM matches</h3>
           <p className="mt-2 max-w-3xl text-xs leading-5 text-[#9db1a7]">Choose fields to explore possible matches in a dated CRM snapshot. The write preview separately checks all five fields and holds new records with possible duplicates, even if the CRM would accept them. Suggestions never link or update an existing person automatically.</p>
           <p className="mt-2 max-w-3xl text-xs leading-5 text-[#9db1a7]">For eligible rows, name checks use the destination&apos;s first and last names. Mapped first/last columns take precedence over the full-name column. Rows not yet eligible use their imported full name.</p>
+          <p className="mt-2 max-w-3xl text-xs leading-5 text-[#9db1a7]">If you verify that a suggestion is the same person, save your choice and reason below. Confirmation preserves the CRM email and makes no CRM write. Build a fresh write preview to review permitted field changes before approving an update.</p>
         </div>
         <span className="text-xs text-[#cdfc54]">{inputs.length} active imported records</span>
       </div>
+
+      {confirmedContacts.length > 0 && <section aria-label="Confirmed CRM matches" className="mt-5 rounded-2xl border border-[#83bcff]/20 bg-[#83bcff]/5 p-4">
+        <h4 className="text-sm font-semibold">Saved matches · {confirmedContacts.length}</h4>
+        <p className="mt-2 text-xs leading-5 text-[#9db1a7]">These choices are saved with the imported rows. They do not prove an update occurred. Each write preview checks the selected CRM record again.</p>
+        <div className="mt-3 space-y-3">{confirmedContacts.map((contact) => <SavedMatchDecision key={contact.contactId} contact={contact} decision={contact.crmMatchDecisions![connectorId]!} disabled={disabled || scanning || matching} onDecision={onDecision} />)}</div>
+      </section>}
 
       {!inputs.length ? <p className="mt-4 text-sm text-[#9db1a7]">Import a CSV with active records to review possible matches.</p> : (
         <>
@@ -290,6 +317,19 @@ function MatchReview({ inputs, connectorId, workspaceId, accessKey, disabled = f
                           </div>
                         ))}
                       </div>
+                      {candidate.record.objectType !== (connectorId === 'hubspot' ? 'contact' : 'lead')
+                        ? <p className="mt-3 text-xs leading-5 text-[#e6bd68]">This record can inform the review, but this workflow updates only HubSpot Contacts and unconverted Salesforce Leads. It cannot be selected as an update target.</p>
+                        : contactById.has(row.contactId) && <CandidateConfirmation
+                          contact={contactById.get(row.contactId)!}
+                          connectorId={connectorId}
+                          scanId={result.scan.id}
+                          nativeId={candidate.record.nativeId}
+                          objectType={candidate.record.objectType}
+                          fields={result.report.fields}
+                          email={candidate.record.email}
+                          disabled={disabled || scanning || matching}
+                          onDecision={onDecision}
+                        />}
                     </article>
                   ))}
                 </div>
@@ -300,6 +340,79 @@ function MatchReview({ inputs, connectorId, workspaceId, accessKey, disabled = f
       )}
     </section>
   );
+}
+
+function CandidateConfirmation({ contact, connectorId, scanId, nativeId, objectType, fields, email, disabled, onDecision }: {
+  contact: LiveContactState;
+  connectorId: 'hubspot' | 'salesforce';
+  scanId: string;
+  nativeId: string;
+  objectType: 'contact' | 'lead';
+  fields: MatchField[];
+  email: string;
+  disabled: boolean;
+  onDecision: Props['onDecision'];
+}) {
+  const [reason, setReason] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [saved, setSaved] = useState(false);
+  const selected = contact.crmMatchDecisions?.[connectorId];
+  const isCurrentChoice = selected?.target.nativeId === nativeId && selected.target.objectType === objectType
+    && selected.sourceKey === importMatchSourceKey(contact);
+  async function confirm() {
+    if (disabled || saving || !reason.trim()) return;
+    setSaving(true);
+    setError('');
+    setSaved(false);
+    try {
+      await onDecision({ action: 'confirm', connectorId, contactId: contact.contactId, sourceKey: importMatchSourceKey(contact), scanId, nativeId, objectType, fields, reason: reason.trim() });
+      setSaved(true);
+    } catch (failure) { setError(errorMessage(failure)); }
+    finally { setSaving(false); }
+  }
+  return <div className="mt-3 border-t border-white/10 pt-4">
+    <p className="break-words text-xs leading-5 text-[#b5c6bd]">CRM email will stay <strong className="[overflow-wrap:anywhere]">{email || 'empty'}</strong>. Confirm only after checking the identity evidence; the score is a ranking, not certainty.</p>
+    <label className="mt-3 block text-xs font-semibold">
+      Reason for matching {contact.contactId} to {nativeId}
+      <textarea value={reason} onChange={(event) => { setReason(event.target.value); setSaved(false); }} maxLength={500} required rows={2} disabled={disabled || saving} className="mt-2 block w-full resize-y rounded-xl border border-white/20 bg-[#07130f] p-3 text-sm font-normal text-[#edf8f2] disabled:opacity-50" placeholder="What identifies this as the same person?" />
+    </label>
+    <p className="mt-1 text-xs text-[#71877c]">Required · up to 500 characters</p>
+    <button type="button" disabled={disabled || saving || !reason.trim()} onClick={() => void confirm()} className={`${secondaryButton} mt-3`}>{saving ? 'Saving confirmed match…' : 'Use this existing record'}</button>
+    {error && <p role="alert" className="mt-2 text-xs leading-5 text-[#ffb19a]">{error}</p>}
+    {saved && isCurrentChoice && <p role="status" className="mt-2 text-xs leading-5 text-[#cdfc54]">Match saved. No CRM write occurred. Build a fresh write preview to review the update.</p>}
+  </div>;
+}
+
+function SavedMatchDecision({ contact, decision, disabled, onDecision }: {
+  contact: LiveContactState;
+  decision: ConfirmedImportMatch;
+  disabled: boolean;
+  onDecision: Props['onDecision'];
+}) {
+  const [clearing, setClearing] = useState(false);
+  const [error, setError] = useState('');
+  const stale = decision.sourceKey !== importMatchSourceKey(contact);
+  const targetName = [decision.target.fields.firstName, decision.target.fields.lastName].filter(Boolean).join(' ');
+  async function clear() {
+    if (disabled || clearing) return;
+    setClearing(true);
+    setError('');
+    try { await onDecision({ action: 'clear', connectorId: decision.connectorId, contactId: contact.contactId }); }
+    catch (failure) { setError(errorMessage(failure)); }
+    finally { setClearing(false); }
+  }
+  return <article className="min-w-0 rounded-xl border border-white/10 p-3">
+    <h5 className="break-words text-sm font-semibold">{contact.fullName || contact.contactId} <span className="font-normal text-[#9db1a7]">· {contact.contactId}</span></h5>
+    <p className="mt-2 break-words text-xs leading-5">Selected: {targetName || 'Unnamed CRM record'} · {decision.target.objectType} <span className="font-mono [overflow-wrap:anywhere]">{decision.target.nativeId}</span></p>
+    <p className="mt-1 text-xs leading-5">Preserved CRM email: <span className="[overflow-wrap:anywhere]">{decision.target.email || 'Empty'}</span></p>
+    <p className="mt-1 break-words text-xs leading-5 text-[#9db1a7]">Reason: {decision.reason}</p>
+    <p className="mt-1 text-xs leading-5 text-[#9db1a7]">Confirmed {dateLabel(decision.confirmedAt)}.</p>
+    {stale && <p className="mt-2 text-xs leading-5 text-[#e6bd68]">This imported row changed after confirmation. Its saved match is stale; review fresh suggestions and confirm again before updating.</p>}
+    {contact.importExclusion && <p className="mt-2 text-xs leading-5 text-[#e6bd68]">This row is skipped. The saved match does not include it in an import.</p>}
+    <button type="button" aria-label={`Clear confirmed match for ${contact.contactId}`} disabled={disabled || clearing} onClick={() => void clear()} className={`${secondaryButton} mt-3`}>{clearing ? 'Clearing match…' : 'Clear confirmed match'}</button>
+    {error && <p role="alert" className="mt-2 text-xs leading-5 text-[#ffb19a]">{error}</p>}
+  </article>;
 }
 
 async function requestJson<T>(url: string, accessKey: string, signal: AbortSignal, body?: object): Promise<T> {

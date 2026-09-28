@@ -1,6 +1,32 @@
 import type { NativeCrmRecord, PortableCrmContact } from './crm-workflow';
 
 const MAX_QUERY_PAGES = 10;
+const LEAD_FIELDS = 'Id, Email, IsConverted, FirstName, LastName, Company, Phone, Title, Website';
+
+/** Read the selected Lead again, including conversion status, before planning an update. */
+export async function readSalesforceLeadById(
+  nativeId: string,
+  apiRoot: string,
+  headers: Record<string, string>,
+): Promise<NativeCrmRecord | null> {
+  if (!/^(?:[A-Za-z0-9]{15}|[A-Za-z0-9]{18})$/.test(nativeId)) {
+    throw new Error('Salesforce lookup requires a 15- or 18-character record ID');
+  }
+  const root = validatedApiRoot(apiRoot);
+  const query = new URLSearchParams({ fields: LEAD_FIELDS.replaceAll(' ', '') });
+  const response = await fetch(`${root.href}/sobjects/Lead/${nativeId}?${query}`, {
+    cache: 'no-store', redirect: 'manual', headers, signal: AbortSignal.timeout(30_000),
+  });
+  if (response.status === 404) return null;
+  if (!response.ok || response.status === 207) throw new Error(`Salesforce lookup returned ${response.status}`);
+  const value: unknown = await response.json();
+  const record = toNativeRecord(value, 'lead');
+  if (record.nativeId !== nativeId) throw new Error('Salesforce lookup returned an unrequested Lead ID');
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/u.test(record.email)) {
+    throw new Error('Salesforce lookup returned a malformed email');
+  }
+  return record;
+}
 
 /** Read exact-email matches completely before a caller decides whether a write is safe. */
 export async function readSalesforceExisting(
@@ -13,16 +39,12 @@ export async function readSalesforceExisting(
   if (emails.size === 0) return matches;
   if (emails.has('')) throw new Error('Salesforce lookup requires nonempty emails');
 
-  const root = new URL(apiRoot);
-  if (root.protocol !== 'https:' || root.username || root.password || root.search || root.hash
-    || !/^\/services\/data\/v\d+\.\d+$/.test(root.pathname)) {
-    throw new Error('Salesforce lookup requires an instance API root');
-  }
+  const root = validatedApiRoot(apiRoot);
   const quotedEmails = [...emails].map((email) => `'${escapeSoqlString(email)}'`).join(',');
   const seenRecords = new Map<string, NativeCrmRecord>();
   for (const objectType of ['lead', 'contact'] as const) {
     const fields = objectType === 'lead'
-      ? 'Id, Email, IsConverted, FirstName, LastName, Company, Phone, Title, Website'
+      ? LEAD_FIELDS
       : 'Id, Email';
     const objectName = objectType === 'lead' ? 'Lead' : 'Contact';
     const query = `SELECT ${fields} FROM ${objectName} WHERE Email IN (${quotedEmails})`;
@@ -70,6 +92,15 @@ export async function readSalesforceExisting(
     }
   }
   return matches;
+}
+
+function validatedApiRoot(apiRoot: string): URL {
+  const root = new URL(apiRoot);
+  if (root.protocol !== 'https:' || root.username || root.password || root.search || root.hash
+    || !/^\/services\/data\/v\d+\.\d+$/.test(root.pathname)) {
+    throw new Error('Salesforce lookup requires an instance API root');
+  }
+  return root;
 }
 
 function toNativeRecord(value: unknown, objectType: 'lead' | 'contact'): NativeCrmRecord {

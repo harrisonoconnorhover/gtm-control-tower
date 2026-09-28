@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { readHubSpotExisting } from '../lib/crm-existing-hubspot';
+import { readHubSpotExisting, readHubSpotRecordById } from '../lib/crm-existing-hubspot';
 import type { PortableCrmContact } from '../lib/crm-workflow';
 
 const contact = (email: string): PortableCrmContact => ({
@@ -12,6 +12,53 @@ const native = (email = 'primary@example.com', aliases = 'secondary@example.com;
 const batchResponse = (results: unknown[], extra = {}, status = 200) => Response.json({ status: 'COMPLETE', results, ...extra }, { status });
 
 afterEach(() => vi.unstubAllGlobals());
+
+describe('HubSpot selected-record reads', () => {
+  it('reads the requested ID with its primary email and portable fields, without an imported-email constraint', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(Response.json(native(' Primary@Example.com ')));
+    vi.stubGlobal('fetch', fetchMock);
+    expect(await readHubSpotRecordById('123', 'test-token')).toEqual({
+      nativeId: '123', objectType: 'contact', email: 'primary@example.com',
+      fields: { firstName: 'Alex', lastName: 'Morgan', company: 'Example', phone: null, jobTitle: null, website: null },
+    });
+    const url = new URL(fetchMock.mock.calls[0][0]);
+    expect(url.pathname).toBe('/crm/objects/2026-03/contacts/123');
+    expect(url.searchParams.has('idProperty')).toBe(false);
+    expect(url.searchParams.get('properties')).toContain('hs_additional_emails');
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({ cache: 'no-store', redirect: 'manual' });
+  });
+
+  it('returns null for missing and archived requested contacts', async () => {
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce(new Response(null, { status: 404 }))
+      .mockResolvedValueOnce(Response.json({ ...native(), archived: true })));
+    expect(await readHubSpotRecordById('123', 'test-token')).toBeNull();
+    expect(await readHubSpotRecordById('123', 'test-token')).toBeNull();
+  });
+
+  it.each(['', ' 123', '../123', '123?archived=true', 'abc'])('rejects a malformed requested ID before reading: %s', async (id) => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(readHubSpotRecordById(id, 'test-token')).rejects.toThrow('contact ID');
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['wrong ID', { ...native(), id: '456' }, 200],
+    ['wrong archived ID', { ...native(), id: '456', archived: true }, 200],
+    ['missing ID', { properties: native().properties }, 200],
+    ['invalid primary email', native('invalid-email'), 200],
+    ['invalid alias', native('primary@example.com', 'invalid-email'), 200],
+    ['invalid property', { ...native(), properties: { ...native().properties, firstname: 42 } }, 200],
+    ['invalid archive flag', { ...native(), archived: 'false' }, 200],
+    ['service error', { message: 'Unavailable' }, 503],
+    ['partial result', native(), 207],
+    ['redirect', native(), 302],
+  ])('rejects %s instead of establishing an update target', async (_label, payload, status) => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json(payload, { status: status as number })));
+    await expect(readHubSpotRecordById('123', 'test-token')).rejects.toThrow('HubSpot');
+  });
+});
 
 describe('HubSpot exact-email lookup', () => {
   it('requests additional emails and maps exact primary and secondary identities to the same native contact', async () => {

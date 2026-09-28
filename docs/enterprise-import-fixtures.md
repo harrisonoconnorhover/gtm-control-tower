@@ -44,7 +44,7 @@ verified automatic create holds in both CRMs.
 | Elena Marquez, Microsoft | Same portable fields; `Washington` instead of `WA` | Exact-email preview reports unchanged. Approximate state comparison recognizes the equivalent state. |
 | Marcus Bell, Adobe | Promotion and new direct phone | Update only job title and phone on the existing record. |
 | Nina Alvarez, ServiceNow | New attendee | Create once; repeat import finds the created record and reports unchanged. |
-| Priya Nair, Salesforce | Different email; same name, phone, company, and state | Governed preview holds the create on the possible match; review and exclude until resolved. |
+| Priya Nair, Salesforce | Different email; same name, phone, company, and state | Governed preview holds the create; skip it or explicitly confirm the existing Priya with a reason before a protected update. |
 | Jordan Lee, Cisco | New email, no phone or title; two coworkers have the same name | Governed preview holds the create even on weak candidates; review both and exclude until resolved. |
 | Denise Carter, ServiceNow | Existing person | HubSpot reports unchanged. Salesforce holds the row because the email belongs to a Contact, outside the direct Lead write path. |
 | Tess Morgan, Microsoft | Website intentionally blank | Clear the existing website; update rollback should restore it. |
@@ -71,7 +71,8 @@ to replacement and blank clearing for this exercise.
    preview exact-email writes. Confirm each intended create, update, unchanged
    record, and Salesforce Contact hold before execution.
    Correct or remove unresolved rows and refresh the preview; there is no
-   automatic linking or override. Review checkboxes do not change the guard.
+   automatic linking or create override. The separate [confirmed-match check](confirmed-import-matches.md)
+   resolves Priya explicitly without replacing her existing CRM email. Review checkboxes do not change the guard.
 4. Execute, read back the actual CRM records, and repeat the same approved import
    to verify that no additional Nina record is created.
 5. Roll back the original update receipt and read back Marcus and Tess. Update

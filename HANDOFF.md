@@ -2,40 +2,40 @@
 
 ## Finished
 
-- Verified saved skip/restore, field protection and comparison/results CSVs through the browser against both designated development CRMs, with no mocked responses.
-- Confirmed only Marcus's selected title and Tess's explicitly cleared website changed; skipped Elena and unselected fields stayed unchanged.
-- Filled Tess's empty website while preserving her populated title, then rolled back the original run: Marcus restored, Tess already restored.
-- Verified the compared fields of all nine retained records per CRM matched their starting values. No creates or deletes occurred.
-- Added a repeatable native controls check, dated evidence, masked screenshots, redacted results CSVs and a public walkthrough section.
+- Added explicit “Use this existing record” decisions with a saved reason for HubSpot Contacts and unconverted Salesforce Leads.
+- Governed previews and execution recheck the source, selected native record, exact-email conflicts and competing rows across the saved import. Stale or invalid decisions hold the row.
+- Preserved CRM email, reused selected-field protection, added confirmation details to previews/CSVs, and supported rollback when the imported email differs.
+- Verified a title-only update and rollback against each designated development CRM: confirmed Priya updated, unresolved Jordan held, all nine retained records restored to their starting compared fields.
+- Added repeatable checks, dated evidence, redacted results CSVs and a public walkthrough section.
 
 ## Try It
 
-1. Open the [walkthrough](https://gtm-control-tower.pages.dev/enterprise-import-walkthrough#controls), then inspect the two downloadable results CSVs.
-2. Read [native operator controls](docs/import-operator-controls-native-check.md) for the scenarios, counts, evidence and limits.
-3. To repeat against your designated development accounts, follow the [fixture instructions](docs/enterprise-import-fixtures.md#repeat-the-operator-controls-check). The script makes bounded native updates and restores compared fields; it refuses unexpected baseline state.
+1. Open the [walkthrough](https://gtm-control-tower.pages.dev/enterprise-import-walkthrough#confirm) and download the native results CSVs.
+2. In a configured saved `/app/lab` workspace, read a fresh snapshot, find suggestions, enter a reason and select **Use this existing record**. Compare permitted changes before executing.
+3. Follow [confirmed import matches](docs/confirmed-import-matches.md) for supported targets, safeguards and repeat instructions.
 
 ## Checks
 
-- HubSpot native run: 2026-09-28 00:12:05–00:12:14 UTC. Salesforce: 00:12:18–00:12:33 UTC. Each passed saved decisions, default preservation, 2 selected updates, 1 fill-empty update, CSV/receipt comparison after reload, and 1 restored / 1 already-restored rollback.
-- Each run verified nine native records, zero creates/deletes/failures and zero browser errors. Receipts saved with HTTP 201 and were read back.
-- Script syntax, focused ESLint and diff checks passed. Two pre-write harness failures were corrected and retained privately; neither enabled a native mutation.
-- Public build, secret scan, desktop/mobile walkthrough checks and local links passed. Temporary runtimes/database and operator key were removed.
-- Application code is unchanged from `a666b6c`, previously verified by 310 tests and release CI. This pass adds native evidence rather than another full application test run.
+- 405 tests across 29 suites passed; TypeScript, ESLint, application/public builds, secret scan and diff checks passed.
+- Both-provider browser regression passed: required reasons, failed-save retention, confirmation/clear across reload, stale-source warning, plan/CSV labels, unsupported Salesforce Contact and 390px width. CRM responses were simulated; workspace storage was real.
+- Native HubSpot: September 28, 14:09:30–14:09:37 UTC. Salesforce: 14:09:37–14:09:47 UTC. Each: 1 update, 1 hold, unchanged email, stale replay HTTP 409, 1 rollback restoration, zero creates/deletes.
+- Static walkthrough desktop/mobile layout, all anchors and 15 local targets passed; both results downloads matched their files.
+- One harness attempt stopped before writes on an incorrect expected scan-creation status; corrected to HTTP 201. Native runtimes, temporary databases and operator keys were removed.
 
 ## Decisions
 
-- Reuse retained fictional records; verify account/record ownership and exact approved fields before writing.
-- Preserve dated evidence boundaries: native existing-record checks are distinct from simulated failure cases and matching accuracy.
-- Keep original receipts private; publish sample CSVs with native, plan and run identifiers redacted.
+- Confirmation records human judgment; it does not turn a score into a probability or authorize a duplicate create.
+- Bind decisions to workspace/source/target/current connector credential; token rotation requires renewed confirmation. Source CSVs do not transfer native-ID approval.
+- Keep native API proof separate from simulated browser and failure tests.
 
 ## Remaining
 
-- Equality covers identity, portable fields, state/city, markers and owners, not every CRM property or audit timestamps.
-- HubSpot is a designated STANDARD development portal; Salesforce is Developer Edition, not formally provisioned sandboxes.
-- Concurrent writers, other account configurations and duplicate-detection accuracy remain outside this check.
+- Salesforce Contacts remain review-only; no native merge, Lead conversion or CRM email replacement.
+- Development accounts are HubSpot STANDARD and Salesforce Developer Edition, not formally provisioned sandboxes.
+- External concurrent writes, other workspace decisions, unobserved fields and matching accuracy remain outside this qualification.
 
 ## Review First
 
-- `scripts/check-enterprise-import.mjs` (`--controls-only`).
-- `docs/import-operator-controls-native-check.md` and its evidence JSON.
-- `public/enterprise-import-walkthrough.html` and the redacted sample CSVs.
+- `app/api/control-tower/import-match-decision/route.ts` and `lib/import-match-decision-server.ts`.
+- `app/api/control-tower/crm-writeback/route.ts` and `tests/crm-confirmed-match.test.ts`.
+- `docs/confirmed-import-matches.md` and the walkthrough’s `#confirm` section.

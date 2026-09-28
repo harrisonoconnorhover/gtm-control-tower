@@ -39,7 +39,7 @@ That original run used advisory approximate review. A later [native follow-up](d
 - Scans every HubSpot Contact or every unconverted Salesforce Lead and Contact,
   persists provider-page progress, and produces an evidence-backed duplicate
   review queue without performing a native CRM merge.
-- Offers [read-only possible CRM matches](docs/approximate-import-matches.md)
+- Offers [possible CRM match review](docs/approximate-import-matches.md)
   for imported rows using selected name, email, phone, state, and company fields.
   Shows up to three suggestions per row with native IDs, evidence, conflicts,
   missing values, and snapshot coverage; exports the review as JSON.
@@ -60,6 +60,11 @@ That original run used advisory approximate review. A later [native follow-up](d
   the saved import, including later batches. A missing fresh complete snapshot
   also holds creates. Import matches show source row IDs separately from CRM IDs.
   Newly created records are never auto-deleted.
+- Supports [human-confirmed import matches](docs/confirmed-import-matches.md):
+  choose an existing HubSpot Contact or unconverted Salesforce Lead, save a reason,
+  and preview protected field updates by native ID while preserving CRM email.
+  Stale source/target data or competing import rows hold the write. A dated native
+  check updated and restored one fictional person in each development CRM.
 - Provides [operator import controls](docs/import-operator-controls.md): save
   per-row skip/restore decisions, fill empty CRM fields or replace selected ones,
   explicitly permit blank clearing, and download batch comparisons and saved

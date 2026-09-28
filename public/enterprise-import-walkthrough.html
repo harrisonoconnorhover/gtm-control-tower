@@ -33,6 +33,7 @@
 
       <nav class="jump" aria-label="Case study steps">
         <a href="#review">01 Review</a><a href="#decide">02 Decide</a><a href="#write">03 Write</a><a href="#repeat">04 Repeat</a><a href="#rollback">05 Roll back</a><a href="#controls">06 Protect fields</a>
+        <a href="#confirm">Confirm a person</a>
       </nav>
 
       <section id="review" aria-labelledby="review-title">
@@ -153,6 +154,31 @@
         <a class="button" href="./import-controls-hubspot-results.csv" download>HubSpot results CSV</a>
         <a class="button" href="./import-controls-salesforce-results.csv" download>Salesforce results CSV</a>
         <p class="small"><a href="https://github.com/harrisonoconnorhover/gtm-control-tower/blob/main/docs/import-operator-controls-native-check.md">Inspect the dated evidence and repeat instructions ↗</a></p>
+      </section>
+
+      <section id="confirm" aria-labelledby="confirm-title">
+        <p class="step-label">07 · Native follow-up · September 28, 2026 UTC</p>
+        <h2 id="confirm-title">Confirm the person. Keep their existing CRM email.</h2>
+        <p class="copy">A possible match can now become an explicit operator decision. Review the candidate, save why it is the same person, then preview the permitted field changes. The choice identifies a HubSpot Contact or unconverted Salesforce Lead by its native record ID.</p>
+        <div class="cards">
+          <article class="card"><span class="tag">Confirmed by the operator</span><h3>Priya’s email changed in the file.</h3><p>The fictional name, direct phone, company and state supported the choice. The saved decision used the existing Priya record. Only her title changed; her CRM email stayed <code>priya.nair@salesforce.example.com</code>.</p></article>
+          <article class="card"><span class="tag">Still unresolved</span><h3>Jordan remains held.</h3><p>Two coworkers share the same name. No candidate was selected and no new record was created. A ranking score never chooses a person automatically.</p></article>
+        </div>
+        <div class="table-wrap" role="region" aria-label="Native confirmed-match outcomes" tabindex="0"><table>
+          <caption>Observed through the actual app APIs in both development CRMs</caption>
+          <thead><tr><th scope="col">Check</th><th scope="col">HubSpot</th><th scope="col">Salesforce</th></tr></thead>
+          <tbody>
+            <tr><th scope="row">Confirmed update / unresolved hold</th><td>1 / 1</td><td>1 / 1</td></tr>
+            <tr><th scope="row">Existing CRM email</th><td class="good">Preserved</td><td class="good">Preserved</td></tr>
+            <tr><th scope="row">Stale execution replay</th><td>Blocked · HTTP 409</td><td>Blocked · HTTP 409</td></tr>
+            <tr><th scope="row">Rollback / final compared fields</th><td>1 restored · all 9 unchanged</td><td>1 restored · all 9 unchanged</td></tr>
+            <tr><th scope="row">Creates / deletes</th><td>0 / 0</td><td>0 / 0</td></tr>
+          </tbody>
+        </table></div>
+        <p class="small">Saved choices survive workspace reloads. Changed source data, changed target values or competing confirmed import rows require review again. The browser controls were checked separately with simulated CRM responses; the native API checks above used no mocked responses. The public site presents evidence; connected actions run in a configured self-hosted workspace.</p>
+        <a class="button" href="./confirmed-match-hubspot-results.csv" download>HubSpot confirmed-match results</a>
+        <a class="button" href="./confirmed-match-salesforce-results.csv" download>Salesforce confirmed-match results</a>
+        <p class="small"><a href="https://github.com/harrisonoconnorhover/gtm-control-tower/blob/main/docs/confirmed-import-matches.md">Inspect the workflow, dated native results and limits ↗</a></p>
       </section>
 
       <aside class="limits" aria-labelledby="limits-title">
