@@ -29,6 +29,8 @@ import { ImportMatchReview, type ImportMatchDecisionAction } from '@/components/
 import { UnsavedRuns } from '@/components/unsaved-runs';
 import { ImportRowDecisions } from '@/components/import-row-decisions';
 import { CrmUpdatePolicyControls } from '@/components/crm-update-policy';
+import { SafeImportRecipeSelector, SafeImportReview } from '@/components/safe-import-review';
+import { SAFE_IMPORT_RECIPE } from '@/lib/safe-import';
 import { excludeImportRow, restoreImportRow } from '@/lib/import-exclusions';
 import { downloadCrmReviewCsv } from '@/lib/crm-review-export';
 import { PomadeSourceContext } from '@/components/pomade-source-context';
@@ -217,6 +219,11 @@ export function ControlTowerDashboard() {
   const [unsavedRuns, setUnsavedRuns] = useState<PendingConnectorRun[]>([]);
   const [receiptSaveWarning, setReceiptSaveWarning] = useState<string | null>(null);
   const [updatePolicy, setUpdatePolicy] = useState<CrmUpdatePolicy>(defaultCrmUpdatePolicy);
+  const [importRecipe, setImportRecipe] = useState<typeof SAFE_IMPORT_RECIPE | undefined>();
+  const [importRecordMode, setImportRecordMode] = useState<'update-existing' | 'create-and-update'>('create-and-update');
+  const [sourceFileHash, setSourceFileHash] = useState<string | undefined>();
+  const [safeReviewEpoch, setSafeReviewEpoch] = useState(0);
+  const [safeImportBusy, setSafeImportBusy] = useState(false);
   const [policyError, setPolicyError] = useState<string | null>(null);
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
   const [workspaceRevision, setWorkspaceRevision] = useState<number | null>(null);
@@ -225,7 +232,7 @@ export function ControlTowerDashboard() {
   const crmRequestInFlight = useRef(false);
   const crmRequestPending = hubSpotSyncStatus === 'sending' || salesforceSyncStatus === 'sending';
   const workspaceBusy = pomadeLoading || correctionSaving || persistenceStatus === 'loading' || persistenceStatus === 'saving'
-    || repairStatus === 'sending' || crmRequestPending;
+    || repairStatus === 'sending' || crmRequestPending || safeImportBusy;
   const hubSpotEligibleContacts = useMemo(() => csvContacts.filter(isHubSpotEligible), [csvContacts]);
   const syncedHubSpotContactIds = useMemo(
     () => new Set([
@@ -261,6 +268,7 @@ export function ControlTowerDashboard() {
     .map((connector) => connector.label).join(' · ');
   const showWarehouseDemo = dataMode === 'warehouse' && bigQueryConfigured;
   const pomadeImport = csvContacts.some((contact) => contact.sourceOrigins?.length);
+  const safeImport = importRecipe === SAFE_IMPORT_RECIPE;
   function rememberOperatorKey(value: string) {
     setHubSpotSyncKey(value);
     setSalesforceSyncKey(value);
@@ -371,9 +379,12 @@ export function ControlTowerDashboard() {
     setCsvRepairHistory(workspace.state.repairHistory);
     setCorrectionHistory(workspace.state.correctionHistory ?? []);
     setUpdatePolicy(normalizeCrmUpdatePolicy(workspace.state.crmUpdatePolicy));
+    setImportRecipe(workspace.state.importRecipe);
+    setImportRecordMode(workspace.state.importRecordMode ?? 'create-and-update');
+    setSourceFileHash(workspace.state.sourceFileHash);
     setPolicyError(null);
     setReviewEpoch((epoch) => epoch + 1);
-    invalidateCrmReview();
+    invalidateCrmReview(false, false);
     setCsvFileName(workspace.state.fileName);
     if (workspace.state.contacts.length) {
       setDataMode('csv');
@@ -417,6 +428,9 @@ export function ControlTowerDashboard() {
         destinationType: overrides.destinationType ?? destinationType,
         sourceLabel: overrides.sourceLabel ?? sourceLabel,
         crmUpdatePolicy: overrides.crmUpdatePolicy ?? updatePolicy,
+        importRecipe: Object.hasOwn(overrides, 'importRecipe') ? overrides.importRecipe : importRecipe,
+        importRecordMode: overrides.importRecordMode ?? importRecordMode,
+        sourceFileHash: overrides.sourceFileHash ?? sourceFileHash,
       };
       const response = await fetch('/api/control-tower/workspace', {
         method: 'POST',
@@ -443,6 +457,10 @@ export function ControlTowerDashboard() {
     importedSource: ConnectorId = 'csv',
     startWalkthrough = false,
   ) {
+    if (workspaceBusy) throw new Error('Wait for the current workspace operation to finish before loading a file.');
+    if (safeImport && importedSource !== 'csv') throw new Error('Safe Import uses a CSV source and the direct HubSpot Contacts connector.');
+    const sourceDigest = await globalThis.crypto.subtle.digest('SHA-256', new TextEncoder().encode(source));
+    const hash = Array.from(new Uint8Array(sourceDigest), (byte) => byte.toString(16).padStart(2, '0')).join('');
     const imported = importContactsCsv(source, mapping);
     const snapshot = imported.contacts.map((contact) => ({ ...contact, qualityFlags: [...contact.qualityFlags] }));
     const receipt: ConnectorReceipt = {
@@ -458,6 +476,7 @@ export function ControlTowerDashboard() {
     setReviewEpoch((epoch) => epoch + 1);
     invalidateCrmReview();
     setCsvFileName(fileName);
+    setSourceFileHash(hash);
     setCsvMapping(mapping);
     setConnectorReceipts(receipts);
     setSourceType(importedSource);
@@ -475,7 +494,7 @@ export function ControlTowerDashboard() {
     await persistWorkspace('import_validated', {
       contacts: snapshot,
       originalContacts: snapshot.map((contact) => ({ ...contact, qualityFlags: [...contact.qualityFlags] })),
-      repairHistory: [], correctionHistory: [], receipts, mapping, fileName, sourceType: importedSource, sourceLabel: fileName,
+      repairHistory: [], correctionHistory: [], receipts, mapping, fileName, sourceType: importedSource, sourceLabel: fileName, sourceFileHash: hash,
     });
   }
 
@@ -591,7 +610,11 @@ export function ControlTowerDashboard() {
     await persistWorkspace('import_reset', { contacts, repairHistory: [], correctionHistory: [] });
   }
 
-  function invalidateCrmReview(preserveProgress = false) {
+  function invalidateCrmReview(preserveProgress = false, clearSafeReview = true) {
+    if (clearSafeReview) {
+      if (workspaceId) window.localStorage.removeItem(`gtm-control-tower-safe-import-${workspaceId}`);
+      setSafeReviewEpoch((epoch) => epoch + 1);
+    }
     setHubSpotPlan(null);
     setSalesforcePlan(null);
     if (!preserveProgress) {
@@ -622,7 +645,7 @@ export function ControlTowerDashboard() {
   }
 
   async function changeUpdatePolicy(value: CrmUpdatePolicy) {
-    if (crmRequestInFlight.current || workspaceBusy) return;
+    if (crmRequestInFlight.current || workspaceBusy || safeImport) return;
     crmRequestInFlight.current = true;
     setCorrectionSaving(true);
     setPolicyError(null);
@@ -635,6 +658,27 @@ export function ControlTowerDashboard() {
       invalidateCrmReview();
     } catch (error) { setPolicyError(error instanceof Error ? error.message : 'Update policy save failed.'); }
     finally { crmRequestInFlight.current = false; setCorrectionSaving(false); }
+  }
+
+  async function selectImportRecipe(active: boolean) {
+    if (crmRequestInFlight.current || workspaceBusy) throw new Error('Wait for the current workspace operation to finish.');
+    if (persistenceStatus === 'disabled') throw new Error('Enable saved workspaces before using Safe Import. CSV preview and export remain available.');
+    const policy = active ? defaultCrmUpdatePolicy() : updatePolicy;
+    const recipe = active ? SAFE_IMPORT_RECIPE : undefined;
+    const recordMode = active ? 'update-existing' : 'create-and-update';
+    crmRequestInFlight.current = true;
+    setCorrectionSaving(true);
+    try {
+      const saved = await persistWorkspace('import_recipe_changed', {
+        importRecipe: recipe, importRecordMode: recordMode, crmUpdatePolicy: policy,
+        ...(active ? { sourceType: 'csv', destinationType: 'hubspot' } : {}),
+      });
+      if (!saved) throw new Error('The workflow setting could not be saved. Your previous workflow remains selected.');
+      setImportRecipe(recipe); setImportRecordMode(recordMode); setUpdatePolicy(policy);
+      if (active) { setSourceType('csv'); setDestinationType('hubspot'); setDataMode('csv'); }
+      setPolicyError(null);
+      invalidateCrmReview();
+    } finally { crmRequestInFlight.current = false; setCorrectionSaving(false); }
   }
 
   async function changeImportMatchDecision(action: ImportMatchDecisionAction) {
@@ -754,12 +798,18 @@ export function ControlTowerDashboard() {
   }
 
   function changeSourceType(next: ConnectorId) {
+    if (workspaceBusy) return;
+    if (safeImport && next !== 'csv') { setPolicyError('Safe Import uses a CSV source. Choose ordinary import to use another source.'); return; }
+    invalidateCrmReview();
     setSourceType(next);
     if (next === 'bigquery') activateWarehouseMode();
     void persistWorkspace('source_changed', { sourceType: next });
   }
 
   function changeDestinationType(next: ConnectorId) {
+    if (workspaceBusy) return;
+    if (safeImport && next !== 'hubspot') { setPolicyError('Safe Import updates HubSpot Contacts. Choose ordinary import to use another destination.'); return; }
+    invalidateCrmReview();
     setDestinationType(next);
     void persistWorkspace('destination_changed', { destinationType: next });
   }
@@ -774,6 +824,7 @@ export function ControlTowerDashboard() {
   }
 
   async function syncNextCsvBatchToHubSpot() {
+    if (safeImport) { setHubSpotSyncError('Safe Import requires its saved whole-file review and approval.'); return; }
     if (crmRequestInFlight.current || workspaceBusy || !pendingHubSpotContacts.length) return;
     if (pendingHubSpotContacts.some((contact) => contact.sourceOrigins?.length)) {
       setHubSpotSyncError('Pomade proposals require the direct CRM connector and a reviewed updates-only comparison.');
@@ -826,6 +877,7 @@ export function ControlTowerDashboard() {
   }
 
   async function previewCrmWriteback(connectorId: 'hubspot' | 'salesforce') {
+    if (safeImport) return;
     if (crmRequestInFlight.current || workspaceBusy) return;
     const source = connectorId === 'hubspot' ? pendingHubSpotContacts : pendingSalesforceContacts;
     const contacts = source.slice(0, 100).map((contact) => connectorId === 'hubspot' ? toHubSpotSyncContact(contact) : toSalesforceSyncLead(contact));
@@ -852,6 +904,7 @@ export function ControlTowerDashboard() {
   }
 
   async function executeCrmWriteback(connectorId: 'hubspot' | 'salesforce') {
+    if (safeImport) return;
     if (crmRequestInFlight.current || workspaceBusy) return;
     const plan = connectorId === 'hubspot' ? hubSpotPlan : salesforcePlan;
     if (!plan) return;
@@ -912,6 +965,7 @@ export function ControlTowerDashboard() {
   }
 
   async function syncNextCsvBatchToSalesforce() {
+    if (safeImport) return;
     if (crmRequestInFlight.current || workspaceBusy || !pendingSalesforceContacts.length) return;
     if (pendingSalesforceContacts.some((contact) => contact.sourceOrigins?.length)) {
       setSalesforceSyncError('Pomade proposals require the direct CRM connector and a reviewed updates-only comparison.');
@@ -1096,9 +1150,12 @@ export function ControlTowerDashboard() {
         </section>
 
         <div id="workspace-console" className="scroll-mt-6">
+        <SafeImportRecipeSelector active={safeImport} disabled={workspaceBusy}
+          onAdopt={() => selectImportRecipe(true)} onOrdinary={() => selectImportRecipe(false)} />
         {crmRequestPending && <p role="status" className="mb-4 rounded-2xl border border-[#cdfc54]/20 bg-[#cdfc54]/[0.07] px-4 py-3 text-sm text-[#cdfc54]">
           CRM request in progress. Workspace controls unlock after the result and any receipt saving finish.
         </p>}
+        <fieldset disabled={workspaceBusy} className="min-w-0">
         <SelfHostConsole
           catalog={connectorCatalog}
           contacts={csvContacts}
@@ -1120,6 +1177,9 @@ export function ControlTowerDashboard() {
           onExport={exportCsvWorkspace}
           onReceipt={recordConnectorReceipt}
         />
+        </fieldset>
+        {safeImport && policyError && <p role="alert" className="mb-4 text-sm text-[#ffb19a]">{policyError}</p>}
+        {safeImport && (!hubSpotConfigured || !hubSpotSafeWriteback) && <p className="mb-4 rounded-2xl border border-[#e6bd68]/20 p-4 text-sm text-[#e6bd68]">Configure the direct HubSpot connector to prepare this contact workflow. Delegated n8n and legacy sync cannot execute Safe Import.</p>}
         </div>
 
         {receiptSaveWarning && <p role="alert" className="mb-4 rounded-2xl border border-[#e6bd68]/30 bg-[#e6bd68]/5 p-4 text-sm text-[#e6bd68]">{receiptSaveWarning}</p>}
@@ -1127,7 +1187,7 @@ export function ControlTowerDashboard() {
 
         {bigQueryConfigured && <LiveWarehouseCard state={liveState} status={liveStatus} onRefresh={refreshLiveState} />}
 
-        {dataMode === 'csv' && <HeldContactReview
+        {dataMode === 'csv' && !safeImport && <HeldContactReview
           key={reviewEpoch}
           contacts={csvContacts}
           history={correctionHistory}
@@ -1142,7 +1202,7 @@ export function ControlTowerDashboard() {
             onRestore={(contactId) => changeImportSelection(contactId)} />
         </details>}
 
-        {dataMode === 'csv' && csvContacts.length > 0
+        {dataMode === 'csv' && !safeImport && csvContacts.length > 0
           && ((destinationType === 'hubspot' && hubSpotSafeWriteback) || (destinationType === 'salesforce' && salesforceSafeWriteback))
           && <div className="mb-6 rounded-3xl border border-white/10 bg-[#0c1d17] p-5">
             <CrmUpdatePolicyControls value={updatePolicy} onChange={(value) => void changeUpdatePolicy(value)} disabled={workspaceBusy} />
@@ -1150,7 +1210,7 @@ export function ControlTowerDashboard() {
             {policyError && <p role="alert" className="mt-3 text-sm text-[#ff9d7f]">{policyError}</p>}
           </div>}
 
-        {dataMode === 'csv' && csvContacts.length > 0
+        {dataMode === 'csv' && !safeImport && csvContacts.length > 0
           && ((destinationType === 'hubspot' && hubSpotSafeWriteback) || (destinationType === 'salesforce' && salesforceSafeWriteback))
           && <ImportMatchReview
             contacts={csvContacts}
@@ -1161,7 +1221,14 @@ export function ControlTowerDashboard() {
             onDecision={changeImportMatchDecision}
           />}
 
-        <FunkyCrmLab
+        {dataMode === 'csv' && safeImport && csvContacts.length > 0 && <SafeImportReview
+          key={`${workspaceId}-${safeReviewEpoch}`} workspaceId={workspaceId} contacts={csvContacts}
+          workspaceRevision={workspaceRevision}
+          accessKey={hubSpotSyncKey} disabled={workspaceBusy || persistenceStatus !== 'saved' || !hubSpotConfigured || !hubSpotSafeWriteback}
+          onBusyChange={setSafeImportBusy} onDecision={changeImportMatchDecision}
+          onSkip={(contactId, reason) => changeImportSelection(contactId, reason)} />}
+
+        {!safeImport && <FunkyCrmLab
           mode={dataMode}
           contacts={dataMode === 'csv' ? csvContacts : liveState?.contacts ?? []}
           repairHistory={dataMode === 'csv' ? csvRepairHistory : liveState?.repairHistory ?? []}
@@ -1175,7 +1242,7 @@ export function ControlTowerDashboard() {
           hubSpotWritebackProgress={hubSpotWritebackProgress}
           hubSpotSyncError={hubSpotSyncError}
           hubSpotSyncKey={hubSpotSyncKey}
-          hubSpotConfigured={hubSpotConfigured && destinationType === 'hubspot'}
+          hubSpotConfigured={!safeImport && hubSpotConfigured && destinationType === 'hubspot'}
           hubSpotSafeWriteback={hubSpotSafeWriteback}
           hubSpotPlan={hubSpotPlan}
           salesforceEligibleCount={salesforceEligibleContacts.length}
@@ -1185,7 +1252,7 @@ export function ControlTowerDashboard() {
           salesforceWritebackProgress={salesforceWritebackProgress}
           salesforceSyncError={salesforceSyncError}
           salesforceSyncKey={salesforceSyncKey}
-          salesforceConfigured={salesforceConfigured && destinationType === 'salesforce'}
+          salesforceConfigured={!safeImport && salesforceConfigured && destinationType === 'salesforce'}
           salesforceSafeWriteback={salesforceSafeWriteback}
           salesforcePlan={salesforcePlan}
           seedStatus={seedStatus}
@@ -1202,7 +1269,7 @@ export function ControlTowerDashboard() {
           onSalesforceExecute={() => executeCrmWriteback('salesforce')}
           onSalesforceSyncKeyChange={rememberOperatorKey}
           onReset={() => dataMode === 'csv' ? Promise.resolve(resetCsvWorkspace()) : resetFunkyBatch(false)}
-        />
+        />}
 
         {showWarehouseDemo && <>
         <section className="rounded-[34px] border border-white/10 bg-[#091a14]/92 p-4 shadow-[0_30px_100px_rgba(0,0,0,0.22)] sm:p-6" aria-label="Illustrative messy lead processing walkthrough">
