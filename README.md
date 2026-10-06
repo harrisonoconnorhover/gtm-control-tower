@@ -155,6 +155,16 @@ the Docker self-host below.
 The public site cannot open `/app`, read a CRM, save a review decision, or call
 an operator API. Those capabilities exist only in the self-hosted application.
 
+### Safe Import: Update existing contacts
+
+In the persistent self-hosted `/app/lab`, select **Update existing contacts safely**,
+upload and map your CSV, then **Prepare review** for the whole file. Existing
+HubSpot Contacts receive only approved blank-field fills; populated fields and
+primary email stay protected. Identity holds require review, and unmatched rows
+never create contacts. Approval is bound to the saved review and actual CRM
+account, with durable execution and automatic readback. No AI model is required.
+See the [workflow, recovery, and verification guide](docs/safe-import.md).
+
 ## Quick start: one command, no accounts required
 
 Requires Docker. This starts the application and a local n8n Community Edition

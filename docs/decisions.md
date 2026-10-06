@@ -705,3 +705,30 @@ Retain origins through correction, reload, local merge, and batch evidence while
 labeling source evidence historical when values change. Missing legacy metadata
 remains unknown. Local and hosted Pomade stay independent; this adds no research
 execution, automatic CRM write, shared database, or two-way synchronization.
+
+## October 6, 2026 — Safe Import is a saved deterministic contact recipe
+
+Extend the governed planner with saved record mode and six field decisions rather
+than duplicating import/matching logic. Legacy CSV defaults to create-and-update;
+Safe Import forces HubSpot Contacts, update-existing, and the six-field fill-empty
+policy. Keep the stricter Pomade source boundary and existing Salesforce Lead
+workflow. Approximate identities remain suggestions; suspicious populated values
+are preserved. Material contradictory names plus conflicting company/phone hold
+exact-email identity until human confirmation.
+
+Assemble all batch comparisons into one immutable whole-file review before any
+write. Account for locally skipped, merged, invalid, unmatched, and unread rows;
+unresolved CRM reads block approval. Bind the plan to uploaded-text SHA-256,
+source/mapping/policy/identity evidence, workspace revision, and HubSpot's verified
+portal ID. Recheck the whole comparison on approval and saved source/native values
+immediately before each native-ID PATCH. No atomic external-writer guarantee is
+claimed.
+
+Persist one unique execution per review and progress before requests. Uncertain
+responses require read-only reconciliation, never automatic resend; readback
+cannot establish acceptance of a lost response. Verify accepted writes separately.
+Preserve per-record evidence in database rows and chunk large reviews. Keep the
+assistant replaceable and model-free by default; intent proposals require explicit
+adoption and explanations use the same recorded decisions. This slice adds no
+model provider, public deployment, native CRM qualification, background monitoring,
+or automatic rollback.

@@ -2,38 +2,41 @@
 
 ## Finished
 
-- Added optional Pomade JSON preview and import into a new saved workspace. Ordinary CSV create/update workflows remain independent.
-- Version 1 and legacy files retain updates-only scope; source status, original proposals and evidence survive corrections, local duplicate repair, reload, saved results, CSV exports and eligible rollback receipts.
-- Governed preview and fresh execution hold unmatched Pomade rows. Legacy sync routes reject their reserved IDs; source Review/error/stale rows use existing exclusion controls.
-- Added a fictional download and dated native qualification to the public walkthrough at `#pomade`.
+- Implemented **Safe Import: Update existing contacts** for CSV → HubSpot Contacts, extending the existing governed planner and matching controls. No AI model is required.
+- Saved update-only policy and six-field decisions preserve populated values, reject blank clearing/creates, and expose deliberate nonchanges and questionable values.
+- Whole-file review accounts for every source row; integrated identity review, filtering, downloadable evidence, and exact approval wording share the saved contract.
+- Account-bound approval and one durable execution per review prevent repeat sends. Interrupted outcomes stay unknown; recovery reads only. Accepted updates receive automatic verification.
+- Prepared four focused local commits on `codex/safe-import`: policy, unified review, durable execution, and optional deterministic assistant. Nothing published.
 
 ## Try It
 
-1. Open the [optional handoff walkthrough](https://gtm-control-tower.pages.dev/enterprise-import-walkthrough#pomade) or [detailed guide](docs/pomade-handoff.md).
-2. In a persistent self-host at `/app/lab`, choose CSV file → Import Pomade handoff → inspect all proposals → Load in new saved workspace.
-3. Resolve holds, compare using a direct CRM connector, explicitly approve existing-record updates, then inspect `/runs` for source context, receipts, verification and rollback.
+1. Start the persistent self-host, open `/app/lab`, and configure direct HubSpot contact/account reads and contact writes.
+2. Select **Update existing contacts safely**, upload CSV, inspect mapping, and **Prepare review**. Confirm or skip held identities, then prepare a fresh review.
+3. Inspect all field decisions, **Approve N contact updates**, then inspect acceptance/readback separately. Use **Reload saved execution** or **Reconcile and verify** after interruption. See [workflow guide](docs/safe-import.md).
 
 ## Checks
 
-- All 475 tests across 31 suites, TypeScript, ESLint, application/public builds, secret scan and diff checks passed.
-- Both-provider browser qualification passed with real local persistence and simulated CRM responses: ordinary CSV, preview without side effects, failed-save preservation, new workspace, reload, exclusions, malformed/oversized files, updates-only comparison, CSV context and disabled delegated sync. No CRM writes or live requests.
-- An actual file downloaded from Pomade passed browser preview/load/reload; its missing email remained held.
-- Native exporter/API qualification passed September 28, 2026, 16:53:37–16:53:55 UTC. Each development CRM updated and verified one fictional title; unmatched/Review rows held; zero creates/deletes. Rollback restored all nine retained fixtures' compared fields. See [dated summary](docs/evidence/pomade-handoff-native-2026-09-28.json).
+- All 556 tests across 39 files passed, including a 106-row route fixture with real temporary SQLite and simulated HubSpot. No native CRM writes.
+- TypeScript passed. ESLint passed with one preexisting warning in an ignored historical output script.
+- Application and public builds passed. All SQL migrations applied successfully to fresh SQLite; four Safe Import tables present.
+- 103-row browser regression passed with simulated CRM and real local workspace saves: incomplete review blocks approval, held-row changes invalidate it, interrupted acceptance stays unknown, and recovery never repeats approval. Desktop/mobile screenshots inspected.
+- Secret scan and Git diff checks passed.
 
 ## Decisions
 
-- Keep the file handoff optional; no shared credentials, sessions, services or accounts.
-- Source status and citations are context, never accuracy, CRM identity or approval. Edited values retain explicitly historical evidence.
-- Initial handoffs update existing HubSpot Contacts and unconverted Salesforce Leads only. Ordinary CSV creates keep their existing controls.
+- Preserve the six populated CRM fields conservatively; names plus company/phone contradictions require identity review. Primary email and marketing/ownership fields are never writable.
+- Bind approval to saved source/mapping/revision, exact field evidence, and a verified HubSpot portal ID. Each send rechecks workspace and native baseline.
+- Model-free intent/explanations are optional convenience. Manual mapping and recipe selection remain available.
 
 ## Remaining
 
-- The public site is a static walkthrough; saving and CRM operations require a configured persistent self-host.
-- Legacy files lack source installation/time/status/evidence. Salesforce Contacts remain review-only; no automatic transfer or two-way sync.
-- Existing verification uses the current CRM connection and does not independently bind historical account identity.
+- Live HubSpot and hosted D1 qualification have not run. D1 requires the new versioned migration before use.
+- Native reread/PATCH are separate operations; downstream effects and external races are not fully prevented or simulated.
+- Salesforce Contact writes and automatic rollback are outside this recipe. Restoration requires a new reviewed decision protecting subsequent edits.
+- Commits are local; GitHub PR creation and publication remain release work.
 
 ## Review First
 
-- `lib/pomade-handoff.ts` and `app/api/control-tower/crm-writeback/route.ts`.
-- `components/self-host-console.tsx`, `components/pomade-source-context.tsx` and saved result exports.
-- `docs/pomade-handoff.md` and `scripts/check-pomade-handoff.mjs`.
+- `lib/crm-workflow.ts` and `lib/governed-crm-plan.ts`.
+- `app/api/control-tower/safe-import/route.ts`, review/store/execution services, and acceptance tests.
+- `components/safe-import-review.tsx` and `docs/safe-import.md`.
