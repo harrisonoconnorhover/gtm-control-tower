@@ -732,3 +732,18 @@ assistant replaceable and model-free by default; intent proposals require explic
 adoption and explanations use the same recorded decisions. This slice adds no
 model provider, public deployment, native CRM qualification, background monitoring,
 or automatic rollback.
+
+## October 6, 2026 — Keep qualification boundaries explicit
+
+Qualify native Safe Import using existing marked development contacts, an
+isolated SQLite workspace, two phone fills, and separately reviewed restoration.
+Preserve the original raw cleanup report when HubSpot represents a cleared null
+phone as an empty string; a separate read-only reconciliation applies the existing
+portable blank semantics and compares every other requested property exactly.
+
+Test D1 through production stores in actual local workerd and a temporary cloud
+database with a local remote-binding runner. Use a fictional CRM adapter for D1
+tests and separate real SQL/storage evidence from injected invocation limits.
+The measured 99-update execution exceeds the documented single-invocation budget;
+cloud storage passing does not qualify hosted execution. Keep deployment and PR
+publication pending while that release blocker remains.

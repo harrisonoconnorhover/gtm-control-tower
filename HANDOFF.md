@@ -2,41 +2,39 @@
 
 ## Finished
 
-- Implemented **Safe Import: Update existing contacts** for CSV → HubSpot Contacts, extending the existing governed planner and matching controls. No AI model is required.
-- Saved update-only policy and six-field decisions preserve populated values, reject blank clearing/creates, and expose deliberate nonchanges and questionable values.
-- Whole-file review accounts for every source row; integrated identity review, filtering, downloadable evidence, and exact approval wording share the saved contract.
-- Account-bound approval and one durable execution per review prevent repeat sends. Interrupted outcomes stay unknown; recovery reads only. Accepted updates receive automatic verification.
-- Prepared four focused local commits on `codex/safe-import`: policy, unified review, durable execution, and optional deterministic assistant. Nothing published.
+- Safe Import's live HubSpot qualification passed using a 106-row file and existing marked development contacts. Preparation made no writes; populated fields, identity holds, and competing targets survived the batch boundary.
+- Tested two real phone fills, automatic readback, stale/expired/account-mismatch rejection, repeated approval, and fresh-runtime recovery after an injected lost response. Two separately reviewed restorations returned both phones to empty.
+- Qualified immutable reviews, concurrent claims, progress compare-and-set, cold restart recovery, and 99 fictional-provider updates against actual cloud D1. Removed the temporary cloud database and stopped owned runners.
+- Added reusable native/D1 probes, a D1 regression test, and a qualification report. Found a material D1 execution limit; cloud storage passing does not establish hosted execution readiness.
 
 ## Try It
 
-1. Start the persistent self-host, open `/app/lab`, and configure direct HubSpot contact/account reads and contact writes.
-2. Select **Update existing contacts safely**, upload CSV, inspect mapping, and **Prepare review**. Confirm or skip held identities, then prepare a fresh review.
-3. Inspect all field decisions, **Approve N contact updates**, then inspect acceptance/readback separately. Use **Reload saved execution** or **Reconcile and verify** after interruption. See [workflow guide](docs/safe-import.md).
+1. Start the persistent self-host and open `/app/lab`. Select **Update existing contacts safely**, upload CSV, inspect mapping, prepare review, then approve the exact update count.
+2. Run `node scripts/qualify-safe-import-d1.mjs --max-storage` for the disposable local D1 check. Its CRM adapter is fictional.
+3. Native fixture qualification is explicit: `node --env-file=.env.local scripts/qualify-safe-import-hubspot.mjs --run`. Read [qualification scope and results](docs/safe-import-native-check.md) first; the script only supports the designated development fixtures.
 
 ## Checks
 
-- All 556 tests across 39 files passed, including a 106-row route fixture with real temporary SQLite and simulated HubSpot. No native CRM writes.
-- TypeScript passed. ESLint passed with one preexisting warning in an ignored historical output script.
-- Application and public builds passed. All SQL migrations applied successfully to fresh SQLite; four Safe Import tables present.
-- 103-row browser regression passed with simulated CRM and real local workspace saves: incomplete review blocks approval, held-row changes invalidate it, interrupted acceptance stays unknown, and recovery never repeats approval. Desktop/mobile screenshots inspected.
-- Secret scan and Git diff checks passed.
+- 42 focused tests across six files passed, including the added D1 probe regression. TypeScript, focused ESLint, script syntax, secret scan, and Git diff checks passed.
+- Native HubSpot: 106 rows in batches of 100/five; one proposed update, three unchanged, five held, 96 unmatched, one skipped. Two fills plus two reviewed restorations; zero creates/deletes, no AI, zero recovery resends.
+- Fresh cleanup reconciliation confirmed all ten fixture records and unchanged active record IDs. Original raw cleanup evidence remains: HubSpot returned empty strings for originally null phones; every other requested property matched exactly.
+- Cloud D1 migrations 0000–0003, Unicode review, single concurrent claim, stale-progress rejection, independent cold recovery, and 99 fictional updates passed. Local 5,000-row immutable review storage also passed.
 
 ## Decisions
 
-- Preserve the six populated CRM fields conservatively; names plus company/phone contradictions require identity review. Primary email and marketing/ownership fields are never writable.
-- Bind approval to saved source/mapping/revision, exact field evidence, and a verified HubSpot portal ID. Each send rechecks workspace and native baseline.
-- Model-free intent/explanations are optional convenience. Manual mapping and recipe selection remain available.
+- Test native CRM and cloud storage separately, with private evidence and owned fixtures; leave application publication pending.
+- Compare restored blank phones using existing portable semantics while preserving the raw representation difference and original report.
+- Treat excessive calls in one execution request as a release blocker, rather than claiming hosted support from storage-only checks.
 
 ## Remaining
 
-- Live HubSpot and hosted D1 qualification have not run. D1 requires the new versioned migration before use.
-- Native reread/PATCH are separate operations; downstream effects and external races are not fully prevented or simulated.
-- Salesforce Contact writes and automatic rollback are outside this recipe. Restoration requires a new reviewed decision protecting subsequent edits.
-- Commits are local; GitHub PR creation and publication remain release work.
+- Bound execution requests before hosted release: 99 updates require 1,199 D1 binding calls/1,496 SQL statements even without workspace checks. Simulated 50/1,000-call limits interrupt execution. Continue only pending approved rows; never replay sending/unknown rows.
+- The published app still lacks the new migration and runtime configuration. PRs and application deployment remain pending.
+- A real second-portal credential-switch test remains unqualified; the native negative test injects a saved account mismatch.
+- Native reread/PATCH are non-atomic; downstream CRM effects and external races are not fully qualified.
 
 ## Review First
 
-- `lib/crm-workflow.ts` and `lib/governed-crm-plan.ts`.
-- `app/api/control-tower/safe-import/route.ts`, review/store/execution services, and acceptance tests.
-- `components/safe-import-review.tsx` and `docs/safe-import.md`.
+- `docs/safe-import-native-check.md` and private evidence paths referenced there.
+- `lib/safe-import-execution.ts` and the Safe Import route, especially the single-request execution budget.
+- `scripts/qualify-safe-import-hubspot.mjs`, `scripts/qualify-safe-import-d1.mjs`, and `tests/safe-import-d1.test.ts`.

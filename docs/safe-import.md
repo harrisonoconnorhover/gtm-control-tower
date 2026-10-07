@@ -89,8 +89,11 @@ boundary; this recipe's review and execution are separately account-bound.
 SQLite self-hosts initialize the new tables locally. D1 installations must apply
 `drizzle/0003_safe_import.sql` through the existing migration workflow before
 using the recipe. Chunked reviews and per-record execution evidence avoid a
-whole-import evidence blob in one database binding. D1 execution and native
-HubSpot behavior have not been qualified by these local tests.
+whole-import evidence blob in one database binding. See the separate
+[native and D1 qualification report](safe-import-native-check.md) for current
+results. Hosted execution has a release blocker: the executor processes the
+whole approved import in one request and can exceed D1's invocation budget.
+Passing storage tests does not qualify that deployment path.
 
 ```bash
 npm test -- tests/safe-import-route.test.ts tests/safe-import-review-server.test.ts tests/safe-import-execution.test.ts tests/crm-account.test.ts tests/import-assistant.test.ts
@@ -105,5 +108,6 @@ changed CRM/source/account evidence, interrupted responses, repeat requests,
 and operation without a model. Execution tests also cover expiry, failed durable
 transitions, concurrent claims, large evidence storage, and verification differences.
 Browser checks use simulated CRM responses and real workspace persistence.
-No native CRM writes, deployment, downstream-effect, or production-scale proof is
-claimed for this implementation.
+The separate opt-in native runner uses existing synthetic development contacts
+and reviewed restoration. No deployment, downstream-effect, or production-scale
+proof is claimed by the simulated acceptance checks.
