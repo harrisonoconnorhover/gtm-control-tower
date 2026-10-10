@@ -32,11 +32,16 @@ async function workspace(viewport, anchor = '#clean-csv') {
   page.setDefaultTimeout(15_000);
   const errors = [], processingRequests = [];
   let processing = false;
+  let expectedStorage = { local: {}, session: {} };
   page.on('pageerror', (error) => errors.push(error.message));
   page.on('dialog', (dialog) => dialog.accept());
   await context.route('**/*', async (route) => {
     const request = route.request(), url = new URL(request.url());
-    if (url.origin !== base.origin || url.pathname.startsWith('/api/')) {
+    const inboundPracticeRead = !processing && page.url().endsWith('#inbound-lab')
+      && url.origin === base.origin && url.pathname === '/api/control-tower/demo-intake'
+      && !url.search && request.method() === 'GET' && request.postData() === null;
+    if (inboundPracticeRead) return route.continue();
+    if (url.origin !== base.origin || url.pathname.startsWith('/api/') || request.method() !== 'GET') {
       errors.push(`Unexpected network request: ${request.method()} ${url.origin}${url.pathname}`);
       return route.abort();
     }
@@ -53,15 +58,26 @@ async function workspace(viewport, anchor = '#clean-csv') {
     else await page.goto(new URL(`/${anchor}`, base).href);
     await page.getByRole('heading', { name: 'A cleaner CSV. Zero setup.', exact: true }).waitFor();
     await page.waitForLoadState('networkidle');
-    assert.deepEqual(await storage(), { local: {}, session: {} }, 'Opening the cleaner must not create browser storage.');
+    assert.deepEqual(await storage(), expectedStorage, 'Opening the cleaner must not create browser storage.');
   }
   async function assertPrivate() {
-    assert.deepEqual(await storage(), { local: {}, session: {} }, 'CSV state must stay out of persistent browser storage.');
+    assert.deepEqual(await storage(), expectedStorage, 'CSV state must stay out of persistent browser storage.');
     assert.deepEqual(processingRequests, [], 'Reading, editing and downloading a local file must not make HTTP requests.');
     assert.deepEqual(errors, [], 'The browser should not report script errors, API calls or external requests.');
   }
+  async function captureInboundPracticeStorage() {
+    await page.waitForFunction(() => localStorage.getItem('gtm-inbound-practice-v1') !== null);
+    const snapshot = await storage();
+    assert.deepEqual(Object.keys(snapshot.local), ['gtm-inbound-practice-v1'], 'Only the existing inbound practice storage is expected after visiting its view.');
+    assert.deepEqual(snapshot.session, {});
+    const serialized = JSON.stringify(snapshot);
+    for (const marker of ['Kept across views', 'draft-undo.csv', 'Typed before download', '00123']) {
+      assert(!serialized.includes(marker), `The inbound demo must not store the CSV marker ${marker}.`);
+    }
+    expectedStorage = snapshot;
+  }
   await open();
-  return { context, page, open, assertPrivate, startProcessing: () => { processing = true; } };
+  return { context, page, open, assertPrivate, captureInboundPracticeStorage, startProcessing: () => { processing = true; }, pauseProcessing: () => { processing = false; } };
 }
 
 async function upload(page, name, text) {
@@ -78,7 +94,9 @@ async function downloadCsv(page, artifactName) {
   const stream = await download.createReadStream(), chunks = [];
   for await (const chunk of stream) chunks.push(chunk);
   await download.saveAs(resolve(output, artifactName));
-  return { name: download.suggestedFilename(), text: Buffer.concat(chunks).toString('utf8') };
+  const bytes = Buffer.concat(chunks);
+  assert.deepEqual([...bytes.subarray(0, 3)], [0xef, 0xbb, 0xbf], 'Downloads should identify UTF-8 for spreadsheet readers.');
+  return { name: download.suggestedFilename(), text: bytes.subarray(3).toString('utf8'), bytes };
 }
 
 async function reviewCount(page, count) {
@@ -111,6 +129,71 @@ async function withoutIdentity(page, kind, source, lastColumn) {
   assert.equal(await page.getByRole('button', { name: /^Review row / }).count(), 3);
   await noPageOverflow(page);
   await page.screenshot({ path: resolve(output, `${kind}-no-identity.png`), fullPage: true });
+}
+
+async function draftLifecycle(session) {
+  const { page } = session;
+  await upload(page, 'draft-download.csv', 'ID,Name,Email\n00123,Original,ada@example.com\n00124,Other,blair@example.com');
+  await page.getByRole('button', { name: 'Review row 1', exact: true }).click();
+  await page.getByLabel('Name — row 1', { exact: true }).fill('Typed before download');
+  assert.equal((await downloadCsv(page, 'draft-without-save.csv')).text,
+    'ID,Name,Email\r\n00123,Typed before download,ada@example.com\r\n00124,Other,blair@example.com',
+    'Download must include pending row edits without a separate Save click.');
+  await page.getByLabel('Name — row 1', { exact: true }).fill('Kept on switch');
+  await page.getByRole('button', { name: 'Review row 2', exact: true }).click();
+  await page.getByRole('cell', { name: 'Kept on switch', exact: true }).waitFor();
+  await page.getByLabel('Name — row 2', { exact: true }).fill('Kept on close');
+  await page.getByRole('button', { name: 'Close', exact: true }).click();
+  await page.getByRole('cell', { name: 'Kept on close', exact: true }).waitFor();
+  assert.equal((await downloadCsv(page, 'draft-switch-close.csv')).text,
+    'ID,Name,Email\r\n00123,Kept on switch,ada@example.com\r\n00124,Kept on close,blair@example.com');
+
+  await upload(page, 'draft-actions.csv', 'ID,Name,Email,Alternate email,Notes\n00123, Ada ,Ada@EXAMPLE.COM,Alternate@EXAMPLE.COM,initial\n00124,Blair,Blair@example.com,Other@example.com,untouched');
+  await page.getByRole('button', { name: 'Review row 1', exact: true }).click();
+  await page.getByLabel('Notes — row 1', { exact: true }).fill('Before formatting');
+  await page.getByRole('button', { name: 'Apply formatting changes', exact: true }).click();
+  assert.equal(await page.getByLabel('Notes — row 1', { exact: true }).inputValue(), 'Before formatting');
+  assert.equal(await page.getByLabel('Name — row 1', { exact: true }).inputValue(), 'Ada');
+  await page.getByLabel('Notes — row 1', { exact: true }).fill('Before mapping');
+  await page.getByText('Choose columns & formatting rules', { exact: true }).click();
+  await page.getByLabel('Email column', { exact: true }).selectOption('3');
+  assert.equal(await page.getByLabel('Notes — row 1', { exact: true }).inputValue(), 'Before mapping');
+  await page.getByLabel('Notes — row 1', { exact: true }).fill('Before excluding');
+  await page.getByRole('button', { name: 'Exclude row', exact: true }).click();
+  await page.getByRole('button', { name: 'Restore row', exact: true }).click();
+  assert.equal((await downloadCsv(page, 'draft-actions.csv')).text,
+    'ID,Name,Email,Alternate email,Notes\r\n00123,Ada,Ada@example.com,Alternate@EXAMPLE.COM,Before excluding\r\n00124,Blair,Blair@example.com,Other@example.com,untouched',
+    'Formatting, mapping and exclusion must retain manual edits.');
+
+  await upload(page, 'draft-undo.csv', 'Name,Email\nOriginal,ada@example.com');
+  await page.getByRole('button', { name: 'Review row 1', exact: true }).click();
+  await page.getByLabel('Name — row 1', { exact: true }).fill('Saved');
+  await page.getByRole('button', { name: 'Save row', exact: true }).click();
+  await page.getByLabel('Name — row 1', { exact: true }).fill('Pending');
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  assert.equal(await page.getByLabel('Name — row 1', { exact: true }).inputValue(), 'Saved', 'First Undo should discard pending edits only.');
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  assert.equal(await page.getByLabel('Name — row 1', { exact: true }).inputValue(), 'Original', 'Second Undo should revert the previous saved action.');
+  assert.equal((await downloadCsv(page, 'draft-undo.csv')).text, 'Name,Email\r\nOriginal,ada@example.com');
+
+  await page.getByLabel('Name — row 1', { exact: true }).fill('Kept across views');
+  await session.assertPrivate();
+  // Other public views load their own static assets; CSV actions remain offline.
+  session.pauseProcessing();
+  await page.getByRole('link', { name: /Back to overview/ }).click();
+  await page.getByRole('link', { name: 'Clean your CSV', exact: true }).click();
+  await page.getByRole('heading', { name: 'draft-undo.csv', exact: true }).waitFor();
+  assert.equal(await page.getByLabel('Name — row 1', { exact: true }).inputValue(), 'Kept across views');
+  await page.getByRole('link', { name: /Back to overview/ }).click();
+  await page.getByRole('link', { name: 'Inbound routing lab', exact: true }).click();
+  await page.getByRole('heading', { name: 'Inbound Routing Lab', exact: true }).waitFor();
+  await session.captureInboundPracticeStorage();
+  await page.goto(new URL('/#clean-csv', base).href);
+  await page.getByRole('heading', { name: 'draft-undo.csv', exact: true }).waitFor();
+  await page.waitForLoadState('networkidle');
+  session.startProcessing();
+  assert.equal((await downloadCsv(page, 'draft-navigation.csv')).text, 'Name,Email\r\nKept across views,ada@example.com',
+    'Navigating within the public site must retain the working file and pending edits.');
 }
 
 try {
@@ -168,6 +251,7 @@ try {
   await upload(page, 'recovered.csv', 'SKU,Details\n00123,Still here');
   assert.equal(await page.getByRole('alert').count(), 0, 'A valid file should clear a previous parsing error.');
   await withoutIdentity(page, 'companies', 'Company,Domain,Notes\nAcme,acme.example,Keep this\nAcme,acme.example,Keep this\n,,', 'Notes');
+  await draftLifecycle(desktop);
   await desktop.assertPrivate();
   await desktop.open(true);
   await page.getByRole('button', { name: 'Choose CSV file', exact: true }).waitFor();
@@ -175,6 +259,7 @@ try {
   await desktop.assertPrivate();
   await desktop.context.close();
   outcomes.push('Desktop: upload, preview, cleanup, manual correction, exclusion/restore, Undo, column mapping, exact download bytes, malformed/invalid UTF-8 file recovery and refresh reset.');
+  outcomes.push('Drafts: download/switch/Close/formatting/mapping/exclusion keep edits; Undo separates pending and saved work; overview/inbound navigation retains the working CSV.');
 
   const mobile = await workspace({ width: 390, height: 844 }, '#audit');
   await noPageOverflow(mobile.page);
@@ -187,17 +272,37 @@ try {
   const sample = await downloadCsv(mobile.page, 'mobile-sample-cleaned.csv');
   assert.equal(sample.name, 'practice-contacts-cleaned.csv');
   assert(sample.text.includes('00123,Ada,Lovelace,Ada+event@example.com,Northstar,'));
+  assert(sample.text.includes('00125,José,Rivera,jose@xn--maana-pta.example,Sol,'), 'Accented names must survive the downloaded UTF-8 bytes.');
   assert(sample.text.includes("'+44 20 7946 0123"));
-  await mobile.page.getByRole('button', { name: 'Review row 4', exact: true }).click();
+  const reviewButton = mobile.page.getByRole('button', { name: 'Review row 4', exact: true });
+  await reviewButton.evaluate((element) => window.scrollTo(0, element.getBoundingClientRect().top + window.scrollY - 180));
+  const reviewPosition = await reviewButton.evaluate((element) => ({
+    left: element.getBoundingClientRect().left, right: element.getBoundingClientRect().right,
+    scrollLeft: element.closest('.overflow-x-auto')?.scrollLeft ?? 0,
+  }));
+  assert(reviewPosition.left >= 0 && reviewPosition.right <= 390 && reviewPosition.scrollLeft === 0,
+    `Mobile Review must be reachable without horizontal scrolling: ${JSON.stringify(reviewPosition)}`);
+  await reviewButton.click();
   await mobile.page.getByLabel('Email — row 4', { exact: true }).waitFor();
+  await mobile.page.waitForFunction(() => {
+    const heading = document.querySelector('aside[aria-label="Edit row 4"] h2');
+    const top = heading?.getBoundingClientRect().top;
+    return top !== undefined && top >= 0 && top <= 150;
+  });
   await noPageOverflow(mobile.page);
   await mobile.page.screenshot({ path: resolve(output, 'mobile-cleaned.png'), fullPage: true });
+  await mobile.page.getByLabel('Choose a CSV file', { exact: true }).setInputFiles({ name: 'sample-roundtrip.csv', mimeType: 'text/csv', buffer: sample.bytes });
+  await mobile.page.getByRole('heading', { name: 'sample-roundtrip.csv', exact: true }).waitFor();
+  await mobile.page.getByRole('button', { name: 'Review row 3', exact: true }).click();
+  assert.equal(await mobile.page.getByLabel('Record ID — row 3', { exact: true }).inputValue(), '00125', 'Reopening the download must remove the encoding marker from the first header.');
+  assert.equal(await mobile.page.getByLabel('First name — row 3', { exact: true }).inputValue(), 'José');
   await withoutIdentity(mobile.page, 'deals', 'Deal ID,Amount,Pipeline,Details\n00123,500,New,Keep this\n00123,500,New,Keep this\n,,,', 'Details');
   await mobile.assertPrivate();
   await mobile.context.close();
   outcomes.push('Mobile 390px: sample, cleanup, actual download and row editor; page width stays within viewport.');
+  outcomes.push('Downloads: UTF-8 BOM bytes verified; accented names and exact CSV content preserved; reopening a downloaded sample retains the original first header.');
   outcomes.push('No email/name: company and deal files open, empty/repeated rows appear in review, edits/exclusion/restore/Undo recalculate findings, and every source cell downloads; legacy #audit link works.');
-  outcomes.push('Both sessions: no page errors, no API/external requests, no HTTP requests while processing CSV, and no local/session storage.');
+  outcomes.push('Both sessions: no page errors, external requests, CSV API/processing requests or CSV browser storage; visiting the separate inbound lab permits only its existing empty GET to demo-intake and its own fictional practice storage.');
   console.log(JSON.stringify({ status: 'passed', outcomes, screenshots: output }, null, 2));
 } finally {
   await browser.close();

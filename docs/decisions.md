@@ -917,3 +917,22 @@ Keep explicit exclusions as empty strings so JSON persistence cannot silently
 restore an automatic suggestion. A source maps to one destination at a time;
 reassigning a destination clears its previous source. Apply presets only where
 their source headers exist without conflicting assignments in the current file.
+
+## October 10, 2026 — Preserve browser edits and compare related source rows
+
+Keep the browser CSV workspace mounted when navigating within the public site,
+so a view change cannot discard the file. Pending row edits become part of the
+working file when switching rows, closing the editor, downloading, or applying
+another action. Keep explicit Save and Discard controls plus ten-action Undo;
+refreshing or closing the tab still requires a download to retain the work.
+
+Use the existing exact-row and normalized-email comparisons to show related
+source rows together, including records on other pages. Show differences first
+and keep every original column available. Never infer a winning record or merge
+rows; exclusion stays an explicit, reversible choice. Distinguish duplicate
+column labels by position without renaming source headers in the export.
+
+Add a UTF-8 BOM only at the browser download boundary so ordinary Excel opening
+recognizes accented text. Keep model exports unchanged and verify reimport strips
+the marker from the first header. This does not change spreadsheet type inference;
+IDs and phone numbers may still need import-as-text settings.

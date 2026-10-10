@@ -161,14 +161,23 @@ source.
 Open **[Clean a CSV](https://gtm-control-tower.pages.dev/#clean-csv)**. No install,
 account, or CRM connection is required. Choose a CSV up to 10 MB and 10,000 data
 rows, select the email and whitespace-cleanup columns, then preview changes
-before applying them. You can also edit cells, exclude or restore rows, and
-undo your last edit. Download the cleaned CSV when you are ready.
+before applying them. No email or name column is required; formatting choices
+open automatically when no email or cleanup columns are recognized. Review
+empty or repeated rows and compare related rows before deciding whether to
+exclude one. You can edit cells, restore excluded rows, and download when ready.
+
+Pending row edits stay when you download, switch rows, or close the editor.
+**Discard edits** cancels the current draft; **Undo** first cancels that draft,
+then can reverse the last ten saved actions. Formatting changes require an
+explicit **Apply formatting changes** click.
 
 The file and edits stay in tab memory: there is no source-data upload, browser
-storage, or operator API call. Refreshing or leaving loses the session, so
-download before you close it. Original headers, column order, custom columns,
-and row order remain; only explicitly excluded rows are omitted. Unresolved
-email warnings do not prevent download or remove rows automatically.
+storage of your CSV, or operator API call. You can visit the overview or Inbound
+Routing Lab and return in the same tab without losing work. Download before
+refreshing, closing the tab, opening another file, or leaving for another site.
+Original headers, column order, custom columns, and row order remain; only
+explicitly excluded rows are omitted. Unresolved warnings do not prevent
+download or remove rows automatically.
 
 Formula-like cells are prefixed with an apostrophe on export, with a count shown
 before download. Spreadsheet programs may still change types such as leading-zero

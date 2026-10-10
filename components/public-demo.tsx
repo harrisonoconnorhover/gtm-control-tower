@@ -94,11 +94,10 @@ export function PublicDemo() {
     }
   }
 
-  if (inboundLab) return <InboundLeadLab />;
-  if (csvWorkspace) return <BrowserCsvWorkspace />;
-
   return (
-    <main id="top" data-capture-stage={stage} className="min-h-screen overflow-hidden bg-[#06100d] text-[#edf8f2] selection:bg-[#d8ff67] selection:text-[#06100d]">
+    <>
+      <div hidden={!csvWorkspace}><BrowserCsvWorkspace active={csvWorkspace} /></div>
+      {!csvWorkspace && (inboundLab ? <InboundLeadLab /> : <main id="top" data-capture-stage={stage} className="min-h-screen overflow-hidden bg-[#06100d] text-[#edf8f2] selection:bg-[#d8ff67] selection:text-[#06100d]">
       <div className="pointer-events-none fixed inset-x-0 top-0 h-[760px] bg-[radial-gradient(circle_at_72%_4%,rgba(205,252,84,0.15),transparent_32%),radial-gradient(circle_at_12%_12%,rgba(49,156,118,0.18),transparent_30%)]" />
       <div className="relative mx-auto max-w-[1500px] px-5 sm:px-8 lg:px-12">
         <header className="flex flex-wrap items-center justify-between gap-5 border-b border-white/10 py-5">
@@ -375,7 +374,8 @@ export function PublicDemo() {
           <p className="font-mono">BUILT FOR GTM ENGINEERING, REVOPS, AND REVENUE SYSTEMS</p>
         </footer>
       </div>
-    </main>
+    </main>)}
+    </>
   );
 }
 

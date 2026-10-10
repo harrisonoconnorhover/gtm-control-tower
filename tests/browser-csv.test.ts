@@ -3,7 +3,9 @@ import {
   applyBrowserCleanup,
   BROWSER_CSV_MAX_BYTES,
   BROWSER_CSV_MAX_ROWS,
+  browserCsvColumnLabel,
   browserCsvIssues,
+  browserCsvReview,
   browserCsvSample,
   cleanupProposals,
   exportBrowserCsv,
@@ -24,6 +26,13 @@ describe('browser CSV workspace', () => {
     expect(parseBrowserCsv(exported.csv)).toEqual(document);
   });
 
+  it('distinguishes repeated and unnamed column labels without renaming source headers', () => {
+    const document = parseBrowserCsv(',Column 1,Notes, Notes ,Email\na,b,c,d,person@example.com');
+    expect(document.headers.map((_, column) => browserCsvColumnLabel(document.headers, column)))
+      .toEqual(['Column 1 (column 1)', 'Column 1 (column 2)', 'Notes (column 3)', 'Notes (column 4)', 'Email']);
+    expect(exportBrowserCsv(document).csv.split('\r\n')[0]).toBe(',Column 1,Notes, Notes ,Email');
+  });
+
   it.each([
     ['', 'header row'],
     ['email\n', 'at least one data row'],
@@ -42,6 +51,16 @@ describe('browser CSV workspace', () => {
     expect(parseBrowserCsv('note\n\n').rows[0].values).toEqual(['']);
     expect(parseBrowserCsv('note\n""').rows[0].values).toEqual(['']);
   });
+
+  it.each(['Note\n""', 'Note\nkept\n""', 'Note\n""\n""', '""\nkept\n""', '""\n""'])(
+    'roundtrips one-column files with empty headers or final empty records: %j',
+    (csv) => {
+      const document = parseBrowserCsv(csv);
+      const exported = exportBrowserCsv(document);
+      expect(exported.rowCount).toBe(document.rows.length);
+      expect(parseBrowserCsv(exported.csv)).toEqual(document);
+    },
+  );
 
   it('limits record count and actual UTF-8 file bytes', () => {
     expect(parseBrowserCsv(`id\n${'1\n'.repeat(BROWSER_CSV_MAX_ROWS)}`).rows).toHaveLength(BROWSER_CSV_MAX_ROWS);
@@ -133,6 +152,36 @@ describe('browser CSV workspace', () => {
     expect(browserCsvIssues(filled).size).toBe(0);
     expect(filled.rows.map((row) => row.original)).toEqual(document.rows.map((row) => row.values));
     expect(document.rows.every((row) => !row.excluded)).toBe(true);
+  });
+
+  it('identifies related rows across pages with the same comparisons as review notes', () => {
+    const rows = Array.from({ length: 101 }, (_, index) => `Person${index}@example.com,Note ${index}`);
+    rows[0] = 'Ada@EXAMPLE.COM,same';
+    rows[50] = 'Ada@example.com,different';
+    rows[100] = 'Ada@EXAMPLE.COM,same';
+    const document = parseBrowserCsv(`Email,Note\n${rows.join('\n')}`);
+    const review = browserCsvReview(document);
+    expect(review.groups).toEqual([
+      { kind: 'repeated-row', rowIds: [0, 100] },
+      { kind: 'repeated-email', rowIds: [0, 50, 100] },
+    ]);
+    expect(review.issues).toEqual(browserCsvIssues(document));
+    expect(review.issues.get(0)).toHaveLength(2);
+    expect(review.issues.get(50)).toEqual(['Repeated email: review these rows before removing any']);
+    expect(review.issues.has(49)).toBe(false);
+
+    const excluded = toggleBrowserRow(document, 100);
+    expect(browserCsvReview(excluded).groups).toEqual([{ kind: 'repeated-email', rowIds: [0, 50] }]);
+    const edited = updateBrowserCell(excluded, 50, 0, 'Other@example.com');
+    expect(browserCsvReview(edited)).toEqual({ issues: new Map(), groups: [] });
+    expect(browserCsvReview(toggleBrowserRow(excluded, 100))).toEqual(review);
+    expect(document.rows[100].excluded).toBe(false);
+  });
+
+  it('uses domain normalization without merging local-part case or plus aliases in related-row groups', () => {
+    const document = parseBrowserCsv('Email,Note\nAda+event@MAÑANA.EXAMPLE,a\nAda+event@xn--maana-pta.example,b\nada+event@mañana.example,c\nAda@mañana.example,d');
+    expect(browserCsvReview(document).groups).toEqual([{ kind: 'repeated-email', rowIds: [0, 1] }]);
+    expect(browserCsvReview({ ...document, emailColumn: null }).groups).toEqual([]);
   });
 
   it('marks all repeated emails without merging local-part case, dots or plus aliases', () => {

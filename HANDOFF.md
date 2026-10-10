@@ -2,37 +2,38 @@
 
 ## Finished
 
-- Rebuilt the contact CSV mapper around one row per source column: original CSV header and example on the left, editable Control Tower field on the right, with match counts and clear labels.
-- Added deterministic automatic matches for common CRM headers, including Work Email, Company Name, Business Phone, given/family names, and API-style capitalization. Ambiguous matches remain available for manual review.
-- Added Auto-map headers to restore suggestions. Moving a destination clears its previous source; unknown columns stay visible as not imported.
-- Fixed ignored fields returning after preset serialization. Explicit exclusions survive saving, reload, and import; stale or conflicting preset sources remain unmapped.
-- Preserved browser CSV cleanup and native CRM qualification work documented in the existing guides.
+- Kept browser CSV files and pending edits through row changes, downloads, editor closing, and navigation within the public site.
+- Added related-row comparisons across pages, with custom columns, differences-first review, and explicit exclusion/Undo.
+- Made mobile Review actions visible without swiping. Restored keyboard focus after closing an editor and moved pagination to the start of the next page.
+- Distinguished repeated and unnamed source columns without changing exported headers; retained empty final rows in single-column exports.
+- Opened formatting choices automatically for generic files with no recognized cleanup columns.
 
 ## Try It
 
-1. Start the updated self-hosted app and open `/app/lab`. Choose a contact CSV to preview.
-2. Review **Your CSV column → Control Tower field**, including the source examples and automatic matches. Change a destination or choose **Do not import this column**, then **Validate + load**.
-3. To repeat browser verification against a disposable local app, run `CONTROL_TOWER_BROWSER_BASE_URL=http://127.0.0.1:3217 npm run test:csv-mapping` after starting that app with isolated SQLite.
+1. Run `npm run preview:public -- --port 4175` and open `http://127.0.0.1:4175/#clean-csv`.
+2. Load the sample, apply formatting, and review row 1 to compare its related row. Edit a cell, switch rows, and download without a separate Save click.
+3. Visit the overview and return: the file stays open. Download before refreshing or closing the tab.
 
 ## Checks
 
-- All 64 focused CSV/browser-CSV unit tests passed. TypeScript, focused ESLint, script syntax, app/public production builds, and diff checks passed.
-- Desktop 1440px and mobile 390px production-browser checks passed, with five real local workspace imports and saved preset readback. Verified automatic matches, source examples, ignored-field persistence, reassignment, reset, ambiguous aliases, and stale presets.
-- No JavaScript errors, external requests, or CRM calls occurred in browser verification. Screenshots were visually inspected. Private results are in `outputs/csv-mapping/`.
+- All 801 tests passed. TypeScript, full ESLint, operator production build, and public production build passed.
+- Production-browser upload/edit/download, related-row comparison, and keyboard checks passed at 1440px and 390px. No CSV-processing HTTP requests or source-data storage occurred.
+- A 10,000-row, 100-column file opened, applied 30,000 formatting changes, and downloaded every source column and included row correctly.
+- Downloaded UTF-8 bytes include an Excel-compatible BOM; accented names and first headers survive reopening. Diff checks passed.
 
 ## Decisions
 
-- Suggest matches from explicit header aliases, not cell contents or fuzzy guesses. Canonical names take precedence; equal candidates need review.
-- Each source maps to one target. Explicit empty mappings override inferred defaults and survive JSON storage.
-- This mapper loads contacts into the saved workspace. Generic browser CSV cleanup remains available for other tables and preserves all source columns.
+- Retain the file in tab memory across site views; keep browser storage and server uploads out of CSV processing.
+- Save pending row edits during ordinary actions; explicit Discard and bounded Undo remain available.
+- Compare related source rows without choosing a winner, merging, or removing rows automatically.
 
 ## Remaining
 
-- Restart or rebuild the installed operator app to use the new mapper. No hosted app was deployed in this task.
-- Publishing the earlier static CSV review additions remains separate from this operator-app change.
+- These refinements are verified locally; public deployment is pending.
+- Refreshing, closing the tab, or leaving the site still loses the session unless the user downloads it.
 
 ## Review First
 
-1. `components/self-host-console.tsx` and `lib/csv-control-tower.ts`.
-2. `tests/csv-control-tower.test.ts` and `scripts/check-csv-mapping.mjs`.
-3. `outputs/csv-mapping/desktop-auto-mapping.png` and [self-hosting guide](docs/self-hosting.md).
+1. `components/browser-csv-workspace.tsx` and `components/browser-csv-related-rows.tsx`.
+2. `lib/browser-csv.ts` and browser regression scripts.
+3. `docs/browser-csv.md` and `outputs/browser-csv-related/` screenshots.
