@@ -1,6 +1,7 @@
 import { getDatabase, type DatabaseAdapter } from '@/db';
 import { WATCHDOG_DEFAULT_CONFIG, watchdogAccountIdentity, watchdogRecordKey, type WatchdogConfig, type WatchdogFinding, type WatchdogRun } from './watchdog-types';
 import { validWatchdogEmail, type WatchdogIssue, type WatchdogSnapshot } from './watchdog-rules';
+import { notifyAssignment, notifyWatchdogFailure, notifyWatchdogObservation, notifyWatchdogRepair } from './operation-notifications';
 
 export type WatchdogAccount = {
   account_id: string; config_json: string; phase: 'baseline' | 'changes'; cursor: string | null;
@@ -82,6 +83,8 @@ export async function claimWatchdogTick(accountId: string, force: boolean): Prom
     .first<WatchdogAccount>();
   if (!row) return null;
   // Interrupted sending attempts are never candidates for another automatic PATCH.
+  const interruptedRepairs = await db.prepare("SELECT id, finding_id FROM watchdog_repairs WHERE account_id = ? AND state = 'sending'")
+    .bind(accountId).all<{ id: string; finding_id: string }>();
   await db.batch([
     db.prepare(`UPDATE watchdog_findings SET status = 'unknown', repair_error = 'A previous repair was interrupted. Verify the CRM manually; it will not be replayed.'
       WHERE account_id = ? AND id IN (SELECT finding_id FROM watchdog_repairs WHERE account_id = ? AND state = 'sending')`)
@@ -89,6 +92,7 @@ export async function claimWatchdogTick(accountId: string, force: boolean): Prom
     db.prepare(`UPDATE watchdog_repairs SET state = 'unknown', finished_at = ?, error = 'Worker interrupted; remote outcome unknown.'
       WHERE account_id = ? AND state = 'sending'`).bind(now, accountId),
   ]);
+  for (const repair of interruptedRepairs.results) await notifyWatchdogRepair(accountId, repair.finding_id, repair.id, 'unknown');
   const interrupted = await db.prepare('SELECT payload_json FROM watchdog_runs WHERE account_id = ? ORDER BY started_at DESC LIMIT 1').bind(accountId).first<{ payload_json: string }>();
   if (interrupted) {
     const run = JSON.parse(interrupted.payload_json) as WatchdogRun;
@@ -156,8 +160,10 @@ export async function saveWatchdogObservation(accountId: string, leaseId: string
     .bind(accountId, watchdogRecordKey(snapshot.contact), JSON.stringify(snapshot), accountId, leaseId, now));
   await db.batch(statements);
   await assertWatchdogLease(accountId, leaseId);
+  const findings = await getContactFindings(accountId, watchdogRecordKey(snapshot.contact));
+  await notifyWatchdogObservation(previous, findings);
   return {
-    findings: await getContactFindings(accountId, watchdogRecordKey(snapshot.contact)),
+    findings,
     opened: issues.filter((issue) => !previous.some((finding) => finding.rule === issue.rule && !['resolved', 'fixed'].includes(finding.status))).length,
   };
 }
@@ -206,6 +212,8 @@ export async function finishWatchdogRepair(accountId: string, leaseId: string, r
       AND EXISTS (SELECT 1 FROM watchdog_repairs WHERE id = ? AND state = ?)`)
       .bind(state === 'verified' ? 'fixed' : 'unknown', state === 'verified' ? now : null, error, findingId, accountId, accountId, leaseId, now, repairId, state),
   ]);
+  const saved = await db.prepare('SELECT state FROM watchdog_repairs WHERE id = ? AND account_id = ?').bind(repairId, accountId).first<{ state: string }>();
+  if (saved?.state === state) await notifyWatchdogRepair(accountId, findingId, repairId, state);
 }
 
 export async function setWatchdogFindingError(accountId: string, leaseId: string, findingId: string, error: string): Promise<void> {
@@ -217,9 +225,17 @@ export async function setWatchdogFindingError(accountId: string, leaseId: string
 export async function updateWatchdogTriage(accountId: string, input: { id: string; status: 'open' | 'in_progress' | 'resolved'; assignee: string; note: string }): Promise<void> {
   const db = await watchdogDatabase();
   const row = await db.prepare(`UPDATE watchdog_findings SET status = ?, assignee = ?, note = ?, resolved_at = ?
-    WHERE id = ? AND account_id = ? AND NOT EXISTS (SELECT 1 FROM watchdog_repairs WHERE finding_id = ? AND state = 'sending') RETURNING id`)
-    .bind(input.status, input.assignee, input.note, input.status === 'resolved' ? new Date().toISOString() : null, input.id, accountId, input.id).first();
-  if (!row) throw new Error('Finding was not found in this account or has a repair in flight.');
+    WHERE id = ? AND account_id = ? AND (status != ? OR assignee != ? OR note != ?)
+    AND NOT EXISTS (SELECT 1 FROM watchdog_repairs WHERE finding_id = ? AND state = 'sending') RETURNING id`)
+    .bind(input.status, input.assignee, input.note, input.status === 'resolved' ? new Date().toISOString() : null, input.id, accountId, input.status, input.assignee, input.note, input.id).first();
+  if (!row) {
+    const saved = await db.prepare('SELECT status, assignee, note FROM watchdog_findings WHERE id = ? AND account_id = ?')
+      .bind(input.id, accountId).first<{ status: string; assignee: string; note: string }>();
+    if (saved?.status === input.status && saved.assignee === input.assignee && saved.note === input.note) return;
+    throw new Error('Finding was not found in this account or has a repair in flight.');
+  }
+  const { provider } = watchdogAccountIdentity(accountId);
+  await notifyAssignment(provider, `/app/watchdog?provider=${provider}&finding=${encodeURIComponent(input.id)}`, Boolean(input.assignee));
 }
 
 export async function saveWatchdogRun(run: WatchdogRun, leaseId: string): Promise<void> {
@@ -228,6 +244,12 @@ export async function saveWatchdogRun(run: WatchdogRun, leaseId: string): Promis
     SELECT ?, ?, ?, ? WHERE ${leasePredicate}
     ON CONFLICT(id) DO UPDATE SET payload_json = excluded.payload_json`)
     .bind(run.id, run.accountId, run.startedAt, JSON.stringify(run), run.accountId, leaseId, new Date().toISOString()).run();
+  if (run.status === 'failed') {
+    const saved = await db.prepare('SELECT payload_json FROM watchdog_runs WHERE id = ?').bind(run.id).first<{ payload_json: string }>();
+    const completed = await db.prepare("SELECT id FROM watchdog_runs WHERE account_id = ? AND json_extract(payload_json, '$.status') = 'completed' ORDER BY started_at DESC, rowid DESC LIMIT 1")
+      .bind(run.accountId).first<{ id: string }>();
+    if (saved?.payload_json === JSON.stringify(run)) await notifyWatchdogFailure(run, completed?.id ?? 'initial');
+  }
 }
 
 export async function readWatchdogReport(accountId: string): Promise<{ findings: WatchdogFinding[]; runs: WatchdogRun[]; counts: { status: WatchdogFinding['status']; count: number }[] }> {

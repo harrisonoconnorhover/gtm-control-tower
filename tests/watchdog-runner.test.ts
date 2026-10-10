@@ -6,9 +6,18 @@ import { describe, expect, it } from 'vitest';
 describe('unattended watchdog runner', () => {
   it.each(['completed', 'failed'] as const)('reports a %s tick and sends only operator credentials', async (status) => {
     const requests: { key?: string; body: string; authorization?: string }[] = [];
+    let notificationRequests = 0;
     const server = createServer(async (request, response) => {
       let body = '';
       for await (const chunk of request) body += chunk;
+      if (request.url === '/api/control-tower/notifications/slack') {
+        notificationRequests++;
+        expect(JSON.parse(body)).toEqual({ action: 'deliver' });
+        expect(request.headers['x-control-tower-key']).toBe('fixture-operator-key');
+        response.writeHead(200, { 'content-type': 'application/json' });
+        response.end(JSON.stringify({ slack: { configured: false }, outcome: 'idle' }));
+        return;
+      }
       requests.push({ key: request.headers['x-control-tower-key'] as string, body, authorization: request.headers.authorization });
       response.writeHead(200, { 'content-type': 'application/json' });
       response.end(JSON.stringify({ watchdog: {
@@ -32,6 +41,7 @@ describe('unattended watchdog runner', () => {
       const [exitCode] = await once(child, 'close');
       expect(exitCode).toBe(status === 'failed' ? 1 : 0);
       expect(requests).toEqual([{ key: 'fixture-operator-key', body: '{"action":"tick"}', authorization: undefined }]);
+      expect(notificationRequests).toBe(1);
       expect(output).toContain('fixture-run');
       expect(output).not.toContain('must-not-be-sent');
       expect(output).not.toContain('fixture-operator-key');
@@ -44,9 +54,16 @@ describe('unattended watchdog runner', () => {
 
 it('continues Salesforce when HubSpot fails and never forwards CRM credentials', async () => {
   const requests: { provider: string; key: string | undefined; authorization: string | undefined }[] = [];
+  let notificationRequests = 0;
   const server = createServer(async (request, response) => {
     let body = '';
     for await (const chunk of request) body += chunk;
+    if (request.url === '/api/control-tower/notifications/slack') {
+      notificationRequests++;
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(JSON.stringify({ slack: { configured: true, pending: 0, delivered: 1, failed: 0, unknown: 0 }, outcome: 'delivered' }));
+      return;
+    }
     const provider = JSON.parse(body).provider ?? 'hubspot';
     requests.push({ provider, key: request.headers['x-control-tower-key'] as string | undefined, authorization: request.headers.authorization });
     response.writeHead(provider === 'hubspot' ? 503 : 200, { 'content-type': 'application/json' });
@@ -70,6 +87,7 @@ it('continues Salesforce when HubSpot fails and never forwards CRM credentials',
     const [exitCode] = await once(child, 'close');
     expect(exitCode).toBe(1);
     expect(requests.map((request) => request.provider).sort()).toEqual(['hubspot', 'salesforce']);
+    expect(notificationRequests).toBe(1);
     expect(requests.every((request) => request.key === 'fixture-operator-key' && request.authorization === undefined)).toBe(true);
     expect(output).toContain('salesforce-fixture-run');
     expect(output).not.toContain('must-not-be-sent');

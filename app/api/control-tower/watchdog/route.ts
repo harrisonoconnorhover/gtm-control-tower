@@ -2,6 +2,7 @@ import { getWatchdogConnection } from '@/lib/watchdog-connection';
 import { operatorAccessError } from '@/lib/operator-auth';
 import { configureWatchdog, getWatchdogOverview, tickWatchdog, triageWatchdogFinding } from '@/lib/watchdog';
 import type { WatchdogConfig, WatchdogProvider } from '@/lib/watchdog-types';
+import { notifyWatchdogConnectionFailure } from '@/lib/operation-notifications';
 
 export async function GET(request: Request) {
   const denied = operatorAccessError(request);
@@ -26,7 +27,12 @@ export async function POST(request: Request) {
     return Response.json({ error: 'Send a valid watchdog action.' }, { status: 400 });
   }
   try {
-    const connection = await getWatchdogConnection(parseProvider(body.provider));
+    const provider = parseProvider(body.provider);
+    if (body.action === 'tick' && body.force !== undefined && typeof body.force !== 'boolean') throw new InputError('Force must be true or false.');
+    const connection = await getWatchdogConnection(provider).catch(async (error: unknown) => {
+      if (body.action === 'tick') await notifyWatchdogConnectionFailure(provider);
+      throw error;
+    });
     const { scope: accountId, token } = connection;
     if (body.action === 'configure') {
       const config = parseConfig(body.config);

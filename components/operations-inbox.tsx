@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { OperationsInbox, WorkStatus } from '@/lib/operations-inbox';
+import { SlackNotificationStatus } from '@/components/slack-notification-status';
 
 const keyStorage = 'gtm-control-tower-operator-key';
 const input = 'w-full rounded-xl border border-white/15 bg-[#06100d] px-3 py-2.5 text-sm text-[#edf8f2] outline-none focus:border-[#d8ff67]';
@@ -12,6 +13,7 @@ const names: Record<WorkStatus, string> = { received: 'Received', needs_review: 
 export function OperationsInboxConsole() {
   const [data, setData] = useState<OperationsInbox | null>(null);
   const [accessKey, setAccessKey] = useState('');
+  const [submittedKey, setSubmittedKey] = useState<string | null>(null);
   const keyRef = useRef('');
   const [provider, setProvider] = useState('all');
   const [showCompleted, setShowCompleted] = useState(false);
@@ -27,7 +29,7 @@ export function OperationsInboxConsole() {
   useEffect(() => {
     const controller = new AbortController();
     keyRef.current = window.sessionStorage.getItem(keyStorage) ?? '';
-    queueMicrotask(() => setAccessKey(keyRef.current));
+    queueMicrotask(() => { setAccessKey(keyRef.current); setSubmittedKey(keyRef.current); });
     const reload = () => { void refresh(controller.signal).catch((caught: unknown) => { if (!controller.signal.aborted) setError(message(caught)); }); };
     reload();
     const timer = window.setInterval(reload, 30_000);
@@ -56,7 +58,7 @@ export function OperationsInboxConsole() {
         <div><p className="text-xs uppercase tracking-[0.2em] text-[#d8ff67]">Control Tower / Private operations</p><h1 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">Operations Inbox</h1><p className="mt-3 max-w-xl text-sm leading-6 text-[#9fb2a8]">One place for incoming lists and CRM findings. Review exact changes, follow up on uncertain records, and see verified results.</p></div>
         <nav className="flex flex-wrap gap-2"><Link className={button} href="/app/watchdog">Watchdog</Link><Link className={button} href="/app/lab">CSV lab</Link><Link className={button} href="/app">Control Tower</Link></nav>
       </header>
-      <form className="mb-6 flex flex-wrap items-end gap-3" onSubmit={(event) => { event.preventDefault(); keyRef.current = accessKey; window.sessionStorage.setItem(keyStorage, accessKey); void refresh().catch((caught) => setError(message(caught))); }}>
+      <form className="mb-6 flex flex-wrap items-end gap-3" onSubmit={(event) => { event.preventDefault(); keyRef.current = accessKey; setSubmittedKey(accessKey); window.sessionStorage.setItem(keyStorage, accessKey); void refresh().catch((caught) => setError(message(caught))); }}>
         <label className="w-full text-xs text-[#9fb2a8] sm:w-72">Operator access key<input type="password" autoComplete="off" value={accessKey} onChange={(event) => setAccessKey(event.target.value)} className={`${input} mt-2`} /></label><button className={button} type="submit">Load inbox</button>
       </form>
       {error && <p role="alert" className="mb-5 rounded-xl border border-[#ffbb86]/25 bg-[#ffbb86]/5 p-4 text-sm text-[#ffcca5]">{error}</p>}
@@ -78,6 +80,7 @@ export function OperationsInboxConsole() {
           {data && <p className="mt-5 text-xs leading-5 text-[#718c7e]">{data.coverage}</p>}
         </section>
         <aside className="space-y-4">
+          <SlackNotificationStatus key={submittedKey ?? 'loading'} accessKey={submittedKey} />
           <section className="rounded-2xl border border-[#d8ff67]/20 bg-[#d8ff67]/[0.035] p-5"><h2 className="text-lg font-medium">Submit a lead list</h2><p className="mt-2 text-xs leading-5 text-[#9fb2a8]">CSV with an Email column. Existing records only; populated fields are preserved. Receiving a file does not approve updates.</p>
             <form className="mt-4 space-y-4" onSubmit={async (event) => { event.preventDefault(); const values = new FormData(event.currentTarget); const file = values.get('file'); if (!(file instanceof File) || !file.size) { setError('Choose a CSV file.'); return; } if (file.size > 4 * 1024 * 1024) { setError('Upload a CSV smaller than 4 MB.'); return; } try { await action({ action: 'receive', provider: values.get('provider'), fileName: file.name, csv: await file.text() }); } catch (caught) { setError(message(caught)); } }}>
               <label className="block text-xs text-[#9fb2a8]">Destination<select name="provider" className={`${input} mt-1`}><option value="hubspot">HubSpot Contacts</option><option value="salesforce">Salesforce Leads + Contacts</option></select></label><label className="block text-xs text-[#9fb2a8]">CSV file<input name="file" type="file" accept=".csv,text/csv" required className="mt-2 block w-full text-xs file:mr-2 file:rounded-lg file:border-0 file:bg-white/10 file:px-3 file:py-2 file:text-[#d8ff67]" /></label><button disabled={busy} className="w-full rounded-full bg-[#d8ff67] px-5 py-3 text-xs font-bold text-[#06100d] disabled:opacity-40">{busy ? 'Saving…' : 'Add to inbox'}</button>

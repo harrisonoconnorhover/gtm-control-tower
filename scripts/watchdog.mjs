@@ -17,10 +17,12 @@ if (!providers.length || providers.some((provider) => !['hubspot', 'salesforce']
   throw new Error('CONTROL_TOWER_WATCHDOG_PROVIDERS must contain hubspot and/or salesforce.');
 }
 const endpoint = new URL('/api/control-tower/watchdog', base);
+const notificationEndpoint = new URL('/api/control-tower/notifications/slack', base);
 const once = process.argv.includes('--once');
 const sleepController = new AbortController();
 const states = new Map(providers.map((provider) => [provider, { failures: 0, lastMessage: '', lastRunId: '', nextPollAt: 0 }]));
 let stopping = false;
+let lastSlackStatus = '';
 for (const signal of ['SIGINT', 'SIGTERM']) {
   process.once(signal, () => { stopping = true; sleepController.abort(); });
 }
@@ -69,7 +71,24 @@ console.log(`Watchdog runner connected to ${base.origin} for ${providers.join(',
 while (!stopping) {
   // An unavailable provider cannot prevent the other provider's tick from being dispatched.
   await Promise.all(providers.map(poll));
+  // Notification delivery is independent of CRM success and monitoring opt-in.
+  try {
+    const response = await fetch(notificationEndpoint, { method: 'POST', redirect: 'error', signal: AbortSignal.timeout(20_000),
+      headers: { 'content-type': 'application/json', ...(process.env.CONTROL_TOWER_SYNC_KEY ? { 'x-control-tower-key': process.env.CONTROL_TOWER_SYNC_KEY } : {}) },
+      body: JSON.stringify({ action: 'deliver' }) });
+    const result = await response.json();
+    if (!response.ok) throw new Error('Slack notification delivery unavailable; inspect notification status in /app/work.');
+    const status = result.slack;
+    if (status?.configured) {
+      const message = JSON.stringify({ notifications: 'slack', pending: status.pending, delivered: status.delivered, failed: status.failed, unknown: status.unknown });
+      if (message !== lastSlackStatus) { console.log(message); lastSlackStatus = message; }
+    }
+  } catch {
+    const message = 'Slack notification delivery unavailable; inspect notification status in /app/work.';
+    if (lastSlackStatus !== message) { console.error(message); lastSlackStatus = message; }
+    if (once) process.exitCode = 1;
+  }
   if (once || stopping) break;
-  const waitMs = Math.max(1000, Math.min(...[...states.values()].map((state) => state.nextPollAt - Date.now())));
+  const waitMs = Math.max(1000, Math.min(30_000, ...[...states.values()].map((state) => state.nextPollAt - Date.now())));
   await delay(waitMs, undefined, { signal: sleepController.signal }).catch((error) => { if (error.name !== 'AbortError') throw error; });
 }

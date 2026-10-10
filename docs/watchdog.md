@@ -68,8 +68,11 @@ Salesforce findings also retain Lead/Contact identity. Repeated observations upd
 the same contact/rule issue. The queue retains first/last observation, assignee,
 status, notes, and before/after evidence. People can mark work in progress or
 resolved, and open the native contact. A defect observed again can reopen.
-An assignment is saved in Control Tower; it does not send a message or create a
-CRM task. There is no Slack integration in this first version.
+An assignment is saved in Control Tower and does not create a CRM task.
+Optional [Slack notifications](slack-notifications.md) announce new/reopened
+findings, resolutions, repair results, failures and changed human follow-up.
+Unchanged scans do not repeat a finding alert. The existing runner also drains
+the saved notification queue; the delivery status card lives in `/app/work`.
 
 The page exports the displayed findings and recent run reports. Aggregate counts
 cover stored findings; the displayed/exported history is bounded, not a complete

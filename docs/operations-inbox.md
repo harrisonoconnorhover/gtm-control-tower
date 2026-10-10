@@ -13,7 +13,8 @@ separate. Source text is data, never authority to expand the recipe.
 Use **Open saved workspace** to prepare the review, inspect exact field decisions,
 resolve identities, and approve the concrete saved proposal. Subsequent Inbox links
 target that workspace and saved review directly. Assignees and notes persist on
-the task; they do not send notifications. See [Safe Import](safe-import.md).
+the task. When configured, [Slack notifications](slack-notifications.md) link to
+new work and changed follow-up decisions. See [Safe Import](safe-import.md).
 
 The queue combines the latest 50 Inbox uploads with up to 100 saved Watchdog
 findings for each connected provider. Existing CSV-lab workspaces are not backfilled
@@ -31,8 +32,9 @@ unavailable readback show **Verify outcome**, with no retry action in the Inbox.
 Import approval stays per review. Watchdog's narrowly defined repairs use the
 separate saved per-account opt-in.
 
-This version uses the existing shared operator key. It adds no model, Slack
-integration, automatic import approval, role-based team access or D1 deployment.
+This version uses the existing shared operator key. Its optional Slack card shows
+delivery status and supports a test message. It adds no model, Slack approvals,
+automatic import approval, role-based team access or D1 deployment.
 The existing whole-file Safe Import hosted-execution limit remains open.
 
 Run `npx vitest run tests/operations-inbox.test.ts`. Against an isolated local app,

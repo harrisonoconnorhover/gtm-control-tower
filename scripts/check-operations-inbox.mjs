@@ -24,6 +24,7 @@ await context.route('**/*', async (route) => {
   const request = route.request(); const url = new URL(request.url());
   if (url.origin !== base.origin) { external++; return route.abort(); }
   if (!url.pathname.startsWith('/api/')) return route.continue();
+  if (url.pathname === '/api/control-tower/notifications/slack' && request.method() === 'GET') return route.fulfill({ json: { slack: { configured: false, enabled: false, error: null, pending: 0, sending: 0, delivered: 0, failed: 0, unknown: 0, nextAttemptAt: null, lastDelivery: null } } });
   assert.equal(url.pathname, '/api/control-tower/work');
   assert.equal(request.headers()['x-control-tower-key'], 'fictional-key');
   if (request.method() === 'GET') return route.fulfill({ json: inbox });

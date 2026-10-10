@@ -6,6 +6,7 @@ import { getLatestSafeImportReview, getSafeImportExecution } from './safe-import
 import type { SafeImportExecution, SafeImportReview } from './safe-import';
 import { getConnectedWatchdogOverview } from './watchdog-connection';
 import type { WatchdogProvider } from './watchdog-types';
+import { notifyAssignment, notifyImportReceived } from './operation-notifications';
 
 export type WorkStatus = 'received' | 'needs_review' | 'ready' | 'executing' | 'completed' | 'reconcile';
 export type OperationsItem = {
@@ -83,6 +84,7 @@ export async function receiveImport(input: { provider: WatchdogProvider; fileNam
     if (duplicate) return { id: duplicate.id, workspaceId: duplicate.workspace_id };
     throw error;
   }
+  await notifyImportReceived(id, workspaceId, input.provider, imported.contacts.length);
   return { id, workspaceId };
 }
 
@@ -136,7 +138,13 @@ export async function listOperationsInbox(): Promise<OperationsInbox> {
 export async function assignImportWork(id: string, assignee: string, note: string): Promise<void> {
   if (typeof id !== 'string' || typeof assignee !== 'string' || typeof note !== 'string' || assignee.length > 120 || note.length > 2_000) throw new Error('Enter an assignee under 120 characters and a note under 2,000 characters.');
   const db = await inboxDatabase();
-  const row = await db.prepare('UPDATE work_items SET assignee = ?, note = ?, updated_at = ? WHERE id = ? RETURNING id')
-    .bind(assignee.trim(), note.trim(), new Date().toISOString(), id).first();
-  if (!row) throw new Error('Work item not found.');
+  const row = await db.prepare('UPDATE work_items SET assignee = ?, note = ?, updated_at = ? WHERE id = ? AND (assignee != ? OR note != ?) RETURNING workspace_id, provider')
+    .bind(assignee.trim(), note.trim(), new Date().toISOString(), id, assignee.trim(), note.trim()).first<{ workspace_id: string; provider: WatchdogProvider }>();
+  if (!row) {
+    if (await db.prepare('SELECT id FROM work_items WHERE id = ?').bind(id).first()) return;
+    throw new Error('Work item not found.');
+  }
+  const workspace = await db.prepare('SELECT destination_type FROM workspaces WHERE id = ?').bind(row.workspace_id).first<{ destination_type: string }>();
+  const provider = workspace?.destination_type === 'salesforce' ? 'salesforce' : workspace?.destination_type === 'hubspot' ? 'hubspot' : row.provider;
+  await notifyAssignment(provider, `/app/lab?workspaceId=${encodeURIComponent(row.workspace_id)}`, Boolean(assignee.trim()));
 }

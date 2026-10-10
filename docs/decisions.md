@@ -783,3 +783,17 @@ derive task status from actual review/execution evidence. Compose Watchdog findi
 into the same Inbox without duplicating their storage or approval logic. No model,
 Slack or role system is required for this operator vertical slice. Hosted bounded
 Safe Import execution remains a separate unresolved release requirement.
+
+## October 10, 2026 — Slack notifications for saved operations
+
+Use a server-configured incoming webhook for one selected operations channel,
+with the existing HTTP runner draining a small SQLite event queue. Send summaries
+and private review links for HubSpot and Salesforce; keep contact/source values,
+notes and credentials out of messages. Approval stays in Control Tower.
+
+Deduplicate stable operation events and claim one digest before sending. Honor
+Slack rate limits; hold uncertain deliveries instead of risking duplicate posts.
+Keep network delivery outside CRM execution. Post-save event enqueue is best
+effort, with a documented process-crash gap; a notification never becomes the
+authority for whether an import or repair succeeded. No SDK, extra service,
+OAuth installation flow, channel reader or inbound Slack bot is added.

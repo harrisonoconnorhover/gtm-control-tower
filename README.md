@@ -36,6 +36,9 @@ That original run used advisory approximate review. A later [native follow-up](d
   continues with the browser closed. Requires the self-hosted SQLite app.
 - Combines incoming CSV lists and Watchdog findings in the [Operations Inbox](docs/operations-inbox.md)
   at `/app/work`, with saved ownership, exact-review links, and verified outcomes.
+- Sends optional [Slack notifications](docs/slack-notifications.md) for findings,
+  repairs, import reviews/results and follow-up changes across both CRMs. The
+  Inbox shows delivery status; approvals stay in the private operator app.
 - Includes an [Inbound Routing Lab](docs/inbound-routing-lab.md): a working demo
   request form, 32 fictional requests, account matching, rep assignment, and
   deliberately broken handoffs with replay. Open `/#inbound-lab` in the showroom

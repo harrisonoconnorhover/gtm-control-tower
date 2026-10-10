@@ -1,5 +1,6 @@
 import { ensureWorkspaceSchema, getDatabase, type DatabaseAdapter } from '@/db';
 import type { SafeImportExecution, SafeImportReview } from './safe-import';
+import { notifyImportReview } from './operation-notifications';
 
 const CHUNK_CHARACTERS = 100_000;
 let schemaPromise: Promise<void> | null = null;
@@ -51,6 +52,7 @@ export async function saveSafeImportReview(review: SafeImportReview): Promise<vo
     offset = end;
   }
   await db.batch(statements);
+  await notifyImportReview(review);
 }
 
 export async function getSafeImportReview(workspaceId: string, reviewId: string): Promise<SafeImportReview | null> {

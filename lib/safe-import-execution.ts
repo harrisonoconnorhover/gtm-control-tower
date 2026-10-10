@@ -7,6 +7,7 @@ import type { CrmAccountIdentity, SafeImportExecution, SafeImportReview, SafeImp
 import { claimSafeImportExecution, updateSafeImportExecution } from './safe-import-store';
 import { getWorkspace } from './workspace-store';
 import { safeImportWorkspaceFingerprint } from './safe-import-review-server';
+import { notifyImportExecution } from './operation-notifications';
 
 type WriteOutcome = { status: 'accepted' | 'failed' | 'unknown'; error: string | null };
 export type SafeImportExecutionDependencies = {
@@ -69,6 +70,7 @@ export async function executeSafeImportReview(
     status: execution.records.some((record) => record.status === 'unknown') ? 'reconciliation-required' : 'completed',
   };
   await deps.saveExecution(completed, execution);
+  await notifyImportExecution(review, completed);
   return completed;
 }
 
@@ -102,6 +104,7 @@ export async function reconcileSafeImportExecution(
   const reconciled: SafeImportExecution = { ...execution, updatedAt: deps.now().toISOString(),
     status: execution.records.some((record) => record.status === 'unknown') ? 'reconciliation-required' : 'completed' };
   await deps.saveExecution(reconciled, execution);
+  await notifyImportExecution(review, reconciled);
   return reconciled;
 }
 
