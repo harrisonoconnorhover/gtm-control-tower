@@ -1,0 +1,22 @@
+{
+  "name": "@gtm-control-tower/fast-glob-compat",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Scoped synchronous glob compatibility for the project's two build-tool consumers",
+  "type": "module",
+  "main": "./index.js",
+  "types": "./index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "default": "./index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "dependencies": {
+    "tinyglobby": "0.2.17"
+  }
+}

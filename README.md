@@ -30,6 +30,25 @@ That original run used advisory approximate review. A later [native follow-up](d
 
 ## What it does
 
+- Prepares a saved [Safe Import review](docs/safe-import.md) for existing HubSpot
+  Contacts and Salesforce Leads/Contacts, with exact field decisions, identity
+  holds, account-bound approval, durable execution and native readback. Unmatched
+  rows never create records; populated CRM values are preserved.
+- Provides a connected [CRM Watchdog](docs/watchdog.md) at `/app/watchdog` for
+  HubSpot Contacts and Salesforce Leads/Contacts: recurring checks, a durable human triage queue, downloadable reports,
+  and optional verified company/job-title whitespace repairs. A separate runner
+  continues with the browser closed. Requires the self-hosted SQLite app.
+- Combines incoming CSV lists and Watchdog findings in the [Operations Inbox](docs/operations-inbox.md)
+  at `/app/work`, with saved ownership, exact-review links, and verified outcomes.
+- Sends optional [Slack notifications](docs/slack-notifications.md) for findings,
+  repairs, import reviews/results and follow-up changes across both CRMs. The
+  Inbox shows delivery status; approvals stay in the private operator app.
+- Includes an [Inbound Routing Lab](docs/inbound-routing-lab.md): a working demo
+  request form, 32 fictional requests, account matching, rep assignment, and
+  deliberately broken handoffs with replay. Open `/#inbound-lab` in the showroom
+  or `/app/inbound` when self-hosted. Practice mode simulates CRM actions;
+  [connected Salesforce intake](docs/salesforce-demo-intake.md) reuses existing
+  people and creates a task and owner notification for each genuine submission.
 - Previews any CSV, lets the operator map arbitrary headers, saves reusable
   mapping presets, and diagnoses duplicate
   identity, missing fields, bad email, owner gaps, and lifecycle regression.
@@ -148,6 +167,16 @@ the Docker self-host below.
 
 The public site cannot open `/app`, read a CRM, save a review decision, or call
 an operator API. Those capabilities exist only in the self-hosted application.
+
+## Safe Import: Update existing contacts
+
+In the persistent self-hosted `/app/lab`, select **Update existing contacts safely**,
+upload and map your CSV, then **Prepare review** for the whole file. Existing
+HubSpot Contacts or Salesforce Leads/Contacts receive only approved blank-field fills; populated fields and
+primary email stay protected. Identity holds require review, and unmatched rows
+never create contacts. Approval is bound to the saved review and actual CRM
+account, with durable execution and automatic readback. No AI model is required.
+See the [workflow, recovery, and verification guide](docs/safe-import.md).
 
 ## Quick start: one command, no accounts required
 
@@ -276,7 +305,8 @@ slice is documented in [Flow, Apex, and Agentforce proof](docs/salesforce-agentf
   at provider merges or deletes records created by a successful run.
 - Duplicate-audit approval saves a review decision only; no confidence band
   triggers an automatic native merge.
-- Salesforce Contact matches, converted Leads, and ambiguous matches are held.
+- Legacy Salesforce imports hold Contact matches. Safe Import supports existing
+  Contacts, preserving their Account relationship; converted Leads and ambiguous matches stay held.
   Both direct connectors hold multiple imported rows targeting the same CRM
   record. Exact matching does not infer identity from names or companies.
 - HubSpot direct creates never fall back to an update on conflict. Salesforce

@@ -9,6 +9,7 @@ const rules = [
   ['Google API key', /\bAIza[0-9A-Za-z_-]{35}\b/u],
   ['GitHub token', /\b(?:gh[pousr]_[A-Za-z0-9]{36,255}|github_pat_[A-Za-z0-9_]{20,255})\b/u],
   ['Slack token', /\bxox[baprs]-[A-Za-z0-9-]{20,}\b/u],
+  ['Slack incoming webhook', /https:\/\/hooks\.slack(?:-gov)?\.com\/services\/[A-Za-z0-9_-]{8,}\/[A-Za-z0-9_-]{8,}\/[A-Za-z0-9_-]{20,}/u],
   ['HubSpot private app token', /\bpat-[A-Za-z0-9-]{20,}\b/u],
   ['Salesforce access token', /\b00D[A-Za-z0-9]{12,15}![A-Za-z0-9._-]{20,}\b/u],
 ];

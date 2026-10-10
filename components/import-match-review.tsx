@@ -35,6 +35,7 @@ type Props = {
   workspaceId: string | null;
   accessKey: string;
   disabled?: boolean;
+  safeImport?: boolean;
   onDecision: (action: ImportMatchDecisionAction) => Promise<void>;
 };
 
@@ -69,11 +70,11 @@ export function ImportMatchReview({ contacts, ...props }: Props) {
 
   // A different import, provider, workspace, or authorization discards the old
   // review and aborts its pending requests instead of showing stale suggestions.
-  const reviewKey = JSON.stringify([props.connectorId, props.workspaceId, props.accessKey, inputs]);
+  const reviewKey = JSON.stringify([props.connectorId, props.workspaceId, props.accessKey, props.safeImport, inputs]);
   return <MatchReview key={reviewKey} {...props} contacts={contacts} inputs={inputs} />;
 }
 
-function MatchReview({ contacts, inputs, connectorId, workspaceId, accessKey, disabled = false, onDecision }: Props & { inputs: ImportMatchInput[] }) {
+function MatchReview({ contacts, inputs, connectorId, workspaceId, accessKey, disabled = false, safeImport = false, onDecision }: Props & { inputs: ImportMatchInput[] }) {
   const suggestions = useMemo(() => suggestMatchFields(inputs), [inputs]);
   const [fields, setFields] = useState<MatchField[]>(() => suggestions.filter((field) => field.recommended).map((field) => field.field));
   const [page, setPage] = useState(0);
@@ -317,7 +318,7 @@ function MatchReview({ contacts, inputs, connectorId, workspaceId, accessKey, di
                           </div>
                         ))}
                       </div>
-                      {candidate.record.objectType !== (connectorId === 'hubspot' ? 'contact' : 'lead')
+                      {candidate.record.objectType !== (connectorId === 'hubspot' ? 'contact' : 'lead') && !(safeImport && connectorId === 'salesforce' && candidate.record.objectType === 'contact')
                         ? <p className="mt-3 text-xs leading-5 text-[#e6bd68]">This record can inform the review, but this workflow updates only HubSpot Contacts and unconverted Salesforce Leads. It cannot be selected as an update target.</p>
                         : contactById.has(row.contactId) && <CandidateConfirmation
                           contact={contactById.get(row.contactId)!}

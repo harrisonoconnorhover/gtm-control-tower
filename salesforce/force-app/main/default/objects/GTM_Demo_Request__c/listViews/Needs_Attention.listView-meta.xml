@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ListView xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Needs_Attention</fullName>
+    <columns>NAME</columns><columns>Company__c</columns><columns>Email__c</columns>
+    <columns>Status__c</columns><columns>Reason__c</columns><columns>Received_At__c</columns>
+    <columns>Follow_Up_Owner__c</columns>
+    <filterScope>Everything</filterScope>
+    <filters><field>Status__c</field><operation>notEqual</operation><value>Routed</value></filters>
+    <label>Needs attention</label>
+</ListView>

@@ -40,9 +40,10 @@ export function isConfirmedImportMatch(value: unknown): value is ConfirmedImport
     && typeof value.confirmedAt === 'string' && Number.isFinite(Date.parse(value.confirmedAt))
     && new Date(value.confirmedAt).toISOString() === value.confirmedAt
     && typeof value.signature === 'string' && /^[a-f0-9]{64}$/.test(value.signature)
-    && typeof target.nativeId === 'string' && (value.connectorId === 'hubspot' ? /^\d+$/.test(target.nativeId) : /^(?:[A-Za-z0-9]{15}|[A-Za-z0-9]{18})$/.test(target.nativeId))
-    && target.objectType === (value.connectorId === 'hubspot' ? 'contact' : 'lead')
-    && (value.connectorId !== 'salesforce' || target.isConverted === false)
+    && typeof target.nativeId === 'string' && (value.connectorId === 'hubspot' ? /^\d+$/.test(target.nativeId)
+      : (target.objectType === 'lead' ? /^00Q(?:[A-Za-z0-9]{12}|[A-Za-z0-9]{15})$/ : /^003(?:[A-Za-z0-9]{12}|[A-Za-z0-9]{15})$/).test(target.nativeId))
+    && (value.connectorId === 'hubspot' ? target.objectType === 'contact' : ['lead', 'contact'].includes(String(target.objectType)))
+    && (value.connectorId !== 'salesforce' || target.objectType !== 'lead' || target.isConverted === false)
     && typeof target.email === 'string' && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(target.email)
     && (target.additionalEmails === undefined || (Array.isArray(target.additionalEmails)
       && target.additionalEmails.every((email) => typeof email === 'string' && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim()))))

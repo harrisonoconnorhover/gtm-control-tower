@@ -8,12 +8,12 @@ import { emptyWorkspaceState, validateWorkspaceState, type SavedWorkspace } from
 const store = vi.hoisted(() => ({
   getWorkspace: vi.fn(), saveWorkspace: vi.fn(), persistenceEnabled: vi.fn(),
   getDuplicateScan: vi.fn(), getDuplicateScanRecords: vi.fn(),
-  readHubSpotRecordById: vi.fn(), readSalesforceLeadById: vi.fn(),
+  readHubSpotRecordById: vi.fn(), readSalesforceLeadById: vi.fn(), readSalesforceRecordById: vi.fn(),
 }));
 vi.mock('../lib/workspace-store', () => ({ getWorkspace: store.getWorkspace, saveWorkspace: store.saveWorkspace, persistenceEnabled: store.persistenceEnabled }));
 vi.mock('../lib/duplicate-scan-store', () => ({ getDuplicateScan: store.getDuplicateScan, getDuplicateScanRecords: store.getDuplicateScanRecords }));
 vi.mock('../lib/crm-existing-hubspot', () => ({ readHubSpotRecordById: store.readHubSpotRecordById }));
-vi.mock('../lib/crm-existing-salesforce', () => ({ readSalesforceLeadById: store.readSalesforceLeadById }));
+vi.mock('../lib/crm-existing-salesforce', () => ({ readSalesforceLeadById: store.readSalesforceLeadById, readSalesforceRecordById: store.readSalesforceRecordById }));
 
 import { POST } from '../app/api/control-tower/import-match-decision/route';
 import { importMatchSourceKey, isConfirmedImportMatch, nativeMatchTargetKey, validImportMatchDecisions, type ConfirmedImportMatch } from '../lib/import-match-decision';
@@ -55,6 +55,7 @@ function fixture(connectorId: Connector) {
   store.getDuplicateScanRecords.mockImplementation(async () => [structuredClone(candidate)]);
   store.readHubSpotRecordById.mockImplementation(async () => structuredClone(target));
   store.readSalesforceLeadById.mockImplementation(async () => structuredClone(target));
+  store.readSalesforceRecordById.mockImplementation(async () => structuredClone(target));
   store.saveWorkspace.mockImplementation(async (_id, state) => ({ ...workspace, revision: workspace.revision + 1, state }));
 }
 
@@ -150,6 +151,27 @@ describe.each(['hubspot', 'salesforce'] as const)('%s human-confirmed import mat
 });
 
 describe('confirmation boundaries', () => {
+  it('allows a Salesforce Contact confirmation only under Safe Import and excludes Account fields from its approval', async () => {
+    fixture('salesforce');
+    const nativeId = '003000000000001AAA';
+    candidate = { ...candidate, nativeId, objectType: 'contact', recordKey: `salesforce:contact:${nativeId}` };
+    target = { ...target, nativeId, objectType: 'contact', fields: { ...target.fields, company: null, website: null } };
+    const selection = { nativeId, objectType: 'contact' };
+    expect((await POST(request('salesforce', selection))).status).toBe(400);
+    expect(store.readSalesforceRecordById).not.toHaveBeenCalled();
+    workspace.state = { ...workspace.state, destinationType: 'salesforce', importRecipe: 'safe-update-contacts', importRecordMode: 'update-existing' };
+    const result = await POST(request('salesforce', selection));
+    expect(result.status, await result.clone().text()).toBe(200);
+    const saved = (await result.json() as { workspace: SavedWorkspace }).workspace;
+    const confirmed = saved.state.contacts[0].crmMatchDecisions!.salesforce!;
+    expect(confirmed.target).toMatchObject({ nativeId, objectType: 'contact', fields: { company: null, website: null } });
+    expect(isConfirmedImportMatch(confirmed)).toBe(true);
+    expect(await verifyImportMatch(workspace.id, confirmed)).toBe(true);
+    expect(store.readSalesforceRecordById).toHaveBeenCalledWith(nativeId, 'contact', 'https://fictional.my.salesforce.com/services/data/v67.0',
+      { authorization: 'Bearer fictional-salesforce-token', accept: 'application/json' });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it('compares the snapshot alias set with the current CRM before saving a confirmation', async () => {
     candidate.additionalEmails = ['events@example.com'];
     target.additionalEmails = ['events@example.com', 'new@example.com'];

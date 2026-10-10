@@ -1,0 +1,16 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "hollis-consulting",
+  "account_id": "d29be7f69e7da6e05d219ae90a9696af",
+  "main": "worker.ts",
+  "compatibility_date": "2026-09-10",
+  "workers_dev": true,
+  "preview_urls": false,
+  "assets": { "directory": "./site", "binding": "ASSETS", "run_worker_first": true, "not_found_handling": "404-page" },
+  "vars": {
+    "PUBLIC_ORIGIN": "https://hollis-consulting.harrisonoconnorhoover.workers.dev",
+    "SALESFORCE_INSTANCE_URL": "https://orgfarm-a011ff9b54-dev-ed.develop.my.salesforce.com"
+  },
+  "ratelimits": [{ "name": "INTAKE_RATE_LIMIT", "namespace_id": "1019", "simple": { "limit": 5, "period": 60 } }],
+  "observability": { "enabled": true, "head_sampling_rate": 1 }
+}

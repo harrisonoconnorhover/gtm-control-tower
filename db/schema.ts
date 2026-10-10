@@ -81,3 +81,31 @@ export const duplicateReviewDecisions = sqliteTable('duplicate_review_decisions'
   primaryRecordKey: text('primary_record_key'),
   updatedAt: text('updated_at').notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [primaryKey({ columns: [table.workspaceId, table.connectorId, table.clusterId] })]);
+
+export const safeImportReviews = sqliteTable('safe_import_reviews', {
+  id: text('id').primaryKey().notNull(),
+  workspaceId: text('workspace_id').notNull().references(() => workspaces.id, { onDelete: 'cascade' }),
+  createdAt: text('created_at').notNull(),
+  expiresAt: text('expires_at').notNull(),
+}, (table) => [index('idx_safe_import_reviews_workspace').on(table.workspaceId, table.createdAt)]);
+
+export const safeImportReviewChunks = sqliteTable('safe_import_review_chunks', {
+  reviewId: text('review_id').notNull().references(() => safeImportReviews.id, { onDelete: 'cascade' }),
+  chunkIndex: integer('chunk_index').notNull(),
+  payload: text('payload').notNull(),
+}, (table) => [primaryKey({ columns: [table.reviewId, table.chunkIndex] })]);
+
+export const safeImportExecutions = sqliteTable('safe_import_executions', {
+  id: text('id').primaryKey().notNull(),
+  reviewId: text('review_id').notNull().unique().references(() => safeImportReviews.id, { onDelete: 'cascade' }),
+  workspaceId: text('workspace_id').notNull().references(() => workspaces.id, { onDelete: 'cascade' }),
+  executionKey: text('execution_key').notNull().unique(),
+  payloadJson: text('payload_json').notNull(),
+  updatedAt: text('updated_at').notNull(),
+});
+
+export const safeImportExecutionRecords = sqliteTable('safe_import_execution_records', {
+  executionId: text('execution_id').notNull().references(() => safeImportExecutions.id, { onDelete: 'cascade' }),
+  contactId: text('contact_id').notNull(),
+  payloadJson: text('payload_json').notNull(),
+}, (table) => [primaryKey({ columns: [table.executionId, table.contactId] })]);
