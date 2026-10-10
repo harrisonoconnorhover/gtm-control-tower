@@ -6,7 +6,7 @@
 **[Clean a CSV in your browser](https://gtm-control-tower.pages.dev/#clean-csv)** ·
 **[Try the synthetic cleanup](https://gtm-control-tower.pages.dev/#decisions)** ·
 **[Follow a real CRM import](https://gtm-control-tower.pages.dev/enterprise-import-walkthrough.html)** ·
-**[Self-host the operator workspace](#quick-start-one-command-no-accounts-required)**
+**[Self-host the operator workspace](#self-host-the-full-operator-workspace)**
 
 A browser CSV cleaner and self-hosted revenue-systems lab. Start by uploading,
 reviewing, and downloading a CSV without installing anything or creating an
@@ -156,6 +156,8 @@ source.
 
 <a id="public-demonstration"></a>
 
+<a id="quick-start-one-command-no-accounts-required"></a>
+
 ## Clean a CSV in your browser
 
 Open **[Clean a CSV](https://gtm-control-tower.pages.dev/#clean-csv)**. No install,
@@ -198,8 +200,6 @@ primary email stay protected. Identity holds require review, and unmatched rows
 never create contacts. Approval is bound to the saved review and actual CRM
 account, with durable execution and automatic readback. No AI model is required.
 See the [workflow, recovery, and verification guide](docs/safe-import.md).
-
-<a id="quick-start-one-command-no-accounts-required"></a>
 
 ## Self-host the full operator workspace
 

@@ -40,7 +40,7 @@ sharing accounts, sessions, or databases with Control Tower.
 
 The public portfolio site documents this workflow. It cannot save workspaces or
 load a handoff into the operator application. Use the
-[self-hosted setup](../README.md#quick-start-one-command-no-accounts-required)
+[self-hosted setup](../README.md#self-host-the-full-operator-workspace)
 for the actual controls.
 
 ## Download a small fictional example

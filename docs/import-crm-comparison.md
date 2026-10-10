@@ -110,7 +110,7 @@ claim recovery when no CRM response reaches the app.
 
 ## Try with your own development CRM
 
-1. Start the [self-hosted workspace](../README.md#quick-start-one-command-no-accounts-required),
+1. Start the [self-hosted workspace](../README.md#self-host-the-full-operator-workspace),
    then configure a direct [HubSpot](hubspot-csv-setup.md#option-a-account-service-key)
    or [Salesforce](salesforce-csv-setup.md#local-connection) connection. Use a
    development account and clearly labeled synthetic records.

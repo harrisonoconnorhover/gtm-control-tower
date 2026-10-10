@@ -113,7 +113,7 @@ export function PublicDemo() {
             <a href="#clean-csv" className="rounded-full bg-[#83bcff]/10 px-4 py-2 font-semibold text-[#83bcff]">Clean your CSV</a>
             <a href="#demo" className="rounded-full bg-white/[0.06] px-4 py-2 text-[#dce9e2]">Two-minute demo</a>
             <a href="#salesforce-proof" className="rounded-full border border-[#83bcff]/20 px-4 py-2 font-semibold text-[#83bcff]">Apex proof</a>
-            <a href="https://github.com/harrisonoconnorhover/gtm-control-tower#quick-start-one-command-no-accounts-required" className="rounded-full border border-white/10 px-4 py-2 text-[#9fb2a8] transition hover:border-white/25 hover:text-white">Self-host setup</a>
+            <a href="https://github.com/harrisonoconnorhover/gtm-control-tower#self-host-the-full-operator-workspace" className="rounded-full border border-white/10 px-4 py-2 text-[#9fb2a8] transition hover:border-white/25 hover:text-white">Self-host setup</a>
             <a href="https://github.com/harrisonoconnorhover/gtm-control-tower" target="_blank" rel="noreferrer" className="rounded-full border border-[#d8ff67]/25 px-4 py-2 font-semibold text-[#d8ff67] transition hover:bg-[#d8ff67]/10">GitHub ↗</a>
           </nav>
         </header>
@@ -350,7 +350,7 @@ export function PublicDemo() {
               <p className="mt-4 max-w-xl text-sm leading-6 text-[#5d6f66]">This public demonstration runs entirely in your browser. The real operator workspace self-hosts with Docker, CSV, and SQLite; Google Sheets, HubSpot, Salesforce, and BigQuery remain optional connectors.</p>
               <p className="mt-3 max-w-xl text-sm leading-6 text-[#5d6f66]">The self-hosted import workflow also lets you skip rows with a saved reason, protect selected CRM fields, and export comparison and results CSVs. <a href="https://github.com/harrisonoconnorhover/gtm-control-tower/blob/main/docs/import-operator-controls.md" className="underline underline-offset-4">Inspect the controls and their tests.</a></p>
               <div className="mt-6 flex flex-wrap gap-3">
-                <a href="https://github.com/harrisonoconnorhover/gtm-control-tower#quick-start-one-command-no-accounts-required" className="rounded-full bg-[#102019] px-5 py-3 text-sm font-bold text-white">See the self-host setup</a>
+                <a href="https://github.com/harrisonoconnorhover/gtm-control-tower#self-host-the-full-operator-workspace" className="rounded-full bg-[#102019] px-5 py-3 text-sm font-bold text-white">See the self-host setup</a>
                 <a href="https://github.com/harrisonoconnorhover/gtm-control-tower" className="rounded-full border border-[#102019]/15 px-5 py-3 text-sm font-semibold">View source</a>
               </div>
             </div>
