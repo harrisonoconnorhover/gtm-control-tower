@@ -2,39 +2,37 @@
 
 ## Finished
 
-- Added `/app/incidents` and Inbox integration for grouped changes, retained evidence, investigation, assignment and structured decisions across HubSpot and Salesforce.
-- Expanded reads to companies/accounts and deals/opportunities, with signed native event intake and an optional Salesforce CDC subscriber. Writes remain restricted to existing approved recipes.
-- Added versioned expectations, planned exceptions, repair budgets, recurring-change containment, explicit coverage gaps and durable incident/repair notification intent. Slack remains optional.
-- Added a separate investigator capability and optional evidence-cited model explanations. Local reports work without a model; no live model calls were made.
-- Replaced whole-file Safe Import execution with fenced, bounded continuations. Provider scans, imports and Slack now have independent runner schedules.
+- Built `/#clean-csv` with upload/drop, a fictional sample, formatting previews, manual cell edits, review filters, row exclusions/restores, Undo, and CSV downloads. Existing `/#audit` links open the new workflow.
+- Preserved source column names/order, custom values, leading-zero strings, Unicode and quoted multiline fields. Repeated emails remain review warnings; rows are never merged or removed automatically.
+- Kept source data and edits in tab memory with no processing network requests or browser storage. Downloads explain unresolved warnings and counted formula protection.
+- Made browser cleanup the README and public-site entry point. Clarified that Docker must be running for the separate operator workspace; n8n is optional.
 
 ## Try It
 
-1. Enable your account at `/app/monitor`, run `npm run monitor`, then open `/app/incidents` or `/app/work`.
-2. Run `npm run qualify:incidents`; open `outputs/incident-stress/report.html`. CSV/JSON datasets and a paused inspection database are saved alongside it.
-3. Configure optional services through `.env.example`; see [incidents](docs/incidents.md), [native events](docs/native-monitor-events.md) and [Slack](docs/slack-notifications.md).
+1. Open the running production preview at `http://127.0.0.1:4176/#clean-csv`, or run `npm ci` then `npm run preview:public -- --port 4175` and open that port.
+2. Choose **Try sample CSV**, inspect and apply formatting changes, review a row, then **Download CSV**. Download before leaving or refreshing; work is not persisted.
+3. Read [the browser guide](docs/browser-csv.md). Files are limited to UTF-8 CSV, 10 MiB and 10,000 rows.
 
 ## Checks
 
-- Stress qualification: 144/144 checks; 2,900 baseline records plus 38 supplemental safety fixtures. All 240 labeled static affected records detected, with zero misses or false positives among 2,660 clean controls.
-- Desktop/mobile browser checks passed for incidents, Monitor, Inbox, Slack and both Safe Import providers. Actual seeded incident API/UI investigations passed for both CRMs; no external requests.
-- App/public builds, TypeScript, lint, doctor, Compose validation and secret scan passed. Audit passed the high-severity gate; four existing moderate development-tool advisories remain.
-- All 729 local tests passed (725 general tests plus four stress tests). Local Docker smoke could not start because the Docker daemon is unavailable; the PR CI runs the credential-free container check as an integration gate.
+- 52 focused tests passed across browser CSV, existing CSV transformations and CRM audit tests.
+- TypeScript, full repository lint, static production build, focused browser-script lint and `git diff --check` passed.
+- Production browser QA passed on desktop and at 390px: uploads, exact download contents, edits, exclusions, Undo, custom mapping, malformed/invalid UTF-8 recovery, refresh reset and no page overflow.
+- Browser checks observed no script errors, processing HTTP requests, API/external requests or local/session storage. Desktop/mobile screenshots inspected under ignored `outputs/browser-csv/`.
 
 ## Decisions
 
-- Retained event values and later snapshots are separate evidence; neither proves root cause. New object types are read-only.
-- Business rules and repair limits are explicit policies. Models cannot authorize changes, alter policy or execute tools.
-- Generated independently labeled fictional worlds for reproducible failure testing. Fixture accuracy is not a production precision/recall claim.
+- Keep conservative real-file cleanup separate from the synthetic demo's owner, lifecycle and merge rules.
+- Preserve email local-part case, dots and plus tags; normalize only domains. Include unresolved rows unless explicitly excluded.
+- Escape formula-like CSV cells with an apostrophe and disclose the count. Spreadsheet type inference remains outside CSV control.
 
 ## Remaining
 
-- Configure and qualify native subscriptions, permissions, live model behavior and Slack in the intended deployment.
-- Hosted Safe Import remains unqualified. The local D1 probe measured at most 139 binding calls per ten-record invocation; the 50-call budget remains unsupported.
-- Individual team identities, arbitrary workflow repair, autonomous merges and automatic restoration remain outside supported scope.
+- Local implementation is ready; public publishing and GitHub push await user approval.
+- Cloudflare read-only project listing confirmed `gtm-control-tower` / `gtm-control-tower.pages.dev` exists with no Git integration. Nothing was deployed.
 
 ## Review First
 
-1. [Incident contract](docs/incidents.md) and [stress results](docs/incident-stress-results.md).
-2. [Native event setup and limitations](docs/native-monitor-events.md).
-3. [Safe Import continuation contract](docs/safe-import.md).
+1. [Browser workspace](components/browser-csv-workspace.tsx) and the local preview.
+2. [CSV helpers](lib/browser-csv.ts) and [focused tests](tests/browser-csv.test.ts).
+3. [Browser acceptance script](scripts/check-browser-csv.mjs) and [usage guide](docs/browser-csv.md).

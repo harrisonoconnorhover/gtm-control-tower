@@ -848,3 +848,17 @@ Expand reads to companies/accounts and deals/opportunities while keeping their m
 Replace whole-file Safe Import execution with at most ten records per invocation and a between-record time budget. Claim pending rows atomically under a fenced lease; never replay sending/unknown rows. Continue only within the original account/workspace/review scope and approval expiry. Local D1 fixture measurements qualify the bounded storage path against a simulated 1,000-call budget; they do not qualify hosted CRM execution or a 50-call plan.
 
 Generate a reproducible fictional dataset rather than reuse unlabelled real CRM exports. Independent scenario labels cover 600 contacts, 350 companies and 400 deals per provider, plus 200 Salesforce leads. Stress the production worker and SQLite path with controlled timing, losses, permission failures and concurrent workers. Report clean controls, missed labels and false positives as fixture results, not general-world accuracy.
+
+## October 10, 2026 — Make browser CSV cleanup useful without installation
+
+Put upload, explicit change review, cell editing, and CSV download in the static
+site. Keep the file in tab memory with no source-data upload, browser persistence,
+or operator API. Retain the existing audit anchor and preserve headers, custom
+columns, and row order; omit rows only after an explicit exclusion. Bound files
+to 10 MB and 10,000 data rows for a usable browser session.
+
+Use conservative formatting rules separately from the synthetic demo's routing,
+lifecycle, and merge policies. Preserve email local parts and only normalize
+their domains; missing, malformed, and repeated addresses remain review warnings.
+Include unresolved rows in downloads, with counted apostrophe protection for
+formula-like cells. Keep saved reviews and CRM operations in the self-hosted app.

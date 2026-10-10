@@ -24,6 +24,7 @@
     "lint": "eslint . --ignore-pattern dist --ignore-pattern dist-public --ignore-pattern .next",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "test:browser-csv": "node scripts/check-browser-csv.mjs",
     "test:operator-key": "node scripts/check-operator-key.mjs",
     "setup": "node scripts/setup.mjs",
     "doctor": "node scripts/doctor.mjs",

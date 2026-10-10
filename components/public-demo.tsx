@@ -9,7 +9,7 @@ import {
 } from '@/lib/messy-lead-demo';
 import type { LiveContactState } from '@/lib/live-control-tower';
 import { buildDemoDecisionReport, demoDecisionStatus, type DemoDecision, type DemoDecisionReport, type DemoDecisionStatus } from '@/lib/demo-decisions';
-import { InstantCrmAudit } from '@/components/instant-crm-audit';
+import { BrowserCsvWorkspace } from '@/components/browser-csv-workspace';
 import { InboundLeadLab } from '@/components/inbound-lead-lab';
 
 function subscribeNavigation(callback: () => void) {
@@ -30,6 +30,7 @@ const preview = previewMessyLeadDemo();
 
 export function PublicDemo() {
   const inboundLab = useSyncExternalStore(subscribeNavigation, () => window.location.hash === '#inbound-lab', () => false);
+  const csvWorkspace = useSyncExternalStore(subscribeNavigation, () => ['#clean-csv', '#audit'].includes(window.location.hash), () => false);
   const [stage, setStage] = useState(-1);
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<DemoPipelineResult | null>(null);
@@ -94,6 +95,7 @@ export function PublicDemo() {
   }
 
   if (inboundLab) return <InboundLeadLab />;
+  if (csvWorkspace) return <BrowserCsvWorkspace />;
 
   return (
     <main id="top" data-capture-stage={stage} className="min-h-screen overflow-hidden bg-[#06100d] text-[#edf8f2] selection:bg-[#d8ff67] selection:text-[#06100d]">
@@ -109,7 +111,7 @@ export function PublicDemo() {
           </a>
           <nav className="flex flex-wrap items-center gap-2 text-xs" aria-label="Primary navigation">
             <a href="#inbound-lab" className="rounded-full bg-[#d8ff67]/15 px-4 py-2 font-semibold text-[#d8ff67]">Inbound routing lab</a>
-            <a href="#audit" className="rounded-full bg-[#83bcff]/10 px-4 py-2 font-semibold text-[#83bcff]">Audit your CSV</a>
+            <a href="#clean-csv" className="rounded-full bg-[#83bcff]/10 px-4 py-2 font-semibold text-[#83bcff]">Clean your CSV</a>
             <a href="#demo" className="rounded-full bg-white/[0.06] px-4 py-2 text-[#dce9e2]">Two-minute demo</a>
             <a href="#salesforce-proof" className="rounded-full border border-[#83bcff]/20 px-4 py-2 font-semibold text-[#83bcff]">Apex proof</a>
             <a href="https://github.com/harrisonoconnorhover/gtm-control-tower#quick-start-one-command-no-accounts-required" className="rounded-full border border-white/10 px-4 py-2 text-[#9fb2a8] transition hover:border-white/25 hover:text-white">Self-host setup</a>
@@ -121,17 +123,17 @@ export function PublicDemo() {
           <div>
             <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-[#d8ff67]/20 bg-[#d8ff67]/[0.06] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.18em] text-[#d8ff67]">
               <span className="h-1.5 w-1.5 rounded-full bg-[#d8ff67]" />
-              Browser demo · synthetic data · open source
+              Browser CSV workspace · no installation · open source
             </div>
             <h1 className="max-w-[850px] text-5xl font-semibold leading-[0.93] tracking-[-0.065em] sm:text-7xl lg:text-[86px]">
               Bad CRM data in. Defensible action out.
             </h1>
             <p className="mt-7 max-w-2xl text-base leading-7 text-[#96aaa0] sm:text-lg">
-              Inspect duplicate leads, incorrect owner assignments, and lifecycle mismatches. Run the sample cleanup to see which records pass the readiness checks and which still need review.
+              Clean your own CSV privately in your browser, review the changes, and download your file. Or explore the sample workflows for CRM cleanup, routing, and lifecycle repair.
             </p>
             <div className="mt-8 flex flex-wrap items-center gap-3">
-              <a href="#audit" className="rounded-full bg-[#83bcff] px-6 py-3.5 text-sm font-black text-[#06100d] shadow-[0_14px_50px_rgba(131,188,255,0.16)] transition hover:-translate-y-0.5 hover:bg-[#acd5ff]">
-                Audit my CSV privately
+              <a href="#clean-csv" className="rounded-full bg-[#83bcff] px-6 py-3.5 text-sm font-black text-[#06100d] shadow-[0_14px_50px_rgba(131,188,255,0.16)] transition hover:-translate-y-0.5 hover:bg-[#acd5ff]">
+                Clean my CSV — no setup
               </a>
               <button
                 onClick={runDemo}
@@ -185,14 +187,12 @@ export function PublicDemo() {
           </article>
         </section>
 
-        <InstantCrmAudit />
-
         <section id="demo" tabIndex={-1} className="scroll-mt-6 pb-8 focus-visible:outline-2 focus-visible:outline-[#d8ff67]" aria-label="Interactive cleanup demonstration">
           <div className="mb-5 flex flex-wrap items-end justify-between gap-4">
             <div>
               <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#d8ff67]">The two-minute proof</p>
               <h2 className="mt-2 text-3xl font-semibold tracking-[-0.04em] sm:text-4xl">Six controls. One auditable batch.</h2>
-              <p className="mt-3 max-w-3xl text-sm leading-6 text-[#9fb2a8]">Choose <strong>Run the 64-row cleanup</strong> to inspect the results below. Expand any record to compare values and rules, then download the same decisions. To try an audit first, use <a href="#audit" className="underline underline-offset-4">Try safe sample</a> and download its aggregate report.</p>
+              <p className="mt-3 max-w-3xl text-sm leading-6 text-[#9fb2a8]">Choose <strong>Run the 64-row cleanup</strong> to inspect the results below. Expand any record to compare values and rules, then download the same decisions. To clean your own file, open the <a href="#clean-csv" className="underline underline-offset-4">browser CSV workspace</a>.</p>
             </div>
             <p aria-live="polite" className="font-mono text-[10px] uppercase tracking-[0.15em] text-[#71877c]">
               {stage < 0 ? 'Ready to run' : running ? `Step ${stage + 1} of ${steps.length}` : 'Run complete'}
@@ -366,7 +366,7 @@ export function PublicDemo() {
         </section>
 
         <footer className="flex flex-wrap items-center justify-between gap-4 border-t border-white/10 py-8 text-xs text-[#667c71]">
-          <p>Browser-only audit · no uploads · open-source self-hosted workspace</p>
+          <p>Browser CSV cleanup · no uploads · open-source self-hosted workspace</p>
           <nav aria-label="Sister projects" className="flex flex-wrap items-center gap-x-5 gap-y-3 text-[#9fb2a8]">
             <span>Sister projects</span>
             <a href="https://github.com/harrisonoconnorhover/hot-potato" target="_blank" rel="noopener noreferrer" className="rounded underline underline-offset-4 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-4">Hot Potato ↗</a>
