@@ -85,6 +85,40 @@ export async function getSafeImportExecution(workspaceId: string, reviewId: stri
   return readExecution(await getDatabase(), workspaceId, reviewId);
 }
 
+/** One bounded worker per saved approval, including across processes and restarts. */
+export async function claimSafeImportChunk(review: SafeImportReview, now: Date): Promise<{ claimed: boolean; execution: SafeImportExecution }> {
+  const saved = await getSafeImportReview(review.workspaceId, review.id);
+  if (!saved || JSON.stringify(saved) !== JSON.stringify(review)) throw new Error('Continuation must use the exact saved import review.');
+  const db = await getDatabase();
+  const header = await readExecutionHeader(db, review.workspaceId, review.id);
+  if (!header) throw new Error('A saved approval is required before continuation.');
+  const current = await hydrateExecution(db, header.payload_json);
+  if (current.lease && Date.parse(current.lease.expiresAt) > now.getTime()) return { claimed: false, execution: current };
+  const lease = { token: crypto.randomUUID(), expiresAt: new Date(now.getTime() + 300_000).toISOString() };
+  const json = JSON.stringify({ ...current, records: [], lease, progressToken: crypto.randomUUID() });
+  const claimed = await db.prepare(`UPDATE safe_import_executions SET payload_json = ? WHERE id = ? AND payload_json = ? RETURNING id`)
+    .bind(json, current.id, header.payload_json).first<{ id: string }>();
+  return { claimed: Boolean(claimed), execution: claimed ? { ...current, lease } : (await readExecution(db, review.workspaceId, review.id))! };
+}
+
+/** A stale worker cannot release its successor's lease or overwrite its receipt. */
+export async function releaseSafeImportChunk(execution: SafeImportExecution): Promise<void> {
+  if (!execution.lease) return;
+  const db = await getDatabase();
+  await db.prepare(`UPDATE safe_import_executions SET payload_json = json_remove(payload_json, '$.lease')
+    WHERE id = ? AND json_extract(payload_json, '$.lease.token') = ?`).bind(execution.id, execution.lease.token).run();
+}
+
+export async function getNextSafeImportJob(now = new Date()): Promise<SafeImportReview | null> {
+  await ensureSafeImportSchema();
+  const db = await getDatabase();
+  const row = await db.prepare(`SELECT workspace_id, review_id FROM safe_import_executions
+    WHERE json_extract(payload_json, '$.status') = 'running'
+    AND (json_extract(payload_json, '$.lease.expiresAt') IS NULL OR json_extract(payload_json, '$.lease.expiresAt') <= ?)
+    ORDER BY updated_at, id LIMIT 1`).bind(now.toISOString()).first<{ workspace_id: string; review_id: string }>();
+  return row ? getSafeImportReview(row.workspace_id, row.review_id) : null;
+}
+
 /** The unique review constraint decides the sole winner, before any CRM request. */
 export async function claimSafeImportExecution(
   review: SafeImportReview,

@@ -35,10 +35,12 @@ That original run used advisory approximate review. A later [native follow-up](d
   holds, account-bound approval, durable execution and native readback. Unmatched
   rows never create records; populated CRM values are preserved.
 - Provides a connected [CRM Monitor](docs/monitor.md) at `/app/monitor` for
-  HubSpot Contacts and Salesforce Leads/Contacts: recurring checks, a durable human triage queue, downloadable reports,
+  HubSpot Contacts/Companies/Deals and Salesforce Leads/Contacts/Accounts/Opportunities: recurring checks, a durable human triage queue, downloadable reports,
   and optional verified company/job-title whitespace repairs. A separate runner
   continues with the browser closed. Requires the self-hosted SQLite app.
-- Combines incoming CSV lists and CRM Monitor findings in the [Operations Inbox](docs/operations-inbox.md)
+- Groups unusual changes into [incidents](docs/incidents.md) at `/app/incidents`: field clearing, repeated reversals, broken relationships, deadlines and coverage failures. Retains native change events, separates evidence from possible causes, and pauses recurring repairs. Optional model explanations have no write authority.
+- Replays [2,900 generated messy records](docs/incident-stress-results.md) through the actual monitor with `npm run qualify:incidents`, producing inspectable data, expected outcomes and a local HTML report.
+- Combines incoming CSV lists, incidents and CRM Monitor findings in the [Operations Inbox](docs/operations-inbox.md)
   at `/app/work`, with saved ownership, exact-review links, and verified outcomes.
 - Sends optional [Slack notifications](docs/slack-notifications.md) for findings,
   repairs, import reviews/results and follow-up changes across both CRMs. The

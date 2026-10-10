@@ -2,8 +2,9 @@ import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { executeSafeImportReview, reconcileSafeImportExecution, writeHubSpotSafeImportRecord, type SafeImportExecutionDependencies } from '../lib/safe-import-execution';
-import { claimSafeImportExecution, getLatestSafeImportReview, getSafeImportExecution, getSafeImportReview, saveSafeImportReview, updateSafeImportExecution } from '../lib/safe-import-store';
+import { executeSafeImportReview, continueSafeImportExecution, reconcileSafeImportExecution, writeHubSpotSafeImportRecord, type SafeImportExecutionDependencies } from '../lib/safe-import-execution';
+import { claimSafeImportExecution, claimSafeImportChunk, releaseSafeImportChunk, getLatestSafeImportReview, getSafeImportExecution, getSafeImportReview, saveSafeImportReview, updateSafeImportExecution } from '../lib/safe-import-store';
+import type { SafeImportExecution, SafeImportReview } from '../lib/safe-import';
 import type { NativeCrmRecord } from '../lib/crm-workflow';
 import { safeImportReviewFixture, SAFE_IMPORT_TEST_NOW } from './fixtures/safe-import-review';
 
@@ -32,6 +33,13 @@ async function setup(count = 1) {
     claimExecution: claimSafeImportExecution, saveExecution: updateSafeImportExecution, assertWorkspace: async () => {},
   };
   return { review, deps, current, writeRecord };
+}
+
+async function finish(review: SafeImportReview, deps: SafeImportExecutionDependencies, execution?: SafeImportExecution) {
+  let result = execution ?? await executeSafeImportReview(review, deps);
+  for (let chunk = 0; result.status === 'running' && chunk < 20; chunk += 1) result = await continueSafeImportExecution(review, deps);
+  expect(result.records.some((record) => record.status === 'pending')).toBe(false);
+  return result;
 }
 
 describe('saved safe import execution', () => {
@@ -68,7 +76,7 @@ describe('saved safe import execution', () => {
 
   it('persists readback per row beyond one D1-sized payload and rejects competing progress changes', async () => {
     const { review, deps } = await setup(101);
-    const execution = await executeSafeImportReview(review, deps);
+    const execution = await finish(review, deps);
     const large = structuredClone(execution);
     for (const record of large.records) {
       record.verification!.expected.fields.jobTitle = 'x'.repeat(20_000);
@@ -89,8 +97,11 @@ describe('saved safe import execution', () => {
     expect(review.plans.map((plan) => plan.records.length)).toEqual([100, 1]);
     expect(JSON.stringify(review).length).toBeGreaterThan(100_000);
     expect(await getSafeImportReview(review.workspaceId, review.id)).toEqual(review);
-    const [first, repeated] = await Promise.all([executeSafeImportReview(review, deps), executeSafeImportReview(review, deps)]);
-    expect(first.id).toBe(repeated.id);
+    const [initial, repeated] = await Promise.all([executeSafeImportReview(review, deps), executeSafeImportReview(review, deps)]);
+    expect(initial.id).toBe(repeated.id);
+    expect(writeRecord).toHaveBeenCalledTimes(10);
+    expect(initial.records.filter((record) => record.status === 'pending')).toHaveLength(91);
+    const first = await finish(review, deps, initial);
     expect(writeRecord).toHaveBeenCalledTimes(101);
     expect(first.records.every((record) => record.status === 'accepted' && record.verification?.status === 'verified')).toBe(true);
     expect(first.status).toBe('completed');
@@ -143,7 +154,7 @@ describe('saved safe import execution', () => {
     expect(writeRecord).toHaveBeenCalledTimes(1);
   });
 
-  it('reconciles durable sending state after a lost receipt save and holds unsent rows', async () => {
+  it('reconciles a lost receipt without resending and continues only unsent rows', async () => {
     const { review, deps, writeRecord } = await setup(2);
     const saveExecution: SafeImportExecutionDependencies['saveExecution'] = async (execution, previous) => {
       if (execution.records.some((record) => record.status === 'accepted')) throw new Error('receipt storage lost');
@@ -154,9 +165,12 @@ describe('saved safe import execution', () => {
     expect(saved.records.map((record) => record.status)).toEqual(['sending', 'pending']);
     await executeSafeImportReview(review, deps);
     const reconciled = await reconcileSafeImportExecution(review, saved, deps);
-    expect(reconciled.records.map((record) => record.status)).toEqual(['unknown', 'held']);
+    expect(reconciled.records.map((record) => record.status)).toEqual(['unknown', 'pending']);
     expect(reconciled.records[0].verification?.status).toBe('verified');
     expect(writeRecord).toHaveBeenCalledTimes(1);
+    const continued = await continueSafeImportExecution(review, deps);
+    expect(continued.records.map((record) => record.status)).toEqual(['unknown', 'accepted']);
+    expect(writeRecord).toHaveBeenCalledTimes(2);
   });
 
   it('keeps write acceptance separate from protected-field verification and never reapplies', async () => {
@@ -179,6 +193,88 @@ describe('saved safe import execution', () => {
     const replace = structuredClone(review); replace.plans[0].records[0].changes[0].before = 'Existing phone';
     await expect(executeSafeImportReview(replace, deps)).rejects.toThrow('fill-empty');
     expect(writeRecord).not.toHaveBeenCalled();
+  });
+
+  it('allows one continuation worker and fences stale progress after lease expiry', async () => {
+    const { review, deps, writeRecord } = await setup(21);
+    const initial = await executeSafeImportReview(review, deps);
+    expect(initial.records.filter((record) => record.status === 'pending')).toHaveLength(11);
+    const [left, right] = await Promise.all([continueSafeImportExecution(review, deps), continueSafeImportExecution(review, deps)]);
+    expect(left.id).toBe(right.id);
+    expect(writeRecord).toHaveBeenCalledTimes(20);
+    const old = await claimSafeImportChunk(review, deps.now());
+    expect(old.claimed).toBe(true);
+    const nextTime = new Date(deps.now().getTime() + 300_001);
+    const successor = await claimSafeImportChunk(review, nextTime);
+    expect(successor.claimed).toBe(true);
+    const sending = { ...old.execution, records: old.execution.records.map((record, index) => index === 20 ? { ...record, status: 'sending' as const } : record) };
+    await expect(updateSafeImportExecution(sending, old.execution)).rejects.toThrow('changed in another request');
+    await releaseSafeImportChunk(old.execution);
+    expect((await getSafeImportExecution(review.workspaceId, review.id))?.lease?.token).toBe(successor.execution.lease?.token);
+    await releaseSafeImportChunk(successor.execution);
+    const result = await continueSafeImportExecution(review, { ...deps, now: () => nextTime });
+    expect(result.status).toBe('completed');
+    expect(result.approvedAt).toBe(initial.approvedAt);
+    expect(writeRecord).toHaveBeenCalledTimes(21);
+  });
+
+  it('holds expired pending rows without extending approval and rechecks edited workspaces', async () => {
+    const { review, deps, writeRecord } = await setup(12);
+    const initial = await executeSafeImportReview(review, deps);
+    const expired = await continueSafeImportExecution(review, { ...deps, now: () => new Date(review.expiresAt) });
+    expect(expired.records.slice(10).every((record) => record.status === 'held' && record.error?.includes('expired'))).toBe(true);
+    expect(expired.approvedAt).toBe(initial.approvedAt);
+    expect(writeRecord).toHaveBeenCalledTimes(10);
+    const second = await setup(11);
+    await executeSafeImportReview(second.review, second.deps);
+    const changed = await continueSafeImportExecution(second.review, { ...second.deps, assertWorkspace: async () => { throw new Error('Workspace changed'); } });
+    expect(changed.records[10]).toMatchObject({ status: 'held', error: 'Workspace changed' });
+    expect(second.writeRecord).toHaveBeenCalledTimes(10);
+  });
+
+  it('requires saved approval and holds changed account or native evidence on continuation', async () => {
+    const first = await setup(11);
+    await expect(continueSafeImportExecution(first.review, first.deps)).rejects.toThrow('saved approval');
+    expect(first.writeRecord).not.toHaveBeenCalled();
+    await executeSafeImportReview(first.review, first.deps);
+    const forged = structuredClone(first.review);
+    forged.sourceFile = 'a different saved source.csv';
+    await expect(continueSafeImportExecution(forged, first.deps)).rejects.toThrow('exact saved');
+    first.current.get('11')!.fields.phone = 'Changed after the first chunk';
+    const changed = await continueSafeImportExecution(first.review, first.deps);
+    expect(changed.records[10]).toMatchObject({ status: 'held', error: expect.stringContaining('changed after review') });
+    expect(first.writeRecord).toHaveBeenCalledTimes(10);
+    const second = await setup(11);
+    await executeSafeImportReview(second.review, second.deps);
+    const wrongAccount = await continueSafeImportExecution(second.review, { ...second.deps,
+      readAccount: async () => ({ connectorId: 'hubspot', accountId: '999' }) });
+    expect(wrongAccount.records[10]).toMatchObject({ status: 'held', error: expect.stringContaining('differs') });
+    expect(second.writeRecord).toHaveBeenCalledTimes(10);
+  });
+
+  it('recovers expired sending claims without replay, and bounds read-only reconciliation', async () => {
+    const { review, deps, writeRecord } = await setup(21);
+    await finish(review, deps);
+    const lease = await claimSafeImportChunk(review, deps.now());
+    const interrupted = { ...lease.execution, status: 'running' as const, records: lease.execution.records.map((record, index) => index === 0 ? { ...record, status: 'sending' as const, verification: undefined } : record) };
+    await updateSafeImportExecution(interrupted, lease.execution);
+    const blocked = await continueSafeImportExecution(review, deps);
+    expect(blocked.records[0].status).toBe('sending');
+    const afterExpiry = { ...deps, now: () => new Date(deps.now().getTime() + 300_001) };
+    const resumed = await continueSafeImportExecution(review, afterExpiry);
+    expect(resumed.records[0]).toMatchObject({ status: 'unknown', verification: { status: 'verified' } });
+    expect(writeRecord).toHaveBeenCalledTimes(21);
+    const readRecord = vi.fn(deps.readRecord);
+    const first = await reconcileSafeImportExecution(review, resumed, { ...afterExpiry, readRecord });
+    expect(readRecord).toHaveBeenCalledTimes(10);
+    expect(first.reconciliationCursor).toBe(10);
+    const second = await reconcileSafeImportExecution(review, first, { ...afterExpiry, readRecord });
+    expect(readRecord).toHaveBeenCalledTimes(20);
+    expect(second.reconciliationCursor).toBe(20);
+    const third = await reconcileSafeImportExecution(review, second, { ...afterExpiry, readRecord });
+    expect(readRecord).toHaveBeenCalledTimes(21);
+    expect(third.reconciliationCursor).toBe(0);
+    expect(writeRecord).toHaveBeenCalledTimes(21);
   });
 
   it('uses only native-ID PATCH with approved field names and excludes primary email', async () => {

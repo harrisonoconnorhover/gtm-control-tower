@@ -6,15 +6,20 @@ export type MonitorSnapshot = { contact: MonitorContact; lifecycleHighWater: str
 export type MonitorIssue = Pick<MonitorFinding, 'rule' | 'severity' | 'summary' | 'detail' | 'before' | 'after'>;
 
 export function inspectMonitorContact(contact: MonitorContact, previous: MonitorSnapshot | null): { issues: MonitorIssue[]; snapshot: MonitorSnapshot } {
+  // Company/account and deal/opportunity semantics are handled by incident expectations,
+  // never by contact email/lifecycle rules or the contact whitespace repair recipe.
+  if (contact.objectType && !['Lead', 'Contact'].includes(contact.objectType)) {
+    return { issues: [], snapshot: { contact, lifecycleHighWater: null } };
+  }
   const p = contact.properties;
   const salesforce = contact.provider === 'salesforce';
   const issues: MonitorIssue[] = [];
-  if (!p.email?.trim()) {
+  if ('email' in p && !p.email.trim()) {
     issues.push({ rule: 'email_missing', severity: 'critical', summary: 'Email is missing', detail: 'A person should establish the correct email before identity-dependent work.', before: { email: p.email ?? '' }, after: {} });
-  } else if (!validMonitorEmail(p.email)) {
+  } else if ('email' in p && !validMonitorEmail(p.email)) {
     issues.push({ rule: 'email_invalid', severity: 'critical', summary: 'Email needs review', detail: 'The address fails a basic format check. Monitor does not guess or rewrite email addresses.', before: { email: p.email }, after: {} });
   }
-  if (!salesforce && ['salesqualifiedlead', 'opportunity', 'customer'].includes(p.lifecyclestage) && !p.hubspot_owner_id?.trim()) {
+  if (!salesforce && 'hubspot_owner_id' in p && ['salesqualifiedlead', 'opportunity', 'customer'].includes(p.lifecyclestage) && !p.hubspot_owner_id?.trim()) {
     issues.push({ rule: 'owner_missing', severity: 'warning', summary: 'Sales contact has no owner', detail: 'Assign a responsible owner in HubSpot. Monitor does not infer routing or ownership.', before: { lifecyclestage: p.lifecyclestage, hubspot_owner_id: p.hubspot_owner_id ?? '' }, after: {} });
   }
   const currentRank = salesforce ? -1 : orderedStages.indexOf(p.lifecyclestage);
@@ -47,6 +52,6 @@ export function validMonitorEmail(value: string): boolean {
 }
 
 export function monitorContactLabel(contact: MonitorContact): string {
-  return [contact.properties.firstname, contact.properties.lastname].filter(Boolean).join(' ').trim()
+  return contact.properties.name || [contact.properties.firstname, contact.properties.lastname].filter(Boolean).join(' ').trim()
     || contact.properties.email || `${contact.objectType ?? 'Contact'} ${contact.id}`;
 }

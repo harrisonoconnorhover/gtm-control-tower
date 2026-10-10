@@ -7,10 +7,12 @@ import type { SafeImportExecution, SafeImportReview } from './safe-import';
 import { getConnectedMonitorOverview } from './monitor-connection';
 import type { MonitorProvider } from './monitor-types';
 import { notifyAssignment, notifyImportReceived } from './operation-notifications';
+import { listIncidents } from './crm-incidents';
+import { incidentAccounts } from './incident-accounts';
 
 export type WorkStatus = 'received' | 'needs_review' | 'ready' | 'executing' | 'completed' | 'reconcile';
 export type OperationsItem = {
-  id: string; kind: 'import' | 'finding'; provider: MonitorProvider; title: string; source: string;
+  id: string; kind: 'import' | 'finding' | 'incident'; provider: MonitorProvider; title: string; source: string;
   status: WorkStatus; summary: string; assignee: string; note: string; updatedAt: string; href: string;
   accountId?: string; counts?: SafeImportReview['counts'];
 };
@@ -131,8 +133,19 @@ export async function listOperationsInbox(): Promise<OperationsInbox> {
       return { provider, error: error instanceof Error ? error.message : 'Connection unavailable.' };
     }
   }));
+  // Saved incidents remain reachable even when native account verification is temporarily unavailable.
+  for (const account of await incidentAccounts()) {
+    for (const incident of await listIncidents(account.scope, { limit: 100 })) items.push({
+      id: `incident:${incident.id}`, kind: 'incident', provider: account.provider, accountId: account.accountId,
+      title: incident.title, source: `${incident.objectType} · ${incident.affectedRecords} affected records`,
+      status: incident.status === 'resolved' ? 'completed' : 'needs_review',
+      summary: `${incident.kind.replaceAll('_', ' ')} · ${incident.status}. Inspect the change history and coverage before choosing a response.`,
+      assignee: incident.assignee, note: incident.note, updatedAt: incident.lastSeenAt,
+      href: `/app/incidents?provider=${account.provider}&account=${encodeURIComponent(account.scope)}&incident=${encodeURIComponent(incident.id)}`,
+    });
+  }
   items.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
-  return { items, connections, coverage: 'Latest 50 inbox uploads and up to 100 saved Monitor findings per connected CRM. Reading this inbox does not run a scan or change CRM records.' };
+  return { items, connections, coverage: 'Latest 50 inbox uploads, up to 100 saved Monitor findings per connected CRM, and up to 100 incidents per saved account. Reading this inbox does not run a scan or change CRM records.' };
 }
 
 export async function assignImportWork(id: string, assignee: string, note: string): Promise<void> {

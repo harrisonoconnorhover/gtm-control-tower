@@ -1,7 +1,6 @@
 # CRM Monitor
 
-CRM Monitor at `/app/monitor` watches connected HubSpot Contacts and Salesforce
-Leads/Contacts, saves findings, and gives a person a queue to work through.
+CRM Monitor at `/app/monitor` watches connected HubSpot Contacts, Companies and Deals and Salesforce Leads, Contacts, Accounts and Opportunities. It saves findings and groups unusual patterns into [incidents](incidents.md) at `/app/incidents`.
 It reads actual provider records; no
 sample data is substituted when a connection fails. A separate runner keeps
 checks going with the browser closed. This feature currently requires local
@@ -50,7 +49,7 @@ failure handling. Settings and automatic-repair opt-in are separate per account.
 
 Both providers receive email checks. Owner/lifecycle checks apply only to HubSpot.
 Salesforce Leads can trim Company/Title; Contacts can trim Title. Converted Leads,
-Account relationships and custom Lead status ordering are outside coverage.
+custom Lead status ordering remains outside coverage. Company/account and deal/opportunity records are read-only.
 
 | Check | Action |
 | --- | --- |
@@ -60,10 +59,7 @@ Account relationships and custom Lead status ordering are outside coverage.
 | HubSpot known lifecycle stage moves backward after being observed | Human review of whether the change was intentional |
 | Surrounding whitespace in supported text fields | Optional trim: HubSpot company/job title; Salesforce Lead Company/Title or Contact Title |
 
-These are explicit rules, not statistical anomaly detection. They do not inspect
-workflows, deals, companies, associations, duplicate identities, or deleted
-contacts. Unknown/custom lifecycle values do not receive an inferred order.
-The existing duplicate-audit workspace remains available separately.
+The contact checks above remain explicit rules. The incident layer also examines repeated reversals, bulk field clearing, duplicate email/domain candidates, invalid amounts/dates, configured relationships and business deadlines. Unknown/custom lifecycle values receive no inferred order. Native workflow configuration is not inspected or repaired. Deletion events and missing coverage are investigation evidence. The existing duplicate-audit workspace remains available separately.
 
 Automatic repairs require the saved opt-in and write access to the relevant object
 and supported fields above. Trimming cannot clear a field, and records
@@ -97,17 +93,16 @@ Findings and snapshots in the local SQLite database contain CRM information.
 ## Coverage and timing
 
 The initial baseline follows native pagination. Salesforce pages unconverted
-Leads then Contacts with stable ID cursors and uses `SystemModstamp` for changed
-records. HubSpot uses the contact `lastmodifieddate` property, a delayed upper bound, and an overlapping
-window. Both providers use the delayed upper bound and overlap. Each tick processes at most 50 records and attempts at most five repairs.
+Leads, Contacts, Accounts and Opportunities with stable ID cursors and uses `SystemModstamp` for changed
+records. HubSpot uses the contact `lastmodifieddate` property or company/deal `hs_lastmodifieddate`, a delayed upper bound, and an overlapping
+window. Both providers use the delayed upper bound and overlap. Each tick processes at most 50 polled records, ten native event refreshes and five repairs. Local cached-record sweeps are separately bounded to 50 records.
 Continuation pages drain separately from the configured interval; the default
 interval between completed scans is five minutes. One hour is also available.
 Saved eligible repairs also drain in bounded batches, including when the operator
 enables repairs after a read-only scan. A daily full reconciliation revisits older
-contacts and helps recover delayed search results.
+records and helps recover delayed search results. The same runner also continues approved Safe Import jobs in bounded chunks and drains optional Slack delivery.
 
-This is polling, not an immediate change event or a historical audit log. A change
-can be missed if it is reversed between observations. Search indexing can lag;
+Polling works without native subscriptions. Optional [HubSpot webhooks and Salesforce CDC](native-monitor-events.md) retain reported changes and request fresh reads sooner. Polling alone can miss a change reversed between observations; native events still depend on configured subscriptions, permissions and retention. Search indexing can lag;
 the overlap reduces that risk without guaranteeing capture of arbitrarily late
 results. The saved watermark advances only after the complete window succeeds.
 Search pages continue after the last native contact ID, avoiding offset shifts

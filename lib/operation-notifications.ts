@@ -9,32 +9,45 @@ async function publish(event: SlackNotificationEvent): Promise<void> {
   catch { console.warn('A Control Tower notification could not be queued. CRM results remain saved; inspect server storage and Slack notification status.'); }
 }
 
-export async function notifyMonitorObservation(before: MonitorFinding[], after: MonitorFinding[]): Promise<void> {
+export function monitorObservationNotifications(before: MonitorFinding[], after: MonitorFinding[]): SlackNotificationEvent[] {
+  const events: SlackNotificationEvent[] = [];
   for (const finding of after) {
     const previous = before.find((candidate) => candidate.id === finding.id);
     if (previous?.status === finding.status && previous.occurrences === finding.occurrences) continue;
     if (!['open', 'resolved'].includes(finding.status)) continue;
-    await publish({ key: `finding:${finding.provider}:${finding.accountId}:${finding.id}:${finding.occurrences}:${finding.status}`,
+    events.push({ key: `finding:${finding.provider}:${finding.accountId}:${finding.id}:${finding.occurrences}:${finding.status}`,
       provider: finding.provider, title: finding.status === 'open' ? 'CRM Monitor finding needs review' : 'CRM Monitor finding resolved',
       summary: `${finding.objectType}: ${ruleLabel(finding.rule)}. ${finding.status === 'open' ? 'Open Control Tower to inspect the evidence and assign follow-up.' : 'The issue was no longer present on the latest observation.'}`,
       path: `/app/monitor?provider=${finding.provider}&finding=${encodeURIComponent(finding.id)}` });
   }
+  return events;
+}
+
+export async function notifyMonitorObservation(before: MonitorFinding[], after: MonitorFinding[]): Promise<void> {
+  for (const event of monitorObservationNotifications(before, after)) await publish(event);
+}
+
+export function monitorRepairNotification(scope: string, findingId: string, repairId: string, state: 'verified' | 'unknown'): SlackNotificationEvent {
+  const { provider } = monitorAccountIdentity(scope);
+  return { key: `repair:${scope}:${repairId}:${state}`, provider,
+    title: state === 'verified' ? 'CRM Monitor repair verified' : 'CRM Monitor repair needs verification',
+    summary: state === 'verified' ? 'One supported whitespace repair was accepted and checked against the CRM.' : 'A repair outcome is uncertain. Review the saved evidence; the CRM write will not be replayed automatically.',
+    path: `/app/monitor?provider=${provider}&finding=${encodeURIComponent(findingId)}` };
 }
 
 export async function notifyMonitorRepair(scope: string, findingId: string, repairId: string, state: 'verified' | 'unknown'): Promise<void> {
-  const { provider } = monitorAccountIdentity(scope);
-  await publish({ key: `repair:${scope}:${repairId}:${state}`, provider,
-    title: state === 'verified' ? 'CRM Monitor repair verified' : 'CRM Monitor repair needs verification',
-    summary: state === 'verified' ? 'One supported whitespace repair was accepted and checked against the CRM.' : 'A repair outcome is uncertain. Review the saved evidence; the CRM write will not be replayed automatically.',
-    path: `/app/monitor?provider=${provider}&finding=${encodeURIComponent(findingId)}` });
+  await publish(monitorRepairNotification(scope, findingId, repairId, state));
+}
+
+export async function monitorFailureNotification(run: MonitorRun, lastCompletedRunId: string): Promise<SlackNotificationEvent> {
+  const { provider } = monitorAccountIdentity(run.accountId);
+  return { key: `scan:${run.accountId}:${lastCompletedRunId}:${await digest(run.error ?? '')}`, provider,
+    title: 'CRM Monitor check failed', summary: 'The latest monitoring page did not complete. Inspect connection health and the saved run report in Control Tower.',
+    path: `/app/monitor?provider=${provider}` };
 }
 
 export async function notifyMonitorFailure(run: MonitorRun, lastCompletedRunId: string): Promise<void> {
-  if (run.status !== 'failed') return;
-  const { provider } = monitorAccountIdentity(run.accountId);
-  await publish({ key: `scan:${run.accountId}:${lastCompletedRunId}:${await digest(run.error ?? '')}`, provider,
-    title: 'CRM Monitor check failed', summary: 'The latest monitoring page did not complete. Inspect connection health and the saved run report in Control Tower.',
-    path: `/app/monitor?provider=${provider}` });
+  if (run.status === 'failed') await publish(await monitorFailureNotification(run, lastCompletedRunId));
 }
 
 /** Connection errors precede a saved scan. Limit these notices to one per provider per day. */

@@ -1,5 +1,22 @@
 export type MonitorProvider = 'hubspot' | 'salesforce';
-export type MonitorObjectType = 'Lead' | 'Contact';
+export type MonitorObjectType = 'Lead' | 'Contact' | 'Company' | 'Deal' | 'Account' | 'Opportunity';
+
+export type MonitorCapability = {
+  objectType: MonitorObjectType;
+  status: 'available' | 'partial' | 'unavailable';
+  fields: string[];
+  missingFields: string[];
+  detail: string;
+};
+
+export type MonitorObservationSource = {
+  kind: 'poll' | 'hubspot_webhook' | 'salesforce_cdc';
+  eventId?: string; occurredAt?: string; actorId?: string; origin?: string;
+  transactionId?: string; changedFields?: string[];
+  reportedValues?: Record<string, string | number | boolean | null>;
+  reportedValuesTruncated?: boolean;
+  attribution?: 'refresh_trigger_only';
+};
 
 export type MonitorRule = 'email_missing' | 'email_invalid' | 'owner_missing' | 'lifecycle_regression' | 'text_whitespace';
 export type MonitorStatus = 'open' | 'in_progress' | 'resolved' | 'fixed' | 'unknown';
@@ -16,6 +33,8 @@ export type MonitorContact = {
   objectType?: MonitorObjectType;
   id: string;
   updatedAt: string;
+  source?: MonitorObservationSource;
+  coverage?: string[];
   properties: Record<string, string>;
 };
 
@@ -70,6 +89,7 @@ export type MonitorOverview = {
   runs: MonitorRun[];
   totals: { open: number; inProgress: number; fixed: number; resolved: number; unknown: number };
   coverageNote: string;
+  capabilities?: MonitorCapability[];
 };
 
 export const MONITOR_DEFAULT_CONFIG: MonitorConfig = {
@@ -91,5 +111,6 @@ export function monitorAccountIdentity(scope: string): { provider: MonitorProvid
 }
 
 export function monitorRecordKey(contact: Pick<MonitorContact, 'id' | 'provider' | 'objectType'>): string {
-  return contact.provider === 'salesforce' ? `${contact.objectType}:${contact.id}` : contact.id;
+  return contact.provider === 'salesforce' || (contact.objectType && contact.objectType !== 'Contact')
+    ? `${contact.objectType}:${contact.id}` : contact.id;
 }

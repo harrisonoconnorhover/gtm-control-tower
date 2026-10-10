@@ -12,8 +12,9 @@ Contacts and Salesforce Leads/Contacts. It requires a connected CRM but no AI mo
    Held rows include the existing match-review controls. A candidate is only a
    suggestion; confirmation requires a reason and a freshly read native target.
    Skip an unresolved person or confirm them, then prepare a new review.
-5. Select **Approve N contact updates**. Inspect execution and verification
-   separately. Download the whole review as JSON or field decisions as CSV.
+5. Select **Approve N contact updates**. The first bounded chunk starts immediately;
+   run `npm run monitor` for background continuation, or select **Continue approved queue**.
+   Inspect queued, accepted, held and uncertain records separately from verification. Download the whole review as JSON or field decisions as CSV.
 
 Use `fixtures/safe-import-contacts.csv` with your own development fixtures, or
 run the simulated acceptance checks described below. The file does not create
@@ -81,8 +82,24 @@ are durable before the first request. Each row is marked `sending` before its
 request. A repeated approval returns the same execution, including after reload.
 An uncertain response remains **unknown**, never “failed, retry automatically.”
 **Reconcile and verify** reads only: it can observe approved values but cannot
-prove that an interrupted request was accepted. Unsent interrupted rows are held
-for a new review; interrupted writes are never resumed or resent automatically.
+prove that an interrupted request was accepted. A continuation processes at most
+10 records, stopping between records after 20 seconds. It can claim only unsent
+`pending` rows from the same saved approval. A five-minute durable worker lease
+and transactional row/header comparison prevent competing workers from claiming
+or overwriting the same progress. An expired or released lease turns abandoned
+`sending` rows into `unknown`; those writes are never replayed. Pending rows retain
+their original approval, with fresh account, workspace and native baseline checks
+before every write. Approval expiry is never extended: remaining rows become held
+and need a fresh review and approval. One active CRM operation can exceed the
+between-record time budget; its existing request timeout still applies.
+
+The runner invokes `POST /api/control-tower/safe-import/worker` with the operator
+key independently of scan success. Each request discovers at most one saved
+queued execution and processes one chunk; it cannot create an approval. The
+interactive equivalent uses `action: "continue"` with workspace/review IDs.
+`action: "recover"` reads at most 10 accepted/unknown records and advances a saved
+cursor; repeated reconciliation eventually covers the full execution without
+writing to the CRM. Duplicate approval clicks only return saved progress.
 Saved reviews can be discovered server-side without a browser receipt pointer.
 
 Accepted updates are reread automatically. Verification compares all protected
@@ -104,9 +121,13 @@ SQLite self-hosts initialize the new tables locally. D1 installations must apply
 using the recipe. Chunked reviews and per-record execution evidence avoid a
 whole-import evidence blob in one database binding. See the separate
 [native and D1 qualification report](safe-import-native-check.md) for current
-results. Hosted execution has a release blocker: the executor processes the
-whole approved import in one request and can exceed D1's invocation budget.
-Passing storage tests does not qualify that deployment path.
+results. Execution now spans bounded invocations. The actual local D1 probe
+processes 99 fictional writes across ten invocations and measures the maximum
+binding calls per invocation (139 in the October 10 local run). Its 1,000-call simulated budget passes; the 50-call
+budget remains unsupported. The probe bypasses real workspace rereads and provider
+requests, so neither that measurement nor passing storage tests qualifies hosted
+execution or whole-file preparation limits. No remote or hosted qualification
+was performed for this continuation change.
 
 ```bash
 npm test -- tests/safe-import-route.test.ts tests/safe-import-review-server.test.ts tests/safe-import-execution.test.ts tests/crm-account.test.ts tests/import-assistant.test.ts
