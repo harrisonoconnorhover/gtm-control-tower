@@ -207,11 +207,12 @@ try {
     await page.goto(new URL('/#clean-csv', base).href);
     for (const [button, filename] of [['Choose CSV file', 'keyboard-picker.csv'], ['Open another CSV', 'keyboard-rows.csv']]) {
       const picker = page.getByRole('button', { name: button, exact: true });
+      // Register interception before keyboard setup; Playwright enables it asynchronously.
+      const choosing = page.waitForEvent('filechooser');
       await picker.waitFor();
       await page.getByRole('link', { name: /Back to overview/ }).focus();
       await page.keyboard.press('Tab');
       await expectFocus(page, picker, 'Tab should reach the visible picker button without stopping on the hidden file input.');
-      const choosing = page.waitForEvent('filechooser');
       await page.keyboard.press('Enter');
       await (await choosing).setFiles({ name: filename, mimeType: 'text/csv', buffer: Buffer.from(csv) });
       await page.getByRole('heading', { name: filename, exact: true }).waitFor();
