@@ -47,6 +47,8 @@ export function BrowserCsvWorkspace({ active = true }: { active?: boolean }) {
 
   const { issues, groups } = useMemo(() => document ? browserCsvReview(document) : { issues: new Map<number, string[]>(), groups: [] }, [document]);
   const proposals = useMemo(() => document ? cleanupProposals(document) : [], [document]);
+  const optionalTrimCount = document ? document.trimColumns.filter((column) => column !== document.emailColumn).length : 0;
+  const includedTrimCount = optionalTrimCount + (document && document.emailColumn !== null ? 1 : 0);
   const currentProposalPage = Math.min(proposalPage, Math.max(0, Math.ceil(proposals.length / 5) - 1));
   const download = useMemo(() => document ? exportBrowserCsv(document) : null, [document]);
   const rows = useMemo(() => document?.rows.filter((row) => {
@@ -84,6 +86,14 @@ export function BrowserCsvWorkspace({ active = true }: { active?: boolean }) {
 
   function saveRow() {
     if (document && draftDirty) commit(withRowEdits(document), `Saved row ${(selectedId ?? 0) + 1}. Review notes have been updated.`);
+  }
+
+  function selectTrimColumns(selectAll: boolean) {
+    if (!document) return;
+    const current = withRowEdits(document);
+    const trimColumns = current.headers.map((_, column) => column).filter((column) =>
+      column === current.emailColumn ? current.trimColumns.includes(column) : selectAll);
+    commit({ ...current, trimColumns }, 'Formatting preview updated.');
   }
 
   function selectRow(id: number | null) {
@@ -289,7 +299,17 @@ export function BrowserCsvWorkspace({ active = true }: { active?: boolean }) {
                     </select>
                     <span className="mt-2 block leading-5 text-[#a2b8ab]">Checks formatting and repeated addresses, not whether a mailbox exists. Applying email formatting trims outer spaces and standardizes domains; the part before @ stays unchanged.</span>
                   </label>
-                  <fieldset><legend className="text-xs text-[#c4d7cb]">Trim outer spaces in these columns</legend><div className="mt-3 grid max-h-48 gap-3 overflow-auto sm:grid-cols-2">{document.headers.map((_, column) => <label key={column} className="flex items-start gap-2 text-xs text-[#a2b8ab]"><input type="checkbox" className="mt-0.5 accent-[#d8ff67]" checked={column === document.emailColumn || document.trimColumns.includes(column)} disabled={column === document.emailColumn} onChange={(event) => commit({ ...withRowEdits(document), trimColumns: event.target.checked ? [...document.trimColumns, column] : document.trimColumns.filter((item) => item !== column) }, 'Formatting preview updated.')} /><span className="break-all">{browserCsvColumnLabel(document.headers, column)}{column === document.emailColumn && <span className="mt-1 block text-[11px]">Included in email formatting</span>}</span></label>)}</div></fieldset>
+                  <fieldset>
+                    <legend className="text-xs text-[#c4d7cb]">Trim outer spaces in these columns</legend>
+                    <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+                      <p className="text-xs text-[#a2b8ab]">{includedTrimCount} of {document.headers.length} columns included</p>
+                      <div className="flex flex-wrap gap-2">
+                        <button className={secondary} disabled={includedTrimCount === document.headers.length} onClick={() => selectTrimColumns(true)}>Select all</button>
+                        <button className={secondary} disabled={optionalTrimCount === 0} onClick={() => selectTrimColumns(false)}>{document.emailColumn === null ? 'Clear all' : 'Clear other columns'}</button>
+                      </div>
+                    </div>
+                    <div className="mt-3 grid max-h-48 gap-3 overflow-auto sm:grid-cols-2">{document.headers.map((_, column) => <label key={column} className="flex items-start gap-2 text-xs text-[#a2b8ab]"><input type="checkbox" className="mt-0.5 accent-[#d8ff67]" checked={column === document.emailColumn || document.trimColumns.includes(column)} disabled={column === document.emailColumn} onChange={(event) => commit({ ...withRowEdits(document), trimColumns: event.target.checked ? [...document.trimColumns, column] : document.trimColumns.filter((item) => item !== column) }, 'Formatting preview updated.')} /><span className="break-all">{browserCsvColumnLabel(document.headers, column)}{column === document.emailColumn && <span className="mt-1 block text-[11px]">Included in email formatting</span>}</span></label>)}</div>
+                  </fieldset>
                 </div>
               </details>
             </section>

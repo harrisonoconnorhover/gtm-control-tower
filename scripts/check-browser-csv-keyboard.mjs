@@ -121,6 +121,59 @@ async function wideColumnReview(page, width) {
   checks.push(`${width}px: ${columnCount}-column file searched by label/position; late-column edits retained through row stepping; filter/search boundaries and off-view editing respected; clear/no-results states and exact downloaded cells verified.`);
 }
 
+async function bulkColumnFormatting(page, width) {
+  const columnCount = width === 390 ? 100 : 50;
+  const sourceHeaders = Array.from({ length: columnCount }, (_, index) => `Field ${index + 1}`);
+  const values = sourceHeaders.map((_, index) => index === 0 ? ' Ada@EXAMPLE.COM ' : ` Value ${index + 1} `);
+  await page.getByLabel('Choose a CSV file', { exact: true }).setInputFiles({ name: 'generic-wide.csv', mimeType: 'text/csv', buffer: Buffer.from([sourceHeaders, values].map((row) => row.join(',')).join('\r\n')) });
+  const rules = page.getByRole('group', { name: 'Trim outer spaces in these columns', exact: true });
+  const count = (included) => rules.getByText(`${included} of ${columnCount} columns included`, { exact: true }).waitFor();
+  await count(0);
+  assert(await rules.getByRole('button', { name: 'Clear all', exact: true }).isDisabled());
+  await activate(page, page.getByRole('button', { name: 'Review row 1', exact: true }));
+  const lastField = page.getByLabel(`Field ${columnCount} — row 1`, { exact: true });
+  await lastField.fill(' Draft last ');
+  values[columnCount - 1] = ' Draft last ';
+  await activate(page, rules.getByRole('button', { name: 'Select all', exact: true }));
+  await count(columnCount);
+  assert(await rules.getByRole('button', { name: 'Select all', exact: true }).isDisabled());
+  assert.equal(await rules.locator('input:checked').count(), columnCount);
+  assert.equal(await lastField.inputValue(), ' Draft last ', 'Bulk selection must retain the draft without applying formatting.');
+  await activate(page, rules.getByRole('button', { name: 'Clear all', exact: true }));
+  await count(0);
+  await activate(page, page.getByRole('button', { name: 'Undo', exact: true }));
+  await count(columnCount);
+  assert.equal(await page.getByLabel('Field 1 — row 1', { exact: true }).inputValue(), values[0]);
+  assert.equal(await lastField.inputValue(), values[columnCount - 1]);
+  await rules.screenshot({ path: resolve(output, `bulk-formatting-${width}.png`) });
+  await activate(page, page.getByRole('button', { name: 'Apply formatting changes', exact: true }));
+  const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Download CSV', exact: true }).first().click()]);
+  const chunks = [];
+  for await (const chunk of await download.createReadStream()) chunks.push(chunk);
+  const bytes = Buffer.concat(chunks);
+  assert.deepEqual([...bytes.subarray(0, 3)], [0xef, 0xbb, 0xbf]);
+  assert.equal(bytes.subarray(3).toString('utf8'), [sourceHeaders, values.map((value) => value.trim())].map((row) => row.join(',')).join('\r\n'), 'Every source column, including the last draft, should trim only after Apply.');
+  await download.saveAs(resolve(output, `bulk-formatting-${width}.csv`));
+
+  const mapping = page.getByLabel('Email column', { exact: true });
+  await mapping.selectOption('0');
+  await activate(page, rules.getByRole('button', { name: 'Clear other columns', exact: true }));
+  await count(1);
+  assert(await rules.getByRole('checkbox', { name: /^Field 1\b/ }).isDisabled());
+  await mapping.selectOption('');
+  await count(1); // The selected email's earlier checked trim preference survives.
+  await activate(page, rules.getByRole('button', { name: 'Clear all', exact: true }));
+  await mapping.selectOption('0');
+  await activate(page, rules.getByRole('button', { name: 'Select all', exact: true }));
+  await activate(page, rules.getByRole('button', { name: 'Clear other columns', exact: true }));
+  await count(1);
+  assert(await rules.getByRole('button', { name: 'Clear other columns', exact: true }).isDisabled());
+  await mapping.selectOption('');
+  await count(0); // The selected email's earlier unchecked trim preference survives too.
+  assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'Bulk formatting controls must fit the viewport.');
+  checks.push(`${width}px: ${columnCount} generic columns bulk-selected/cleared with keyboard, count and disabled states verified; drafts and Undo preserved; Apply/download trims every column; mapped-email clear keeps its prior checked or unchecked preference.`);
+}
+
 try {
   for (const width of [1440, 390]) {
     const context = await browser.newContext({ viewport: { width, height: 950 } });
@@ -163,6 +216,7 @@ try {
     await editor.screenshot({ path: resolve(output, `labels-${width}.png`) });
     checks.push(`${width}px: Enter opens a row; Tab/Enter closes to its action; Next/Previous focus and scroll to Your rows; closing a corrected filtered row uses the heading fallback; duplicate and blank/header label collisions match comparison.`);
     await wideColumnReview(page, width);
+    await bulkColumnFormatting(page, width);
     await context.close();
   }
   console.log(JSON.stringify({ status: 'passed', checks, screenshots: output }, null, 2));
