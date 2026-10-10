@@ -17,6 +17,7 @@ vi.stubEnv('CONTROL_TOWER_PERSISTENCE_ENABLED', 'true');
 vi.stubEnv('HUBSPOT_ACCESS_TOKEN', 'synthetic-token');
 vi.stubEnv('CONTROL_TOWER_SYNC_KEY', '');
 const { POST } = await import('../app/api/control-tower/safe-import/route');
+const { POST: workerPOST } = await import('../app/api/control-tower/safe-import/worker/route');
 const { POST: governedPOST } = await import('../app/api/control-tower/crm-writeback/route');
 const { createWorkspace, saveWorkspace, getWorkspace } = await import('../lib/workspace-store');
 const { getSafeImportExecution, getSafeImportReview } = await import('../lib/safe-import-store');
@@ -128,9 +129,21 @@ describe('Safe Import whole-file route with AI disabled and simulated HubSpot', 
     expect(first.fieldDecisions?.find((field) => field.field === 'website')).toMatchObject({ importedValue: null, proposedValue: 'example.com', action: 'preserve' });
     expect(review.rows.find((row) => row.contactId === 'event-99')!.record!.fieldDecisions?.find((field) => field.field === 'jobTitle')?.action).toBe('review');
     expect((await getSafeImportReview(saved.id, review.id))?.sourceFileHash).toBe(await sha256(source));
+    expect((await (await workerPOST(new Request('http://localhost/api/control-tower/safe-import/worker', { method: 'POST' }))).json() as { execution: SafeImportExecution | null }).execution).toBeNull();
+    expect(writes).toHaveLength(0);
     const approved = await POST(request('approve', saved.id, review.id));
     expect(approved.status, await approved.clone().text()).toBe(202);
-    const { execution } = await approved.json() as { execution: SafeImportExecution };
+    let { execution } = await approved.json() as { execution: SafeImportExecution };
+    expect(writes).toHaveLength(10);
+    const worker = await workerPOST(new Request('http://localhost/api/control-tower/safe-import/worker', { method: 'POST' }));
+    expect(worker.status).toBe(200);
+    execution = (await worker.json() as { execution: SafeImportExecution }).execution;
+    expect(writes).toHaveLength(20);
+    for (let chunk = 0; execution.status === 'running' && chunk < 20; chunk += 1) {
+      const next = await POST(request('continue', saved.id, review.id));
+      expect(next.status).toBe(202);
+      execution = (await next.json() as { execution: SafeImportExecution }).execution;
+    }
     expect(execution.records).toHaveLength(99);
     expect(execution.records.every((row) => row.status === 'accepted' && row.verification?.status === 'verified')).toBe(true);
     expect(writes).toHaveLength(99);
@@ -175,7 +188,10 @@ describe('Safe Import whole-file route with AI disabled and simulated HubSpot', 
     const review = await prepare(saved.id); loseResponse = true;
     const response = await POST(request('approve', saved.id, review.id));
     expect(response.status, await response.clone().text()).toBe(202);
-    const { execution } = await response.json() as { execution: SafeImportExecution };
+    let { execution } = await response.json() as { execution: SafeImportExecution };
+    for (let chunk = 0; execution.status === 'running' && chunk < 20; chunk += 1) {
+      execution = (await (await POST(request('continue', saved.id, review.id))).json() as { execution: SafeImportExecution }).execution;
+    }
     expect(execution.status).toBe('reconciliation-required');
     expect(execution.records.filter((row) => row.status === 'unknown')).toHaveLength(1);
     expect(execution.records.find((row) => row.status === 'unknown')?.verification?.status).toBe('verified');

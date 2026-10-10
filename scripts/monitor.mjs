@@ -18,18 +18,20 @@ if (!providers.length || providers.some((provider) => !['hubspot', 'salesforce']
 }
 const endpoint = new URL('/api/control-tower/monitor', base);
 const notificationEndpoint = new URL('/api/control-tower/notifications/slack', base);
+const importEndpoint = new URL('/api/control-tower/safe-import/worker', base);
 const once = process.argv.includes('--once');
 const sleepController = new AbortController();
 const states = new Map(providers.map((provider) => [provider, { failures: 0, lastMessage: '', lastRunId: '', nextPollAt: 0 }]));
 let stopping = false;
 let lastSlackStatus = '';
+let lastImportStatus = '';
 for (const signal of ['SIGINT', 'SIGTERM']) {
   process.once(signal, () => { stopping = true; sleepController.abort(); });
 }
 
 async function poll(provider) {
   const state = states.get(provider);
-  if (!once && state.nextPollAt > Date.now()) return;
+  if (!once && state.nextPollAt > Date.now()) return state.nextPollAt - Date.now();
   let waitMs = 30_000;
   try {
     const response = await fetch(endpoint, {
@@ -65,13 +67,32 @@ async function poll(provider) {
     if (once) process.exitCode = 1;
   }
   state.nextPollAt = Date.now() + waitMs;
+  return waitMs;
 }
 
-console.log(`Monitor runner connected to ${base.origin} for ${providers.join(', ')}; Ctrl+C stops this runner.`);
-while (!stopping) {
-  // An unavailable provider cannot prevent the other provider's tick from being dispatched.
-  await Promise.all(providers.map(poll));
+async function continueImports() {
+  let importsQueued = false;
+  try {
+    const response = await fetch(importEndpoint, { method: 'POST', redirect: 'error', signal: AbortSignal.timeout(120_000),
+      headers: process.env.CONTROL_TOWER_SYNC_KEY ? { 'x-control-tower-key': process.env.CONTROL_TOWER_SYNC_KEY } : {} });
+    const result = await response.json();
+    if (!response.ok) throw new Error('Approved import processing unavailable; inspect the saved execution in Control Tower.');
+    importsQueued = result.queued === true;
+    if (result.execution) {
+      const message = JSON.stringify({ importExecution: result.execution.id, status: result.execution.status, queued: importsQueued });
+      if (message !== lastImportStatus) { console.log(message); lastImportStatus = message; }
+    }
+  } catch {
+    const message = 'Approved import processing unavailable; saved sending or unknown writes are never automatically replayed.';
+    if (lastImportStatus !== message) { console.error(message); lastImportStatus = message; }
+    if (once) process.exitCode = 1;
+  }
+  return importsQueued ? 1000 : 30_000;
+}
+
+async function deliverNotifications() {
   // Notification delivery is independent of CRM success and monitoring opt-in.
+  let notificationsQueued = false;
   try {
     const response = await fetch(notificationEndpoint, { method: 'POST', redirect: 'error', signal: AbortSignal.timeout(20_000),
       headers: { 'content-type': 'application/json', ...(process.env.CONTROL_TOWER_SYNC_KEY ? { 'x-control-tower-key': process.env.CONTROL_TOWER_SYNC_KEY } : {}) },
@@ -80,6 +101,7 @@ while (!stopping) {
     if (!response.ok) throw new Error('Slack notification delivery unavailable; inspect notification status in /app/work.');
     const status = result.slack;
     if (status?.configured) {
+      notificationsQueued = status.pending > 0;
       const message = JSON.stringify({ notifications: 'slack', pending: status.pending, delivered: status.delivered, failed: status.failed, unknown: status.unknown });
       if (message !== lastSlackStatus) { console.log(message); lastSlackStatus = message; }
     }
@@ -88,7 +110,22 @@ while (!stopping) {
     if (lastSlackStatus !== message) { console.error(message); lastSlackStatus = message; }
     if (once) process.exitCode = 1;
   }
-  if (once || stopping) break;
-  const waitMs = Math.max(1000, Math.min(30_000, ...[...states.values()].map((state) => state.nextPollAt - Date.now())));
-  await delay(waitMs, undefined, { signal: sleepController.signal }).catch((error) => { if (error.name !== 'AbortError') throw error; });
+  return notificationsQueued ? 1000 : 30_000;
 }
+
+/** A lane never dispatches again until its own request finishes; other lanes keep their cadence. */
+async function runLane(action) {
+  while (!stopping) {
+    const waitMs = await action();
+    if (once || stopping) return;
+    await delay(Math.max(1000, waitMs), undefined, { signal: sleepController.signal })
+      .catch((error) => { if (error.name !== 'AbortError') throw error; });
+  }
+}
+
+console.log(`Monitor runner connected to ${base.origin} for ${providers.join(', ')}; Ctrl+C stops this runner.`);
+await Promise.all([
+  ...providers.map((provider) => runLane(() => poll(provider))),
+  runLane(continueImports),
+  runLane(deliverNotifications),
+]);

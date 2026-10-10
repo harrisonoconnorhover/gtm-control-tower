@@ -86,3 +86,7 @@ CONTROL_TOWER_BROWSER_BASE_URL=http://127.0.0.1:3197 npm run test:slack-ui
 The tests use fictional Slack responses and temporary SQLite; browser checks
 block external requests. A live channel delivery is not qualified until a
 configured test message is accepted and observed in that channel.
+
+## Incident events and durable intent
+
+New, reopened and resolved incidents, changed human follow-up and automatic repair pauses use the same configurable destination. Incident/monitor-finding/repair state transitions now commit notification intent atomically in SQLite, then forward through a durable outbox. The existing notification queue deduplicates forwarded events. A forwarding interruption leaves intent available for the next drain; it cannot erase the saved operation or authorize a CRM write. Import notifications retain their existing post-save behavior. No destination is configured by this change.

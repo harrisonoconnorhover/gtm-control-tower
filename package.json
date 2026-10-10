@@ -49,7 +49,10 @@
     "test:pomade-handoff": "node scripts/check-pomade-handoff.mjs",
     "test:safe-import": "node scripts/check-safe-import.mjs",
     "test:operations-inbox-ui": "node scripts/check-operations-inbox.mjs",
-    "test:slack-ui": "node scripts/check-slack-notifications.mjs"
+    "test:slack-ui": "node scripts/check-slack-notifications.mjs",
+    "generate:messy-crm": "node scripts/generate-messy-crm.mjs",
+    "test:incidents-ui": "node scripts/check-incidents.mjs",
+    "qualify:incidents": "node scripts/qualify-incident-stress.mjs"
   },
   "dependencies": {
     "better-sqlite3": "^12.11.1",

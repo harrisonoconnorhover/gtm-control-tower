@@ -838,3 +838,13 @@ storage identifiers only in the upgrade helper and its regression fixtures;
 they are compatibility data, not active product names. Stop the prior runner,
 update deployment settings and bookmarks, then restart the app and runner as
 described in the monitor guide. Historical Git commits remain intact.
+
+## October 10, 2026 — Incident handling and bounded execution
+
+Keep the existing monitor and Safe Import execution boundaries. Add an account-scoped incident layer above observations and native events, version business expectations explicitly, and preserve observed blank versus unavailable values. Group related changes, retain prior decisions and planned exceptions, and show incomplete or stale coverage. Native event actors describe their event; a later fresh read does not prove that actor caused its state. Baselines establish current state without inventing history.
+
+Expand reads to companies/accounts and deals/opportunities while keeping their mutations unsupported. Repair claim budgets and repeated-reversal pauses contain Control Tower's own narrow whitespace recipe. Commit notification intent with incident/finding/repair transitions; forward through the existing optional Slack queue. Investigators have a separate preparation-only credential. Optional model explanations cite bounded evidence and cannot approve, run code or expand recipe authority. No additional framework or always-on model service is needed.
+
+Replace whole-file Safe Import execution with at most ten records per invocation and a between-record time budget. Claim pending rows atomically under a fenced lease; never replay sending/unknown rows. Continue only within the original account/workspace/review scope and approval expiry. Local D1 fixture measurements qualify the bounded storage path against a simulated 1,000-call budget; they do not qualify hosted CRM execution or a 50-call plan.
+
+Generate a reproducible fictional dataset rather than reuse unlabelled real CRM exports. Independent scenario labels cover 600 contacts, 350 companies and 400 deals per provider, plus 200 Salesforce leads. Stress the production worker and SQLite path with controlled timing, losses, permission failures and concurrent workers. Report clean controls, missed labels and false positives as fixture results, not general-world accuracy.

@@ -16,7 +16,7 @@ afterEach(() => vi.unstubAllGlobals());
 
 describe('Salesforce Monitor native adapter', () => {
   it('pages both object types using stable IDs and a frozen SystemModstamp window', async () => {
-    const fetcher = vi.fn()
+    const fetcher = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>(async () => result([]))
       .mockResolvedValueOnce(result(Array.from({ length: 50 }, (_, i) => native('Lead', i + 1))))
       .mockResolvedValueOnce(result([]))
       .mockResolvedValueOnce(result([native('Contact')]));

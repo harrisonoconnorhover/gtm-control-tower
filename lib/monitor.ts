@@ -7,6 +7,8 @@ import {
   type MonitorAccount,
 } from './monitor-store';
 import { monitorAccountIdentity, monitorRecordKey } from './monitor-types';
+import { getIncidentCoverage, recordMonitorCoverage, flushIncidentNotifications, detectNativeEventReversals, queueIncidentRecheck, processIncidentRecheck, processDueIncidentExpectations, hasIncidentRecheck } from './crm-incidents';
+import { takePendingMonitorEvents, markMonitorEventProcessed, markMonitorEventFailed, markMonitorEventsReconciled, getMonitorEventStatus } from './monitor-events';
 import type { MonitorConfig, MonitorContact, MonitorFinding, MonitorOverview, MonitorRun } from './monitor-types';
 
 const INDEX_LAG_MS = 120_000;
@@ -19,11 +21,11 @@ export async function getMonitorOverview(accountId: string): Promise<MonitorOver
   const report = await readMonitorReport(accountId);
   const count = (status: MonitorFinding['status']) => report.counts.find((row) => row.status === status)?.count ?? 0;
   return {
-    ...identity, objectTypes: identity.provider === 'salesforce' ? ['Lead', 'Contact'] : ['Contact'], config: JSON.parse(account.config_json) as MonitorConfig, phase: account.phase,
+    ...identity, objectTypes: identity.provider === 'salesforce' ? ['Lead', 'Contact', 'Account', 'Opportunity'] : ['Contact', 'Company', 'Deal'], config: JSON.parse(account.config_json) as MonitorConfig, phase: account.phase,
     lastCheckedAt: account.last_checked_at, watermark: account.watermark, nextCheckAt: account.next_check_at,
     findings: report.findings, runs: report.runs,
     totals: { open: count('open'), inProgress: count('in_progress'), fixed: count('fixed'), resolved: count('resolved'), unknown: count('unknown') },
-    coverageNote: `${identity.provider === 'salesforce' ? 'Salesforce: unconverted Leads and Contacts; email format and text whitespace only. Lead Status, ownership, conversion, and Account changes require human investigation. ' : ''}${account.phase === 'baseline' ? 'Full record baseline is incomplete; saved pages continue on subsequent ticks.' : 'Record baseline complete; polling changed records.'} Each tick scans at most 50 records and attempts at most 5 repairs. Polling uses a 2-minute indexing lag, a 5-minute overlap, and a daily full reconciliation. It is not an event stream: intermediate changes and archived/deleted records are outside coverage.${identity.provider === 'salesforce' ? ' Converted Leads leave the scan; their existing findings need human review.' : ''} This report shows up to 100 findings and 25 recent runs; totals include all saved findings.`,
+    coverageNote: `${identity.provider === 'salesforce' ? 'Salesforce: unconverted Leads, Contacts, Accounts, and Opportunities, subject to readable object and field permissions. Only supported person text whitespace repairs may run automatically. ' : ''}${account.phase === 'baseline' ? 'Full record baseline is incomplete; saved pages continue on subsequent ticks.' : 'Record baseline complete; polling changed records.'} Each tick polls at most 50 records, refreshes at most 10 queued native events, and attempts at most 5 repairs within the account repair budgets. Polling uses a 2-minute indexing lag, a 5-minute overlap, and a daily full reconciliation. Optional native event intake schedules fresh reads; it cannot reconstruct intermediate values. Deleted records and replay gaps require reconciliation.${identity.provider === 'salesforce' ? ' Converted Leads leave the scan; their existing findings need human review.' : ''} This report shows up to 100 findings and 25 recent runs; totals include all saved findings.`,
   };
 }
 
@@ -49,7 +51,9 @@ export async function triageMonitorFinding(accountId: string, input: { id: strin
 
 /** Routes supply a natively verified account identity and the matching native source; tests may supply fixtures. */
 export async function tickMonitor(accountId: string, token: string, options: { force?: boolean; source?: MonitorSource } = {}): Promise<MonitorOverview> {
-  const account = await claimMonitorTick(accountId, options.force === true);
+  // Event hints wake the next runner poll; the account lease still enforces monitoring opt-in.
+  const readyEvents = await takePendingMonitorEvents(accountId,1);
+  const account = await claimMonitorTick(accountId, options.force === true || readyEvents.length>0);
   if (!account?.lease_id) return getMonitorOverview(accountId);
   const leaseId = account.lease_id;
   const config = JSON.parse(account.config_json) as MonitorConfig;
@@ -70,6 +74,42 @@ export async function tickMonitor(accountId: string, token: string, options: { f
     }
     if (account.phase === 'baseline' && !account.baseline_started_at) account.baseline_started_at = new Date().toISOString();
     if (account.phase === 'changes' && !account.window_end) account.window_end = new Date(Date.now() - INDEX_LAG_MS).toISOString();
+    const capabilities = source.capabilities ? await source.capabilities() : [];
+    const priorCoverage=await getIncidentCoverage(accountId);
+    const scopeExpanded=capabilities.some(capability=>capability.status!=='unavailable'&&(!priorCoverage.objectTypes.includes(capability.objectType)
+      || priorCoverage.capabilities?.find(previous=>previous.objectType===capability.objectType)?.missingFields.some(field=>capability.fields.includes(field))));
+    // An older object/field may not appear in the change window after access is restored. Rebaseline before declaring full coverage.
+    if(scopeExpanded&&(account.phase==='changes'||priorCoverage.lastCheckedAt)) startBaseline(account);
+    const coverageIssues = capabilities.filter(item => item.status !== 'available').map(item => `${item.objectType}: ${item.detail}`);
+    const nativeEvents = await takePendingMonitorEvents(accountId, 10);
+    // Inspect retained native values before any repair. Current reads can legitimately miss an intervening return.
+    await detectNativeEventReversals(accountId,nativeEvents.filter(event=>event.recordId).map(event=>monitorRecordKey({id:event.recordId!,provider:event.provider,objectType:event.objectType})),leaseId);
+    for (const event of nativeEvents) {
+      await assertMonitorLease(accountId, leaseId);
+      if (event.kind !== 'refresh' || !event.recordId) {
+        coverageIssues.push(event.reason ?? `Native ${event.kind} event requires a new baseline.`);
+        startBaseline(account);
+        await recordMonitorCoverage(accountId,{status:'degraded',phase:'baseline',scanned:run.scanned,error:coverageIssues.join(' ').slice(0,1000)});
+        await markMonitorEventProcessed(accountId,event.id);
+        continue;
+      }
+      try {
+        const current = await source.read(event.recordId, event.objectType);
+        if (current.id !== event.recordId || (current.objectType ?? 'Contact') !== event.objectType || (current.provider ?? 'hubspot') !== identity.provider) throw new Error('Native event read returned a different record or provider.');
+        if (current.coverage?.length) coverageIssues.push(...current.coverage);
+        const contact = {...current,source:{...event.source,occurredAt:event.occurredAt}};
+        const previous = await getMonitorSnapshot(accountId,monitorRecordKey(contact));
+        if (!previous || Date.parse(previous.contact.updatedAt) <= Date.parse(contact.updatedAt)) {
+          const inspected=inspectMonitorContact(contact,previous);
+          const saved=await saveMonitorObservation(accountId,leaseId,inspected.snapshot,monitorContactLabel(contact),inspected.issues,config.defaultAssignee);
+          run.scanned+=1; run.opened+=saved.opened;
+        }
+        await markMonitorEventProcessed(accountId,event.id);
+      } catch (error) {
+        await markMonitorEventFailed(accountId,event.id,error instanceof Error ? error.message : 'Native read failed.');
+        coverageIssues.push(`A queued ${event.objectType} refresh could not be read: ${error instanceof Error ? error.message : 'Native read failed.'}`);
+      }
+    }
     run.phase = account.phase;
     // Freeze the window before requesting a page so a restarted worker uses the same bounds.
     await checkpointMonitor(account, leaseId);
@@ -88,8 +128,9 @@ export async function tickMonitor(accountId: string, token: string, options: { f
     }
     const inspectedIds = new Set<string>();
     for (const contact of page.contacts) {
+      if (contact.coverage?.length) coverageIssues.push(...contact.coverage);
       await assertMonitorLease(accountId, leaseId);
-      if ((contact.provider ?? 'hubspot') !== identity.provider || (identity.provider === 'salesforce' && !['Lead', 'Contact'].includes(contact.objectType ?? ''))) {
+      if ((contact.provider ?? 'hubspot') !== identity.provider || (identity.provider === 'salesforce' ? !['Lead', 'Contact', 'Account', 'Opportunity'].includes(contact.objectType ?? '') : !['Contact', 'Company', 'Deal'].includes(contact.objectType ?? 'Contact'))) {
         throw new Error('Monitor record does not match the connected provider and object scope.');
       }
       const previous = await getMonitorSnapshot(accountId, monitorRecordKey(contact));
@@ -124,6 +165,8 @@ export async function tickMonitor(accountId: string, token: string, options: { f
       if (account.phase === 'baseline') {
         account.watermark = new Date(Date.parse(account.baseline_started_at!) - INDEX_LAG_MS).toISOString();
         account.last_baseline_at = finishedAt;
+        await markMonitorEventsReconciled(accountId, account.baseline_started_at!);
+        await queueIncidentRecheck(accountId,account.baseline_started_at!);
         account.phase = 'changes';
         account.window_end = null;
         account.next_check_at = new Date(Date.now() + 1000).toISOString();
@@ -136,6 +179,17 @@ export async function tickMonitor(accountId: string, token: string, options: { f
     if (config.automaticRepairs && (await getPendingMonitorRepairs(accountId, 1)).length) account.next_check_at = new Date(Date.now() + 1000).toISOString();
     account.last_checked_at = finishedAt;
     await checkpointMonitor(account, leaseId);
+    const eventStatus=await getMonitorEventStatus(accountId);
+    if(eventStatus.pending) coverageIssues.push(`${eventStatus.pending} native events are awaiting a fresh read.`);
+    if(eventStatus.held) coverageIssues.push(`${eventStatus.held} native events are held after repeated read failures.`);
+    if(eventStatus.streams.some(stream=>stream.needsReconciliation)) coverageIssues.push('A native event gap requires a complete baseline reconciliation.');
+    await recordMonitorCoverage(accountId,{status:coverageIssues.length?'degraded':'healthy',phase:account.phase,observedAt:finishedAt,scanned:run.scanned,
+      baselineStartedAt:account.baseline_started_at??undefined,staleAfterSeconds:Math.max(900,config.intervalSeconds*3),error:coverageIssues.length?coverageIssues.join(' ').slice(0,1000):undefined,
+      ...(capabilities.length?{capabilities,objectTypes:capabilities.filter(item=>item.status==='available'||item.status==='partial').map(item=>item.objectType)}:{})});
+    await processIncidentRecheck(accountId,50,leaseId);
+    const dueExpectationsRemain=await processDueIncidentExpectations(accountId,leaseId);
+    const readyNativeRemain=(await takePendingMonitorEvents(accountId,1)).length>0;
+    if(readyNativeRemain || dueExpectationsRemain || (!coverageIssues.length && account.phase==='changes' && await hasIncidentRecheck(accountId))) {account.next_check_at=new Date(Date.now()+1000).toISOString();await checkpointMonitor(account,leaseId);}
     run.status = 'completed'; run.finishedAt = finishedAt;
     await saveMonitorRun(run, leaseId);
   } catch (error) {
@@ -145,9 +199,12 @@ export async function tickMonitor(accountId: string, token: string, options: { f
     account.last_checked_at = run.finishedAt;
     if (!account.next_check_at || account.next_check_at <= run.startedAt) account.next_check_at = new Date(Date.now() + config.intervalSeconds * 1000).toISOString();
     await checkpointMonitor(account, leaseId).catch(() => undefined);
+    const previousCoverage=await getIncidentCoverage(accountId);
+    await recordMonitorCoverage(accountId,{status:'degraded',phase:account.phase,observedAt:run.finishedAt,scanned:run.scanned,error:run.error,objectTypes:previousCoverage.objectTypes,staleAfterSeconds:Math.max(900,config.intervalSeconds*3)});
     await saveMonitorRun(run, leaseId);
   } finally {
     await releaseMonitorTick(accountId, leaseId);
+    await flushIncidentNotifications().catch(() => undefined);
   }
   return getMonitorOverview(accountId);
 }

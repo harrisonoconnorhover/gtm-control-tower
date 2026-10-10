@@ -6,7 +6,7 @@ const native = (id: string) => ({ id, updatedAt: '2026-10-01T12:00:00.000Z', pro
 
 describe('HubSpot monitor native adapter', () => {
   it('uses native list cursors then immutable-ID keyset change paging that repairs cannot shift', async () => {
-    const fetcher = vi.fn()
+    const fetcher = vi.fn<(url: string, init: { body: string }) => Promise<Response>>(async () => Response.json({ results: [], total: 0 }))
       .mockResolvedValueOnce(Response.json({ results: [native('10')], paging: { next: { after: 'native-cursor' } } }))
       .mockResolvedValueOnce(Response.json({ total: 3, results: [native('100'), native('101')], paging: { next: { after: '2' } } }))
       .mockResolvedValueOnce(Response.json({ total: 1, results: [native('102')] }));

@@ -123,6 +123,8 @@ function payload(events: EventRow[], app: string) {
 
 /** At most one digest is attempted per call. A lost response is held, never replayed. */
 export async function deliverSlackNotifications(): Promise<SlackNotificationStatus> {
+  const { flushIncidentNotifications } = await import('./crm-incidents');
+  await flushIncidentNotifications();
   const config = configuration();
   if (!config.webhook) return getSlackNotificationStatus();
   const db = await database();

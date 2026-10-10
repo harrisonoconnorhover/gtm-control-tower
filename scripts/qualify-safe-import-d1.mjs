@@ -19,7 +19,7 @@ import { env } from 'cloudflare:workers';
 import { getDatabase } from './db/index';
 import { createWorkspace } from './lib/workspace-store';
 import { saveSafeImportReview, getSafeImportReview, claimSafeImportExecution, getSafeImportExecution, updateSafeImportExecution } from './lib/safe-import-store';
-import { executeSafeImportReview, reconcileSafeImportExecution } from './lib/safe-import-execution';
+import { executeSafeImportReview, continueSafeImportExecution, reconcileSafeImportExecution } from './lib/safe-import-execution';
 import { safeImportReviewFixture } from './tests/fixtures/safe-import-review';
 
 let metrics = { bindingCalls: 0, sqlStatements: 0 };
@@ -117,16 +117,16 @@ export default { async fetch(request) {
       const recovered = await reconcileSafeImportExecution(review, loaded, crm.dependencies);
       output = { writes: crm.writes, before: loaded.records.slice(0, 3).map((row) => row.status),
         after: recovered.records.slice(0, 3).map((row) => row.status),
-        held: recovered.records.filter((row) => row.status === 'held').length, status: recovered.status,
+        held: recovered.records.filter((row) => row.status === 'held').length, pending: recovered.records.filter((row) => row.status === 'pending').length, status: recovered.status,
         verified: recovered.records.filter((row) => row.verification?.status === 'verified').length };
-    } else if (input.action === 'execute') {
-      const review = await seed(input.count ?? 99), crm = fakeCrm(review);
+    } else if (input.action === 'execute' || input.action === 'continue') {
+      const review = input.action === 'execute' ? await seed(input.count ?? 99) : await getSafeImportReview(input.workspaceId, input.reviewId), crm = fakeCrm(review);
       metrics = { bindingCalls: 0, sqlStatements: 0 }; budget = input.budget ?? null;
       let error = null, result = null;
-      try { result = await executeSafeImportReview(review, crm.dependencies); } catch (failure) { error = failure.message; }
+      try { result = await (input.action === 'execute' ? executeSafeImportReview : continueSafeImportExecution)(review, crm.dependencies); } catch (failure) { error = failure.message; }
       const counted = { ...metrics }; budget = null;
       const saved = await getSafeImportExecution(review.workspaceId, review.id);
-      output = { ...counted, fakeCrmWrites: crm.writes, error, status: result?.status ?? saved?.status,
+      output = { ...counted, workspaceId: review.workspaceId, reviewId: review.id, fakeCrmWrites: crm.writes, error, status: result?.status ?? saved?.status,
         verified: saved?.records.filter((row) => row.verification?.status === 'verified').length ?? 0,
         durableStatuses: saved?.records.reduce((counts, row) => ({ ...counts, [row.status]: (counts[row.status] ?? 0) + 1 }), {}) ?? {} };
     } else throw new Error('Unsupported isolated qualification action.');
@@ -161,6 +161,18 @@ export async function runSafeImportD1Qualification({ maxStorage = false } = {}) 
     assert.equal(response.status, 200, JSON.stringify(body));
     return body;
   }
+  async function completeExecution(budget) {
+    const chunks = [await call({ action: 'execute', count: 99, budget })];
+    while (!chunks.at(-1).error && chunks.at(-1).status === 'running' && chunks.length < 20) {
+      const last = chunks.at(-1);
+      chunks.push(await call({ action: 'continue', workspaceId: last.workspaceId, reviewId: last.reviewId, budget }));
+    }
+    const last = chunks.at(-1);
+    return { ...last, sqlStatements: chunks.reduce((sum, chunk) => sum + chunk.sqlStatements, 0), bindingCalls: chunks.reduce((sum, chunk) => sum + chunk.bindingCalls, 0),
+      maxInvocationBindingCalls: Math.max(...chunks.map((chunk) => chunk.bindingCalls)),
+      maxInvocationWrites: Math.max(...chunks.map((chunk) => chunk.fakeCrmWrites)),
+      fakeCrmWrites: chunks.reduce((sum, chunk) => sum + chunk.fakeCrmWrites, 0), chunks: chunks.length };
+  }
   try {
     const database = await worker.getD1Database('DB');
     const migrationFiles = (await readdir(join(root, 'drizzle'))).filter((name) => /^\d+.*\.sql$/.test(name)).sort();
@@ -182,10 +194,10 @@ export async function runSafeImportD1Qualification({ maxStorage = false } = {}) 
     assert.equal(recovery.writes, 0);
     assert.deepEqual(recovery.before, ['sending', 'unknown', 'accepted']);
     assert.deepEqual(recovery.after, ['unknown', 'unknown', 'accepted']);
-    assert.equal(recovery.held, 103);
-    const execution = await call({ action: 'execute', count: 99 });
-    const freeBudget = await call({ action: 'execute', count: 99, budget: 50 });
-    const paidBudget = await call({ action: 'execute', count: 99, budget: 1000 });
+    assert.equal(recovery.held, 0); assert.equal(recovery.pending, 103);
+    const execution = await completeExecution();
+    const freeBudget = await completeExecution(50);
+    const paidBudget = await completeExecution(1000);
     const maxReview = maxStorage ? await call({ action: 'seed', count: 5000 }) : null;
     return { mode: 'local actual D1 / workerd', noRemoteResources: true, migrations: migrationFiles,
       review: seed, concurrentClaims: { winners: 1, sameExecution: true }, cas, recovery,
@@ -236,6 +248,18 @@ export async function runRemoteSafeImportD1Qualification(configPath, { recoveryS
     const result = await response.json();
     assert.equal(response.status, 200, JSON.stringify(result)); return result;
   }
+  async function completeExecution(budget) {
+    const chunks = [await call({ action: 'execute', count: 99, budget })];
+    while (!chunks.at(-1).error && chunks.at(-1).status === 'running' && chunks.length < 20) {
+      const last = chunks.at(-1);
+      chunks.push(await call({ action: 'continue', workspaceId: last.workspaceId, reviewId: last.reviewId, budget }));
+    }
+    const last = chunks.at(-1);
+    return { ...last, sqlStatements: chunks.reduce((sum, chunk) => sum + chunk.sqlStatements, 0), bindingCalls: chunks.reduce((sum, chunk) => sum + chunk.bindingCalls, 0),
+      maxInvocationBindingCalls: Math.max(...chunks.map((chunk) => chunk.bindingCalls)),
+      maxInvocationWrites: Math.max(...chunks.map((chunk) => chunk.fakeCrmWrites)),
+      fakeCrmWrites: chunks.reduce((sum, chunk) => sum + chunk.fakeCrmWrites, 0), chunks: chunks.length };
+  }
   try {
     await start();
     if (recoverySeed) {
@@ -259,8 +283,8 @@ export async function runRemoteSafeImportD1Qualification(configPath, { recoveryS
     await stop(); await start();
     const recovery = await call({ action: 'recover', ...seed });
     assert.equal(recovery.writes, 0); assert.deepEqual(recovery.after, ['unknown', 'unknown', 'accepted']);
-    assert.equal(recovery.held, 103);
-    const execution = await call({ action: 'execute', count: 99 });
+    assert.equal(recovery.held, 0); assert.equal(recovery.pending, 103);
+    const execution = await completeExecution();
     assert.equal(execution.fakeCrmWrites, 99); assert.equal(execution.verified, 99); assert.equal(execution.error, null);
     return { mode: 'cloud D1 / local Worker through remote binding', noPublicDeployment: true,
       cloudDatabaseId: config.d1_databases.find((binding) => binding.binding === 'DB').database_id,

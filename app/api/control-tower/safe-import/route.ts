@@ -3,7 +3,7 @@ import { getWorkspace, persistenceEnabled } from '@/lib/workspace-store';
 import { readCrmAccountIdentity, sameCrmAccount } from '@/lib/crm-account';
 import { buildSafeImportReview, safeImportEvidenceFingerprint, safeImportWorkspaceFingerprint } from '@/lib/safe-import-review-server';
 import { getSafeImportReview, getLatestSafeImportReview, saveSafeImportReview, getSafeImportExecution } from '@/lib/safe-import-store';
-import { executeSafeImportReview, reconcileSafeImportExecution } from '@/lib/safe-import-execution';
+import { executeSafeImportReview, reconcileSafeImportExecution, continueSafeImportExecution } from '@/lib/safe-import-execution';
 
 const noStore = { 'Cache-Control': 'no-store' };
 const respond = (value: unknown, status = 200) => Response.json(value, { status, headers: noStore });
@@ -18,7 +18,7 @@ export async function POST(request: Request) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) return respond({ error: 'Choose a Safe Import action.' }, 400);
   const payload = body as Record<string, unknown>;
   if (typeof payload.workspaceId !== 'string' || !payload.workspaceId
-    || !['prepare', 'approve', 'recover', 'load'].includes(String(payload.action))
+    || !['prepare', 'approve', 'recover', 'load', 'continue'].includes(String(payload.action))
     || Object.keys(payload).some((key) => !['action', 'workspaceId', 'reviewId'].includes(key))) {
     return respond({ error: 'Submit only the action, saved workspace ID and review ID. Import settings and plans must be saved server-side.' }, 400);
   }
@@ -50,8 +50,12 @@ export async function POST(request: Request) {
       if (!execution) return respond({ error: 'No execution was started for this review. Prepare or approve a current review.' }, 409);
       return respond({ review, execution: await reconcileSafeImportExecution(review, execution) });
     }
+    if (payload.action === 'continue') {
+      if (!execution) return respond({ error: 'A saved approval is required before continuation.' }, 409);
+      return respond({ review, execution: await continueSafeImportExecution(review) }, 202);
+    }
     // A duplicate click returns durable progress even after expiry or workspace edits.
-    // It never resumes an interrupted job or creates another execution.
+    // Only the separate bounded worker continues pending rows under this approval.
     if (execution) return respond({ review, execution }, 202);
     if (!review.complete || review.rows.some((row) => row.status === 'unresolved')) return respond({ error: 'The whole-file review is incomplete. Resolve lookup failures and prepare review again before approval.' }, 409);
     if (!review.counts['proposed-update']) return respond({ error: 'This review has no contact updates to approve.' }, 409);

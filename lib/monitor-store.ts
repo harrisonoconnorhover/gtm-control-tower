@@ -1,8 +1,9 @@
 import { getDatabase, type DatabaseAdapter } from '@/db';
 import { MONITOR_DEFAULT_CONFIG, monitorAccountIdentity, monitorRecordKey, type MonitorConfig, type MonitorFinding, type MonitorRun } from './monitor-types';
 import { validMonitorEmail, type MonitorIssue, type MonitorSnapshot } from './monitor-rules';
-import { notifyAssignment, notifyMonitorFailure, notifyMonitorObservation, notifyMonitorRepair } from './operation-notifications';
+import { monitorFailureNotification, monitorObservationNotifications, monitorRepairNotification } from './operation-notifications';
 import { migrateMonitorStorage } from './monitor-migration';
+import { checkIncidentRepairBudget, getIncidentPolicy, incidentDatabase, ingestObservation, notificationIntent, flushIncidentNotifications, getRepairControl } from './crm-incidents';
 
 export type MonitorAccount = {
   account_id: string; config_json: string; phase: 'baseline' | 'changes'; cursor: string | null;
@@ -52,6 +53,7 @@ export async function monitorDatabase(): Promise<DatabaseAdapter> {
     db.prepare('CREATE INDEX IF NOT EXISTS idx_monitor_runs_account ON monitor_runs(account_id, started_at)'),
   ])).then(() => undefined).catch((error) => { schemaPromise = null; throw error; });
   await schemaPromise;
+  await incidentDatabase();
   return db;
 }
 
@@ -92,8 +94,8 @@ export async function claimMonitorTick(accountId: string, force: boolean): Promi
       .bind(accountId, accountId),
     db.prepare(`UPDATE monitor_repairs SET state = 'unknown', finished_at = ?, error = 'Worker interrupted; remote outcome unknown.'
       WHERE account_id = ? AND state = 'sending'`).bind(now, accountId),
+    ...interruptedRepairs.results.map((repair) => notificationIntent(db, monitorRepairNotification(accountId, repair.finding_id, repair.id, 'unknown'))),
   ]);
-  for (const repair of interruptedRepairs.results) await notifyMonitorRepair(accountId, repair.finding_id, repair.id, 'unknown');
   const interrupted = await db.prepare('SELECT payload_json FROM monitor_runs WHERE account_id = ? ORDER BY started_at DESC LIMIT 1').bind(accountId).first<{ payload_json: string }>();
   if (interrupted) {
     const run = JSON.parse(interrupted.payload_json) as MonitorRun;
@@ -137,7 +139,11 @@ export async function getMonitorSnapshot(accountId: string, contactId: string): 
 export async function saveMonitorObservation(accountId: string, leaseId: string, snapshot: MonitorSnapshot, label: string, issues: MonitorIssue[], assignee: string): Promise<{ findings: MonitorFinding[]; opened: number }> {
   const db = await monitorDatabase();
   const now = new Date().toISOString();
+  const account = await getMonitorAccount(accountId);
+  const observation = await ingestObservation(accountId,snapshot.contact,{phase:account.phase,leaseId});
   const previous = await getContactFindings(accountId, monitorRecordKey(snapshot.contact));
+  if (observation.reason === 'ambiguous_timestamp' || observation.reason === 'out_of_order') return {findings:previous,opened:0};
+  const ids = new Map(issues.map(issue => [issue.rule, previous.find(f => f.rule === issue.rule)?.id ?? crypto.randomUUID()]));
   const statements = issues.map((issue) => db.prepare(`INSERT INTO monitor_findings
     (id, account_id, contact_id, rule, status, assignee, first_seen_at, last_seen_at, evidence_json, auto_eligible)
     SELECT ?, ?, ?, ?, 'open', ?, ?, ?, ?, ? WHERE ${leasePredicate}
@@ -145,7 +151,7 @@ export async function saveMonitorObservation(accountId: string, leaseId: string,
       status = CASE WHEN monitor_findings.status IN ('fixed', 'resolved') THEN 'open' ELSE monitor_findings.status END,
       occurrences = monitor_findings.occurrences + CASE WHEN monitor_findings.status IN ('fixed', 'resolved') THEN 1 ELSE 0 END,
       last_seen_at = excluded.last_seen_at, resolved_at = NULL, evidence_json = excluded.evidence_json, auto_eligible = excluded.auto_eligible`)
-    .bind(crypto.randomUUID(), accountId, monitorRecordKey(snapshot.contact), issue.rule, assignee, now, now,
+    .bind(ids.get(issue.rule), accountId, monitorRecordKey(snapshot.contact), issue.rule, assignee, now, now,
       JSON.stringify({ ...issue, contactLabel: label, provider: snapshot.contact.provider ?? 'hubspot', objectType: snapshot.contact.objectType ?? 'Contact' }),
       issue.rule === 'text_whitespace' && Object.values(issue.after).every(Boolean) && validMonitorEmail(snapshot.contact.properties.email ?? '') ? 1 : 0,
       accountId, leaseId, now));
@@ -159,10 +165,20 @@ export async function saveMonitorObservation(accountId: string, leaseId: string,
     SELECT ?, ?, ? WHERE ${leasePredicate}
     ON CONFLICT(account_id, contact_id) DO UPDATE SET payload_json = excluded.payload_json`)
     .bind(accountId, monitorRecordKey(snapshot.contact), JSON.stringify(snapshot), accountId, leaseId, now));
+  const predicted: MonitorFinding[] = issues.map(issue => {
+    const old = previous.find(f => f.rule === issue.rule);
+    return { ...old, ...issue, id: ids.get(issue.rule)!, provider: snapshot.contact.provider ?? 'hubspot', objectType: snapshot.contact.objectType ?? 'Contact',
+      accountId: monitorAccountIdentity(accountId).accountId, contactId: snapshot.contact.id, contactLabel: label,
+      status: !old || ['fixed','resolved'].includes(old.status) ? 'open' : old.status,
+      occurrences: old ? old.occurrences + (['fixed','resolved'].includes(old.status) ? 1 : 0) : 1,
+      assignee: old?.assignee ?? assignee, note: old?.note ?? '', firstSeenAt: old?.firstSeenAt ?? now,lastSeenAt:now,resolvedAt:null,repairError:old?.repairError??null };
+  });
+  for (const old of previous) if (!issues.some(i => i.rule===old.rule) && ['open','in_progress'].includes(old.status)) predicted.push({...old,status:'resolved',resolvedAt:now});
+  statements.push(...monitorObservationNotifications(previous,predicted).map(event => notificationIntent(db,event,leasePredicate,[accountId,leaseId,now])));
   await db.batch(statements);
   await assertMonitorLease(accountId, leaseId);
   const findings = await getContactFindings(accountId, monitorRecordKey(snapshot.contact));
-  await notifyMonitorObservation(previous, findings);
+  await flushIncidentNotifications().catch(() => undefined);
   return {
     findings,
     opened: issues.filter((issue) => !previous.some((finding) => finding.rule === issue.rule && !['resolved', 'fixed'].includes(finding.status))).length,
@@ -177,6 +193,7 @@ export async function getContactFindings(accountId: string, contactId: string): 
 
 export async function getPendingMonitorRepairs(accountId: string, limit = 5): Promise<{ finding: MonitorFinding; snapshot: MonitorSnapshot }[]> {
   const db = await monitorDatabase();
+  if ((await getRepairControl(accountId)).paused) return [];
   const rows = await db.prepare(`SELECT f.*, s.payload_json AS snapshot_json FROM monitor_findings f
     JOIN monitor_snapshots s ON s.account_id = f.account_id AND s.contact_id = f.contact_id
     WHERE f.account_id = ? AND f.rule = 'text_whitespace' AND f.status = 'open' AND f.auto_eligible = 1
@@ -189,14 +206,20 @@ export async function getPendingMonitorRepairs(accountId: string, limit = 5): Pr
 export async function claimMonitorRepair(accountId: string, leaseId: string, finding: MonitorFinding): Promise<string | null> {
   const db = await monitorDatabase();
   const now = new Date().toISOString();
+  const recordKey = monitorRecordKey({id:finding.contactId,provider:finding.provider,objectType:finding.objectType});
+  if (!await checkIncidentRepairBudget(accountId,recordKey)) return null;
+  const policy = await getIncidentPolicy(accountId);
   const id = crypto.randomUUID();
   const row = await db.prepare(`INSERT INTO monitor_repairs
     (id, account_id, finding_id, contact_id, lease_id, state, before_json, after_json, started_at)
     SELECT ?, ?, ?, ?, ?, 'sending', ?, ?, ? WHERE ${leasePredicate}
     AND EXISTS (SELECT 1 FROM monitor_findings WHERE id = ? AND account_id = ? AND status = 'open')
-    AND NOT EXISTS (SELECT 1 FROM monitor_repairs WHERE account_id = ? AND finding_id = ? AND state IN ('sending', 'unknown')) RETURNING id`)
-    .bind(id, accountId, finding.id, finding.provider === 'salesforce' ? `${finding.objectType}:${finding.contactId}` : finding.contactId, leaseId, JSON.stringify(finding.before), JSON.stringify(finding.after), now,
-      accountId, leaseId, new Date(Date.now() + 15_000).toISOString(), finding.id, accountId, accountId, finding.id).first<{ id: string }>();
+    AND NOT EXISTS (SELECT 1 FROM monitor_repairs WHERE account_id = ? AND finding_id = ? AND state IN ('sending', 'unknown'))
+    AND NOT EXISTS (SELECT 1 FROM crm_repair_control WHERE account_id = ? AND paused_at IS NOT NULL)
+    AND (SELECT COUNT(*) FROM monitor_repairs WHERE account_id = ? AND started_at >= ?) < ?
+    AND (SELECT COUNT(*) FROM monitor_repairs WHERE account_id = ? AND contact_id = ? AND started_at >= ?) < ? RETURNING id`)
+    .bind(id, accountId, finding.id, recordKey, leaseId, JSON.stringify(finding.before), JSON.stringify(finding.after), now,
+      accountId, leaseId, new Date(Date.now() + 15_000).toISOString(), finding.id, accountId, accountId, finding.id, accountId,accountId,new Date(Date.now()-3_600_000).toISOString(),policy.repairLimitPerHour,accountId,recordKey,new Date(Date.now()-86_400_000).toISOString(),policy.repairsPerRecordPerDay).first<{ id: string }>();
   if (!row) return null;
   await db.prepare(`UPDATE monitor_findings SET status = 'unknown', repair_error = 'Repair dispatched; waiting for verified readback.'
     WHERE id = ? AND account_id = ? AND ${leasePredicate}`).bind(finding.id, accountId, accountId, leaseId, now).run();
@@ -212,9 +235,8 @@ export async function finishMonitorRepair(accountId: string, leaseId: string, re
     db.prepare(`UPDATE monitor_findings SET status = ?, resolved_at = ?, repair_error = ? WHERE id = ? AND account_id = ? AND ${leasePredicate}
       AND EXISTS (SELECT 1 FROM monitor_repairs WHERE id = ? AND state = ?)`)
       .bind(state === 'verified' ? 'fixed' : 'unknown', state === 'verified' ? now : null, error, findingId, accountId, accountId, leaseId, now, repairId, state),
+    notificationIntent(db,monitorRepairNotification(accountId,findingId,repairId,state),`${leasePredicate} AND EXISTS (SELECT 1 FROM monitor_repairs WHERE id = ? AND account_id = ? AND state = ?)`,[accountId,leaseId,now,repairId,accountId,state]),
   ]);
-  const saved = await db.prepare('SELECT state FROM monitor_repairs WHERE id = ? AND account_id = ?').bind(repairId, accountId).first<{ state: string }>();
-  if (saved?.state === state) await notifyMonitorRepair(accountId, findingId, repairId, state);
 }
 
 export async function setMonitorFindingError(accountId: string, leaseId: string, findingId: string, error: string): Promise<void> {
@@ -225,32 +247,36 @@ export async function setMonitorFindingError(accountId: string, leaseId: string,
 
 export async function updateMonitorTriage(accountId: string, input: { id: string; status: 'open' | 'in_progress' | 'resolved'; assignee: string; note: string }): Promise<void> {
   const db = await monitorDatabase();
-  const row = await db.prepare(`UPDATE monitor_findings SET status = ?, assignee = ?, note = ?, resolved_at = ?
-    WHERE id = ? AND account_id = ? AND (status != ? OR assignee != ? OR note != ?)
-    AND NOT EXISTS (SELECT 1 FROM monitor_repairs WHERE finding_id = ? AND state = 'sending') RETURNING id`)
-    .bind(input.status, input.assignee, input.note, input.status === 'resolved' ? new Date().toISOString() : null, input.id, accountId, input.status, input.assignee, input.note, input.id).first();
-  if (!row) {
-    const saved = await db.prepare('SELECT status, assignee, note FROM monitor_findings WHERE id = ? AND account_id = ?')
-      .bind(input.id, accountId).first<{ status: string; assignee: string; note: string }>();
-    if (saved?.status === input.status && saved.assignee === input.assignee && saved.note === input.note) return;
-    throw new Error('Finding was not found in this account or has a repair in flight.');
-  }
+  const saved = await db.prepare('SELECT status, assignee, note FROM monitor_findings WHERE id = ? AND account_id = ?')
+    .bind(input.id, accountId).first<{ status: string; assignee: string; note: string }>();
+  if (saved?.status === input.status && saved.assignee === input.assignee && saved.note === input.note) return;
+  if (!saved || await db.prepare("SELECT id FROM monitor_repairs WHERE account_id=? AND finding_id=? AND state='sending'").bind(accountId,input.id).first()) throw new Error('Finding was not found in this account or has a repair in flight.');
   const { provider } = monitorAccountIdentity(accountId);
-  await notifyAssignment(provider, `/app/monitor?provider=${provider}&finding=${encodeURIComponent(input.id)}`, Boolean(input.assignee));
+  await db.batch([
+    notificationIntent(db,{key:`assignment:${crypto.randomUUID()}`,provider,title:'Operations follow-up updated',
+      summary:input.assignee?'An assignee or review decision changed. Open Control Tower to see the current owner and next step.':'This item needs an owner. Open Control Tower to review the next step.',
+      path:`/app/monitor?provider=${provider}&finding=${encodeURIComponent(input.id)}`},
+      "EXISTS (SELECT 1 FROM monitor_findings WHERE id=? AND account_id=? AND (status!=? OR assignee!=? OR note!=?)) AND NOT EXISTS (SELECT 1 FROM monitor_repairs WHERE finding_id=? AND state='sending')",[input.id,accountId,input.status,input.assignee,input.note,input.id]),
+    db.prepare(`UPDATE monitor_findings SET status = ?, assignee = ?, note = ?, resolved_at = ?
+      WHERE id = ? AND account_id = ? AND NOT EXISTS (SELECT 1 FROM monitor_repairs WHERE finding_id = ? AND state = 'sending')`)
+      .bind(input.status,input.assignee,input.note,input.status==='resolved'?new Date().toISOString():null,input.id,accountId,input.id),
+  ]);
+  await flushIncidentNotifications().catch(()=>undefined);
 }
 
 export async function saveMonitorRun(run: MonitorRun, leaseId: string): Promise<void> {
   const db = await monitorDatabase();
-  await db.prepare(`INSERT INTO monitor_runs (id, account_id, started_at, payload_json)
+  const now=new Date().toISOString();
+  const statements=[db.prepare(`INSERT INTO monitor_runs (id, account_id, started_at, payload_json)
     SELECT ?, ?, ?, ? WHERE ${leasePredicate}
     ON CONFLICT(id) DO UPDATE SET payload_json = excluded.payload_json`)
-    .bind(run.id, run.accountId, run.startedAt, JSON.stringify(run), run.accountId, leaseId, new Date().toISOString()).run();
+    .bind(run.id,run.accountId,run.startedAt,JSON.stringify(run),run.accountId,leaseId,now)];
   if (run.status === 'failed') {
-    const saved = await db.prepare('SELECT payload_json FROM monitor_runs WHERE id = ?').bind(run.id).first<{ payload_json: string }>();
     const completed = await db.prepare("SELECT id FROM monitor_runs WHERE account_id = ? AND json_extract(payload_json, '$.status') = 'completed' ORDER BY started_at DESC, rowid DESC LIMIT 1")
-      .bind(run.accountId).first<{ id: string }>();
-    if (saved?.payload_json === JSON.stringify(run)) await notifyMonitorFailure(run, completed?.id ?? 'initial');
+      .bind(run.accountId).first<{id:string}>();
+    statements.push(notificationIntent(db,await monitorFailureNotification(run,completed?.id??'initial'),leasePredicate,[run.accountId,leaseId,now]));
   }
+  await db.batch(statements);
 }
 
 export async function readMonitorReport(accountId: string): Promise<{ findings: MonitorFinding[]; runs: MonitorRun[]; counts: { status: MonitorFinding['status']; count: number }[] }> {
@@ -266,7 +292,7 @@ export async function readMonitorReport(accountId: string): Promise<{ findings: 
 
 function hydrateFinding(row: FindingRow): MonitorFinding {
   return {
-    provider: 'hubspot', objectType: 'Contact', ...JSON.parse(row.evidence_json), id: row.id, accountId: monitorAccountIdentity(row.account_id).accountId, contactId: row.contact_id.replace(/^(Lead|Contact):/, ''),
+    provider: 'hubspot', objectType: 'Contact', ...JSON.parse(row.evidence_json), id: row.id, accountId: monitorAccountIdentity(row.account_id).accountId, contactId: row.contact_id.replace(/^(Lead|Contact|Company|Deal|Account|Opportunity):/, ''),
     rule: row.rule, status: row.status, assignee: row.assignee, note: row.note,
     firstSeenAt: row.first_seen_at, lastSeenAt: row.last_seen_at, resolvedAt: row.resolved_at,
     occurrences: row.occurrences, repairError: row.repair_error,

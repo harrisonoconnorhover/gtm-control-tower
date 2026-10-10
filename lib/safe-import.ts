@@ -57,6 +57,9 @@ export type SafeImportExecution = {
   createdAt: string;
   updatedAt: string;
   status: 'running' | 'completed' | 'reconciliation-required';
+  /** Durable worker ownership; never changes the scope or deadline of approval. */
+  lease?: { token: string; expiresAt: string };
+  reconciliationCursor?: number;
   records: SafeImportExecutionRecord[];
 };
 

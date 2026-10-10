@@ -25,5 +25,8 @@ COPY --from=build /app/node_modules/acorn-loose /app/node_modules/acorn-loose
 COPY --from=build /app/node_modules/neo-async /app/node_modules/neo-async
 COPY --from=build /app/node_modules/webpack-sources /app/node_modules/webpack-sources
 COPY --from=build /app/scripts/monitor.mjs /app/scripts/monitor.mjs
+COPY --from=build /app/scripts/subscribe-salesforce-cdc.mjs /app/scripts/subscribe-salesforce-cdc.mjs
+COPY --from=build /app/scripts/relay-salesforce-cdc.mjs /app/scripts/relay-salesforce-cdc.mjs
+COPY --from=build /app/scripts/lib/salesforce-cdc.mjs /app/scripts/lib/salesforce-cdc.mjs
 EXPOSE 3000
 CMD ["node", "server.js"]

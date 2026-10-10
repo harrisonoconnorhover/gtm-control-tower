@@ -224,7 +224,7 @@ describe('durable Salesforce Monitor', () => {
     await enable(scope, true);
     const source = salesforceFixture([salesforceContact('Lead'), salesforceContact('Contact')], org);
     const report = await tickMonitor(scope, '', { source, force: true });
-    expect(report).toMatchObject({ provider: 'salesforce', accountId: org, totals: { fixed: 2 }, objectTypes: ['Lead', 'Contact'] });
+    expect(report).toMatchObject({ provider: 'salesforce', accountId: org, totals: { fixed: 2 }, objectTypes: ['Lead', 'Contact', 'Account', 'Opportunity'] });
     expect(report.findings.map((finding) => finding.objectType).sort()).toEqual(['Contact', 'Lead']);
     expect(source.patch.mock.calls).toContainEqual(['00Q000000000001', { company: 'Acme', jobtitle: 'Engineer' }, 'Lead']);
     expect(source.patch.mock.calls).toContainEqual(['003000000000001', { jobtitle: 'Engineer' }, 'Contact']);

@@ -197,7 +197,7 @@ try {
   await review().getByRole('heading', { name: 'Inspect every row before approving updates', exact: true }).scrollIntoViewIfNeeded();
   await page.screenshot({ path: `/tmp/gtm-${provider}-safe-import-mobile-viewport.png` });
   await review().getByRole('button', { name: approvalLabel, exact: true }).click();
-  await review().getByText(/The execution outcome is unknown or incomplete/).waitFor();
+  await review().getByText(/Saved work remains queued or needs reconciliation/).waitFor();
   assert(await review().getByRole('button', { name: approvalLabel, exact: true }).isDisabled());
   await page.evaluate(() => { for (const key of Object.keys(localStorage)) if (key.startsWith('gtm-control-tower-safe-import')) localStorage.removeItem(key); });
   await page.reload();

@@ -17,7 +17,7 @@ the task. When configured, [Slack notifications](slack-notifications.md) link to
 new work and changed follow-up decisions. See [Safe Import](safe-import.md).
 
 The queue combines the latest 50 Inbox uploads with up to 100 saved CRM Monitor
-findings for each connected provider. Existing CSV-lab workspaces are not backfilled
+findings for each connected provider, plus up to 100 incidents per saved account. Incident evidence remains available even when a native connection is down. Existing CSV-lab workspaces are not backfilled
 into this upload queue. Findings reuse CRM Monitor's durable account/object/rule
 identity and triage screens; no parallel finding or approval system is created.
 Each provider's connection error is shown independently. The page refreshes every
@@ -33,9 +33,7 @@ Import approval stays per review. CRM Monitor's narrowly defined repairs use the
 separate saved per-account opt-in.
 
 This version uses the existing shared operator key. Its optional Slack card shows
-delivery status and supports a test message. It adds no model, Slack approvals,
-automatic import approval, role-based team access or D1 deployment.
-The existing whole-file Safe Import hosted-execution limit remains open.
+delivery status and supports a test message. Slack approvals, automatic import approval, individual team identities and D1 deployment remain outside scope. The linked [incident view](incidents.md) optionally supports a model explanation and a separate preparation-only API credential. Safe Import now uses bounded continuations; local D1 fixture measurements are documented separately from hosted qualification.
 
 Run `npx vitest run tests/operations-inbox.test.ts`. Against an isolated local app,
 run `CONTROL_TOWER_BROWSER_BASE_URL=http://127.0.0.1:3197 node scripts/check-operations-inbox.mjs`

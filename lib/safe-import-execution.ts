@@ -4,7 +4,7 @@ import { readSalesforceRecordById, isSalesforcePersonId } from './crm-existing-s
 import { toHubSpotFieldPayload, toSalesforceFieldPayload } from './crm-field-mapping';
 import { portableCrmFieldNames, type CrmPlanRecord, type NativeCrmRecord } from './crm-workflow';
 import type { CrmAccountIdentity, SafeImportExecution, SafeImportReview, SafeImportVerification } from './safe-import';
-import { claimSafeImportExecution, updateSafeImportExecution } from './safe-import-store';
+import { claimSafeImportExecution, updateSafeImportExecution, claimSafeImportChunk, releaseSafeImportChunk, getSafeImportExecution } from './safe-import-store';
 import { getWorkspace } from './workspace-store';
 import { safeImportWorkspaceFingerprint } from './safe-import-review-server';
 import { notifyImportExecution } from './operation-notifications';
@@ -20,7 +20,10 @@ export type SafeImportExecutionDependencies = {
   assertWorkspace: () => Promise<void>;
 };
 
-/** Saved planner records are the only source of properties; no AI or upsert path. */
+export const SAFE_IMPORT_CHUNK_SIZE = 10;
+const CHUNK_TIME_MS = 20_000;
+
+/** Approval is unique and durable. Its first bounded chunk uses the same worker as continuations. */
 export async function executeSafeImportReview(
   review: SafeImportReview,
   overrides: Partial<SafeImportExecutionDependencies> = {},
@@ -36,45 +39,68 @@ export async function executeSafeImportReview(
     records: planned.map((record) => ({ contactId: record.contactId, nativeId: record.nativeId!, status: 'pending', error: null,
       ...(review.connectorId === 'salesforce' ? { objectType: record.matches[0].objectType } : {}) })),
   });
-  // Repeated requests observe the original job. Interrupted jobs never resume here.
+  // Duplicate approval never authorizes or triggers another chunk.
   if (!claim.claimed) return claim.execution;
-  let execution = claim.execution;
-  for (let index = 0; index < planned.length; index += 1) {
-    const record = planned[index];
-    try {
-      if (new Date(review.expiresAt).getTime() < deps.now().getTime()) throw new Error('The approved review expired before this record was sent. Prepare a new review.');
-      await requireAccount(review.account, deps);
-      const current = await deps.readRecord(record.nativeId!, record.matches[0].objectType);
-      if (!matchesBaseline(record, current)) throw new Error('The CRM identity or field values changed after review. No update was sent; prepare a new review.');
-      // A reread and a PATCH are separate operations, not atomic protection from external writers.
-      await requireAccount(review.account, deps);
-      await deps.assertWorkspace();
-      if (new Date(review.expiresAt).getTime() < deps.now().getTime()) throw new Error('The approved review expired during the CRM recheck. Prepare a new review.');
-    } catch (error) {
-      execution = await saveRecord(execution, index, { status: 'held', error: message(error, 'The CRM could not be rechecked. No update was sent.') }, deps);
-      continue;
-    }
-    // A failure to persist this transition prevents the HTTP write from starting.
-    execution = await saveRecord(execution, index, { status: 'sending', error: null }, deps);
-    let outcome: WriteOutcome;
-    try { outcome = await deps.writeRecord(record); }
-    catch { outcome = { status: 'unknown', error: 'The update response was lost. Outcome unknown; reconcile by reading the CRM. This update will not be resent.' }; }
-    execution = await saveRecord(execution, index, outcome, deps);
-    if (outcome.status === 'accepted' || outcome.status === 'unknown') {
-      const verification = await verifyRecord(review.account, record, deps);
-      execution = await saveRecord(execution, index, { verification }, deps);
-    }
-  }
-  const completed: SafeImportExecution = {
-    ...execution, updatedAt: deps.now().toISOString(),
-    status: execution.records.some((record) => record.status === 'unknown') ? 'reconciliation-required' : 'completed',
-  };
-  await deps.saveExecution(completed, execution);
-  await notifyImportExecution(review, completed);
-  return completed;
+  return continueSafeImportExecution(review, overrides);
 }
 
-/** Reads only. Seeing approved values cannot prove an interrupted write was accepted. */
+/** Only definitely unsent pending records can progress. This never creates an approval. */
+export async function continueSafeImportExecution(
+  review: SafeImportReview,
+  overrides: Partial<SafeImportExecutionDependencies> = {},
+): Promise<SafeImportExecution> {
+  const deps = dependencies(review, overrides);
+  // Expired queued records become held; the original authorization deadline never moves.
+  const planned = validateReview(review, deps.now(), true);
+  const claim = await claimSafeImportChunk(review, deps.now());
+  if (!claim.claimed) return claim.execution;
+  let execution = claim.execution;
+  try {
+    execution = await markAbandonedSending(execution, deps);
+    const started = deps.now().getTime();
+    let processed = 0;
+    for (let index = 0; index < execution.records.length; index += 1) {
+      const progress = execution.records[index];
+      const needsReadback = ['accepted', 'unknown'].includes(progress.status) && !progress.verification;
+      if (progress.status !== 'pending' && !needsReadback) continue;
+      if (processed >= SAFE_IMPORT_CHUNK_SIZE || (processed > 0 && deps.now().getTime() - started >= CHUNK_TIME_MS)) break;
+      processed += 1;
+      const record = matchingPlan(review, planned, execution.records[index]);
+      if (needsReadback) {
+        execution = await saveRecord(execution, index, { verification: await verifyRecord(review.account, record, deps) }, deps);
+        continue;
+      }
+      try {
+        if (Date.parse(review.expiresAt) <= deps.now().getTime()) throw new Error('The original approval expired before this record was sent. Prepare a new review.');
+        await requireAccount(review.account, deps);
+        const current = await deps.readRecord(record.nativeId!, record.matches[0].objectType);
+        if (!matchesBaseline(record, current)) throw new Error('The CRM identity or field values changed after review. No update was sent; prepare a new review.');
+        // A reread and a PATCH are separate operations, not atomic protection from external writers.
+        await requireAccount(review.account, deps);
+        await deps.assertWorkspace();
+        if (Date.parse(review.expiresAt) <= deps.now().getTime()) throw new Error('The approved review expired during the CRM recheck. Prepare a new review.');
+      } catch (error) {
+        execution = await saveRecord(execution, index, { status: 'held', error: message(error, 'The CRM could not be rechecked. No update was sent.') }, deps);
+        continue;
+      }
+      // This transaction compare-and-sets both the lease-bearing header and pending row.
+      // If a successor acquired the expired lease, the stale worker cannot start another write.
+      execution = await saveRecord(execution, index, { status: 'sending', error: null }, deps);
+      let outcome: WriteOutcome;
+      try { outcome = await deps.writeRecord(record); }
+      catch { outcome = { status: 'unknown', error: 'The update response was lost. Outcome unknown; reconcile by reading the CRM. This update will not be resent.' }; }
+      execution = await saveRecord(execution, index, outcome, deps);
+      if (outcome.status === 'accepted' || outcome.status === 'unknown') {
+        execution = await saveRecord(execution, index, { verification: await verifyRecord(review.account, record, deps) }, deps);
+      }
+    }
+    execution = await saveStatus(execution, deps);
+    if (execution.status !== 'running') await notifyImportExecution(review, execution);
+  } finally { await releaseSafeImportChunk(execution); }
+  return (await getSafeImportExecution(review.workspaceId, review.id))!;
+}
+
+/** Reads only, in bounded pages. Pending unsent records retain their original approval. */
 export async function reconcileSafeImportExecution(
   review: SafeImportReview,
   previous: SafeImportExecution,
@@ -85,44 +111,71 @@ export async function reconcileSafeImportExecution(
     throw new Error('The execution does not belong to this saved review and CRM account.');
   }
   await requireAccount(review.account, deps);
-  let execution = previous;
-  const planned = review.plans.flatMap((plan) => plan.records).filter((record) => record.operation === 'update');
-  for (let index = 0; index < execution.records.length; index += 1) {
-    const progress = execution.records[index];
-    const record = planned.find((candidate) => candidate.contactId === progress.contactId && candidate.nativeId === progress.nativeId
-      && candidate.matches[0]?.objectType === (progress.objectType ?? (review.connectorId === 'hubspot' ? 'contact' : undefined)));
-    if (!record) throw new Error('Execution progress does not match the saved review target.');
-    if (progress.status === 'pending') {
-      execution = await saveRecord(execution, index, { status: 'held', error: 'Execution stopped before this record was sent. Prepare a fresh review to update it.' }, deps);
-    } else if (progress.status === 'sending') {
-      execution = await saveRecord(execution, index, { status: 'unknown', error: 'The request may have reached the CRM. Readback observes values; it does not establish write acceptance. This update will not be resent.' }, deps);
+  const claim = await claimSafeImportChunk(review, deps.now());
+  if (!claim.claimed) return claim.execution;
+  let execution = claim.execution;
+  try {
+    execution = await markAbandonedSending(execution, deps);
+    const planned = review.plans.flatMap((plan) => plan.records).filter((record) => record.operation === 'update');
+    const started = deps.now().getTime();
+    let read = 0;
+    let cursor = execution.reconciliationCursor ?? 0;
+    for (; cursor < execution.records.length; cursor += 1) {
+      const progress = execution.records[cursor];
+      if (!['accepted', 'unknown'].includes(progress.status)) continue;
+      if (read >= SAFE_IMPORT_CHUNK_SIZE || (read > 0 && deps.now().getTime() - started >= CHUNK_TIME_MS)) break;
+      read += 1;
+      const record = matchingPlan(review, planned, progress);
+      execution = await saveRecord(execution, cursor, { verification: await verifyRecord(review.account, record, deps) }, deps);
     }
-    if (['accepted', 'unknown'].includes(execution.records[index].status)) {
-      execution = await saveRecord(execution, index, { verification: await verifyRecord(review.account, record, deps) }, deps);
-    }
-  }
-  const reconciled: SafeImportExecution = { ...execution, updatedAt: deps.now().toISOString(),
-    status: execution.records.some((record) => record.status === 'unknown') ? 'reconciliation-required' : 'completed' };
-  await deps.saveExecution(reconciled, execution);
-  await notifyImportExecution(review, reconciled);
-  return reconciled;
+    const next = { ...execution, reconciliationCursor: cursor < execution.records.length ? cursor : 0 };
+    await deps.saveExecution(next, execution);
+    execution = await saveStatus(next, deps);
+    if (execution.status !== 'running') await notifyImportExecution(review, execution);
+  } finally { await releaseSafeImportChunk(execution); }
+  return (await getSafeImportExecution(review.workspaceId, review.id))!;
+}
+
+async function markAbandonedSending(execution: SafeImportExecution, deps: SafeImportExecutionDependencies): Promise<SafeImportExecution> {
+  const records = execution.records.map((record) => record.status === 'sending'
+    ? { ...record, status: 'unknown' as const, error: 'The previous worker stopped after claiming this request. It may have reached the CRM. This update will not be resent.' } : record);
+  if (!execution.records.some((record) => record.status === 'sending')) return execution;
+  const next = { ...execution, records };
+  await deps.saveExecution(next, execution);
+  return next;
+}
+
+async function saveStatus(execution: SafeImportExecution, deps: SafeImportExecutionDependencies): Promise<SafeImportExecution> {
+  const next: SafeImportExecution = { ...execution, updatedAt: deps.now().toISOString(),
+    status: execution.records.some((record) => record.status === 'pending' || (['accepted', 'unknown'].includes(record.status) && !record.verification)) ? 'running'
+      : execution.records.some((record) => ['sending', 'unknown'].includes(record.status)) ? 'reconciliation-required' : 'completed' };
+  await deps.saveExecution(next, execution);
+  return next;
+}
+
+function matchingPlan(review: SafeImportReview, planned: CrmPlanRecord[], progress: SafeImportExecution['records'][number]): CrmPlanRecord {
+  const record = planned.find((candidate) => candidate.contactId === progress.contactId && candidate.nativeId === progress.nativeId
+    && candidate.matches[0]?.objectType === (progress.objectType ?? (review.connectorId === 'hubspot' ? 'contact' : undefined)));
+  if (!record) throw new Error('Execution progress does not match the saved review target.');
+  return record;
 }
 
 async function saveRecord(
   previous: SafeImportExecution, index: number, patch: Partial<SafeImportExecution['records'][number]>, deps: SafeImportExecutionDependencies,
 ): Promise<SafeImportExecution> {
   const records = previous.records.map((record, recordIndex) => recordIndex === index ? { ...record, ...patch } : record);
-  const execution = { ...previous, records, updatedAt: deps.now().toISOString() };
+  const execution = { ...previous, records, updatedAt: deps.now().toISOString(),
+    ...(previous.lease ? { lease: { ...previous.lease, expiresAt: new Date(deps.now().getTime() + 300_000).toISOString() } } : {}) };
   await deps.saveExecution(execution, previous);
   return execution;
 }
 
-function validateReview(review: SafeImportReview, now: Date): CrmPlanRecord[] {
+function validateReview(review: SafeImportReview, now: Date, allowExpired = false): CrmPlanRecord[] {
   if (!['hubspot', 'salesforce'].includes(review.connectorId) || review.account.connectorId !== review.connectorId
     || !(review.connectorId === 'hubspot' ? /^\d+$/.test(review.account.accountId) : /^00D(?:[A-Za-z0-9]{12}|[A-Za-z0-9]{15})$/.test(review.account.accountId))
     || !review.complete || review.rows.some((row) => row.status === 'unresolved')
     || review.recordMode !== 'update-existing' || review.updatePolicy.mode !== 'fill-empty' || review.updatePolicy.clearBlanks
-    || !Number.isFinite(new Date(review.expiresAt).getTime()) || new Date(review.expiresAt).getTime() < now.getTime()) {
+    || !Number.isFinite(new Date(review.expiresAt).getTime()) || (!allowExpired && new Date(review.expiresAt).getTime() <= now.getTime())) {
     throw new Error('A complete, unexpired update-only review for a verified CRM account is required.');
   }
   const all = review.plans.flatMap((plan) => {
