@@ -56,6 +56,7 @@ export function BrowserCsvWorkspace({ active = true }: { active?: boolean }) {
     return !search || row.values.some((value) => value.toLocaleLowerCase().includes(search.toLocaleLowerCase()));
   }) ?? [], [document, filter, issues, search]);
   const selected = document?.rows.find((row) => row.id === selectedId);
+  const selectedViewIndex = rows.findIndex((row) => row.id === selectedId);
   const draftDirty = Boolean(selected && draftValues?.some((value, column) => value !== selected.values[column]));
   const currentPage = Math.min(page, Math.max(0, Math.ceil(rows.length / 20) - 1));
   const visibleRows = rows.slice(currentPage * 20, currentPage * 20 + 20);
@@ -300,7 +301,7 @@ export function BrowserCsvWorkspace({ active = true }: { active?: boolean }) {
                 {!rows.length && <p className="p-8 text-center text-sm text-[#a2b8ab]">No rows match this view.</p>}
                 <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/10 px-4 py-3 text-xs text-[#a2b8ab]"><span>{rows.length ? `${currentPage * 20 + 1}–${Math.min((currentPage + 1) * 20, rows.length)} of ${rows.length.toLocaleString()}` : '0 rows'}</span><div className="flex gap-2"><button className={secondary} disabled={currentPage === 0} onClick={() => changePage(currentPage - 1)}>Previous</button><button className={secondary} disabled={(currentPage + 1) * 20 >= rows.length} onClick={() => changePage(currentPage + 1)}>Next</button></div></div>
               </div>
-              {selected && <RowEditor row={selected} draft={draftValues ?? selected.values} onDraftChange={setDraftValues} headers={document.headers} issues={issues.get(selected.id) ?? []} onClose={closeRow} onToggle={() => commit(toggleBrowserRow(withRowEdits(document), selected.id), selected.excluded ? `Row ${selected.id + 1} restored to the download.` : `Row ${selected.id + 1} excluded. You can restore it anytime.`)} onSave={saveRow} onDiscard={() => { setDraftValues(null); setNotice('Discarded the current row edits.'); }}>
+              {selected && <RowEditor row={selected} draft={draftValues ?? selected.values} onDraftChange={setDraftValues} headers={document.headers} issues={issues.get(selected.id) ?? []} onClose={closeRow} onToggle={() => commit(toggleBrowserRow(withRowEdits(document), selected.id), selected.excluded ? `Row ${selected.id + 1} restored to the download.` : `Row ${selected.id + 1} excluded. You can restore it anytime.`)} onSave={saveRow} onDiscard={() => { setDraftValues(null); setNotice('Discarded the current row edits.'); }} viewIndex={selectedViewIndex} viewCount={rows.length} onPrevious={selectedViewIndex > 0 ? () => selectRow(rows[selectedViewIndex - 1].id) : undefined} onNext={selectedViewIndex >= 0 && selectedViewIndex + 1 < rows.length ? () => selectRow(rows[selectedViewIndex + 1].id) : undefined}>
                 {draftDirty ? <p className="mt-4 text-xs leading-5 text-[#b9d8ff]">Save row to refresh review notes and related-row comparisons.</p> : <div className="mt-4"><BrowserCsvRelatedRows key={selected.id} document={document} selectedRowId={selected.id} groups={groups} onSelectRow={selectRow} onExcludeRow={(id) => commit(toggleBrowserRow(withRowEdits(document), id), `Row ${id + 1} excluded. Use Undo or the Excluded view to restore it.`)} /></div>}
               </RowEditor>}
             </section>
@@ -321,16 +322,33 @@ function Metric({ label, value, warning = false }: { label: string; value: numbe
   return <div className="rounded-xl border border-white/10 bg-black/10 p-4"><p className={`text-2xl font-semibold ${warning && value ? 'text-[#f6c985]' : 'text-[#edf8f2]'}`}>{value.toLocaleString()}</p><p className="mt-1 text-xs text-[#a2b8ab]">{label}</p></div>;
 }
 
-function RowEditor({ row, draft, onDraftChange, headers, issues, onSave, onDiscard, onToggle, onClose, children }: { children?: ReactNode; row: BrowserCsvRow; draft: string[]; onDraftChange: (values: string[]) => void; headers: string[]; issues: string[]; onSave: () => void; onDiscard: () => void; onToggle: () => void; onClose: () => void }) {
+function RowEditor({ row, draft, onDraftChange, headers, issues, onSave, onDiscard, onToggle, onClose, viewIndex, viewCount, onPrevious, onNext, children }: { children?: ReactNode; row: BrowserCsvRow; draft: string[]; onDraftChange: (values: string[]) => void; headers: string[]; issues: string[]; onSave: () => void; onDiscard: () => void; onToggle: () => void; onClose: () => void; viewIndex: number; viewCount: number; onPrevious?: () => void; onNext?: () => void }) {
+  const [columnSearch, setColumnSearch] = useState('');
+  const columnSearchInput = useRef<HTMLInputElement>(null);
+  const columns = useMemo(() => headers.map((_, index) => ({ index, label: browserCsvColumnLabel(headers, index) })), [headers]);
+  const searchTerm = columnSearch.trim().toLocaleLowerCase();
+  const positionMatch = /^(?:column\s*)?(\d+)$/u.exec(searchTerm);
+  const visibleColumns = columns.filter(({ index, label }) => !searchTerm
+    || label.toLocaleLowerCase().includes(searchTerm)
+    || (positionMatch && index + 1 === Number(positionMatch[1])));
   const dirty = draft.some((value, column) => value !== row.values[column]);
   const heading = useRef<HTMLHeadingElement>(null);
   useEffect(() => { heading.current?.focus({ preventScroll: true }); heading.current?.scrollIntoView({ block: window.matchMedia('(max-width: 1279px)').matches ? 'start' : 'nearest' }); }, [row.id]);
   return <aside aria-label={`Edit row ${row.id + 1}`} className="rounded-2xl border border-[#83bcff]/30 bg-[#0d211a] p-5">
     <div className="flex items-start justify-between gap-4"><div><h2 ref={heading} tabIndex={-1} className="rounded text-lg font-semibold focus-visible:outline-2 focus-visible:outline-[#83bcff]">Review row {row.id + 1}</h2><p className="mt-1 text-xs text-[#a2b8ab]">{row.excluded ? 'Excluded from download' : 'Included in download'}</p></div><button onClick={onClose} className="rounded-lg px-2 py-1 text-sm text-[#b9cfc0]">Close</button></div>
+    <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-y border-white/10 py-3">
+      <p aria-label="Row position in current view" className="text-xs text-[#a2b8ab]">{viewIndex >= 0 ? `${viewIndex + 1} of ${viewCount.toLocaleString()} rows in this view` : 'This row is outside the current view.'}</p>
+      <div className="flex gap-2"><button type="button" className={secondary} disabled={!onPrevious} onClick={onPrevious}>Previous row</button><button type="button" className={secondary} disabled={!onNext} onClick={onNext}>Next row</button></div>
+    </div>
     {issues.length > 0 && <div className="mt-4 rounded-xl border border-[#f6c985]/25 bg-[#f6c985]/5 p-3 text-xs leading-5 text-[#f6c985]">{issues.map((issue) => <p key={issue}>{issue}</p>)}{issues.some((issue) => issue.startsWith('Repeated email')) && <p className="mt-2 text-[#c7cdb5]">Repeated email does not prove these are the same person. Inspect both rows before excluding one.</p>}</div>}
     {children}
+    {headers.length > 8 && <div className="mt-5 rounded-xl border border-white/10 bg-black/10 p-3">
+      <div className="flex items-end gap-2"><label className="min-w-0 flex-1 text-xs text-[#c4d7cb]">Find a column<input ref={columnSearchInput} type="search" aria-label="Find a column" placeholder="Name or column number" value={columnSearch} onChange={(event) => setColumnSearch(event.target.value)} className={`${inputClass} mt-1.5`} /></label><button type="button" aria-label="Clear column search" className={secondary} disabled={!columnSearch} onClick={() => { setColumnSearch(''); columnSearchInput.current?.focus(); }}>Clear</button></div>
+      <p aria-live="polite" className="mt-2 text-xs text-[#a2b8ab]">{visibleColumns.length} of {headers.length} columns</p>
+    </div>}
     <form onSubmit={(event) => { event.preventDefault(); onSave(); }} className="mt-5">
-      <div className="max-h-[480px] space-y-4 overflow-y-auto px-0.5 pb-1">{headers.map((_, column) => <label key={column} className="block text-xs text-[#c4d7cb]">{browserCsvColumnLabel(headers, column)}<textarea aria-label={`${browserCsvColumnLabel(headers, column)} — row ${row.id + 1}`} rows={draft[column].includes('\n') ? 3 : 1} className={`${inputClass} mt-1.5 min-h-11 resize-y`} value={draft[column]} onChange={(event) => onDraftChange(draft.map((value, index) => index === column ? event.target.value : value))} />{draft[column] !== row.original[column] && <span className="mt-1 block break-all text-[11px] text-[#91a89b]">Original: {JSON.stringify(row.original[column])}</span>}</label>)}</div>
+      <div className="max-h-[480px] space-y-4 overflow-y-auto px-0.5 pb-1">{visibleColumns.map(({ index: column, label }) => <label key={column} className="block text-xs text-[#c4d7cb]"><span className="flex items-baseline justify-between gap-3"><span>{label}</span>{headers.length > 8 && <span className="shrink-0 text-[11px] text-[#91a89b]">Column {column + 1}</span>}</span><textarea aria-label={`${label} — row ${row.id + 1}`} rows={draft[column].includes('\n') ? 3 : 1} className={`${inputClass} mt-1.5 min-h-11 resize-y`} value={draft[column]} onChange={(event) => onDraftChange(draft.map((value, index) => index === column ? event.target.value : value))} />{draft[column] !== row.original[column] && <span className="mt-1 block break-all text-[11px] text-[#91a89b]">Original: {JSON.stringify(row.original[column])}</span>}</label>)}</div>
+      {!visibleColumns.length && <p className="text-sm text-[#a2b8ab]">No columns match “{columnSearch}”. Try a column name or number.</p>}
       <div className="mt-5 flex flex-wrap gap-2"><button type="submit" disabled={!dirty} className={primary}>Save row</button>{dirty && <button type="button" className={secondary} onClick={onDiscard}>Discard edits</button>}<button type="button" className={secondary} onClick={onToggle}>{row.excluded ? 'Restore row' : 'Exclude row'}</button></div>
       <p className="mt-3 text-xs leading-5 text-[#91a89b]">Row edits are kept when you switch rows or download. Use Undo to reverse a change. Excluded rows can always be restored.</p>
     </form>

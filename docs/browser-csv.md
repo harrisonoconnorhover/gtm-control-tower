@@ -35,6 +35,11 @@ the last ten saved actions, including formatting, column choices, and exclusions
 Opening another CSV starts a new history. Excluded rows remain available in the
 **Excluded** view and can be restored; no rows are merged or removed automatically.
 
+For wide files, **Find a column** narrows the editor by column name or number.
+**Previous row** and **Next row** follow your current row filter and search, keeping
+pending edits as you move. Duplicate or unnamed columns show their source position;
+exported headers stay unchanged.
+
 ## What cleanup changes
 
 Whitespace cleanup trims the beginning and end of selected cells. Email cleanup

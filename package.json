@@ -2,7 +2,7 @@
   "name": "gtm-control-tower",
   "version": "0.1.0",
   "private": true,
-  "description": "A self-hosted GTM systems lab for repairing messy CRM data, routing leads, and modeling revenue operations.",
+  "description": "Browser CSV cleanup and a self-hosted GTM systems lab for repairing CRM data, routing leads, and modeling revenue operations.",
   "license": "MIT",
   "repository": {
     "type": "git",

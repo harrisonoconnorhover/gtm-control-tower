@@ -50,10 +50,82 @@ async function closeWithKeyboard(page, fromEditorHeading = false) {
   await page.keyboard.press('Enter');
 }
 
+async function wideColumnReview(page, width) {
+  const columnCount = width === 390 ? 100 : 50;
+  const sourceHeaders = ['Record ID', 'Email', 'Name', 'Queue', ...Array.from({ length: columnCount - 5 }, (_, index) => `Custom property ${index + 5}`), 'Renewal notes'];
+  sourceHeaders[10] = '2026';
+  const sourceRows = Array.from({ length: 6 }, (_, index) => [
+    String(index + 1).padStart(5, '0'), index % 2 === 0 ? `invalid-${index + 1}` : `person${index + 1}@example.com`,
+    `Person ${index + 1}`, index === 0 || index === 4 ? 'Priority' : 'Standard',
+    ...Array.from({ length: columnCount - 5 }, (_, column) => `Value ${index + 1}:${column + 5}`), `Original late ${index + 1}`,
+  ]);
+  const encode = () => [sourceHeaders, ...sourceRows].map((row) => row.join(',')).join('\r\n');
+  await page.getByLabel('Choose a CSV file', { exact: true }).setInputFiles({ name: `wide-${columnCount}.csv`, mimeType: 'text/csv', buffer: Buffer.from(encode()) });
+  await page.getByRole('heading', { name: `wide-${columnCount}.csv`, exact: true }).waitFor();
+  await activate(page, page.getByRole('button', { name: 'Needs review', exact: true }));
+  await activate(page, page.getByRole('button', { name: 'Review row 1', exact: true }));
+  const findColumn = page.getByRole('searchbox', { name: 'Find a column', exact: true });
+  await findColumn.fill('Renewal');
+  const editor = () => page.getByRole('complementary', { name: /^Edit row / });
+  assert.equal(await editor().locator('textarea').count(), 1);
+  await editor().getByText(`1 of ${columnCount} columns`, { exact: true }).waitFor();
+  assert(await page.getByRole('button', { name: 'Previous row', exact: true }).isDisabled());
+  await page.getByLabel('Renewal notes — row 1', { exact: true }).fill('Updated late 1');
+  sourceRows[0][columnCount - 1] = 'Updated late 1';
+  await activate(page, page.getByRole('button', { name: 'Next row', exact: true }));
+  await expectFocus(page, page.getByRole('heading', { name: 'Review row 3', exact: true }), 'Next row should follow Needs review order and focus the next editor.');
+  assert.equal(await findColumn.inputValue(), 'Renewal', 'Column search should persist across rows.');
+  assert.equal(await page.getByLabel('Renewal notes — row 3', { exact: true }).inputValue(), 'Original late 3');
+  await activate(page, page.getByRole('button', { name: 'Previous row', exact: true }));
+  assert.equal(await page.getByLabel('Renewal notes — row 1', { exact: true }).inputValue(), 'Updated late 1', 'Stepping away must preserve pending edits at the original source column index.');
+
+  await page.getByLabel('Search rows', { exact: true }).fill('Priority');
+  await activate(page, page.getByRole('button', { name: 'Next row', exact: true }));
+  await page.getByRole('heading', { name: 'Review row 5', exact: true }).waitFor();
+  await editor().getByText('2 of 2 rows in this view', { exact: true }).waitFor();
+  assert(await page.getByRole('button', { name: 'Next row', exact: true }).isDisabled(), 'The row stepper must respect both the filter and row search.');
+  await page.getByLabel('Renewal notes — row 5', { exact: true }).fill('Updated late 5');
+  sourceRows[4][columnCount - 1] = 'Updated late 5';
+  await activate(page, page.getByRole('button', { name: 'Previous row', exact: true }));
+  await findColumn.fill('not-a-source-column');
+  assert.equal(await editor().locator('textarea').count(), 0);
+  await editor().getByText(/No columns match/).waitFor();
+  await activate(page, page.getByRole('button', { name: 'Clear column search', exact: true }));
+  await expectFocus(page, findColumn, 'Clearing the column search should return focus to the search field.');
+  assert.equal(await editor().locator('textarea').count(), columnCount);
+  await findColumn.fill(String(columnCount));
+  assert.equal(await editor().locator('textarea').count(), 1);
+  assert.equal(await page.getByLabel('Renewal notes — row 1', { exact: true }).inputValue(), 'Updated late 1');
+  await findColumn.fill(`column ${columnCount - 1}`);
+  assert.equal(await page.getByLabel(`Custom property ${columnCount - 1} — row 1`, { exact: true }).inputValue(), `Value 1:${columnCount - 1}`);
+  await findColumn.fill('2026');
+  assert.equal(await editor().locator('textarea').count(), 1);
+  assert.equal(await page.getByLabel('2026 — row 1', { exact: true }).inputValue(), 'Value 1:11', 'Numeric headers must match by name even when the number is not a column position.');
+
+  await findColumn.fill('Renewal');
+  await page.getByLabel('Search rows', { exact: true }).fill('Standard');
+  await editor().getByText('This row is outside the current view.', { exact: true }).waitFor();
+  assert(await page.getByRole('button', { name: 'Previous row', exact: true }).isDisabled());
+  assert(await page.getByRole('button', { name: 'Next row', exact: true }).isDisabled());
+  await page.getByLabel('Renewal notes — row 1', { exact: true }).fill('Still editable off view');
+  sourceRows[0][columnCount - 1] = 'Still editable off view';
+  await editor().screenshot({ path: resolve(output, `wide-${columnCount}-${width}.png`) });
+  const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Download CSV', exact: true }).first().click()]);
+  const chunks = [];
+  for await (const chunk of await download.createReadStream()) chunks.push(chunk);
+  const bytes = Buffer.concat(chunks);
+  assert.deepEqual([...bytes.subarray(0, 3)], [0xef, 0xbb, 0xbf]);
+  assert.equal(bytes.subarray(3).toString('utf8'), encode(), 'Column filtering and row navigation must not edit any other source cell.');
+  await download.saveAs(resolve(output, `wide-${columnCount}-${width}.csv`));
+  assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'Wide source columns must not overflow the page.');
+  checks.push(`${width}px: ${columnCount}-column file searched by label/position; late-column edits retained through row stepping; filter/search boundaries and off-view editing respected; clear/no-results states and exact downloaded cells verified.`);
+}
+
 try {
   for (const width of [1440, 390]) {
     const context = await browser.newContext({ viewport: { width, height: 950 } });
     const page = await context.newPage();
+    page.on('dialog', (dialog) => dialog.accept());
     page.setDefaultTimeout(15_000);
     await page.goto(new URL('/#clean-csv', base).href);
     await page.getByLabel('Choose a CSV file', { exact: true }).setInputFiles({ name: 'keyboard-rows.csv', mimeType: 'text/csv', buffer: Buffer.from(csv) });
@@ -90,6 +162,7 @@ try {
     assert.deepEqual(await comparison.getByRole('heading', { level: 4 }).allTextContents(), labels, 'Editor labels must identify the same columns shown in comparison.');
     await editor.screenshot({ path: resolve(output, `labels-${width}.png`) });
     checks.push(`${width}px: Enter opens a row; Tab/Enter closes to its action; Next/Previous focus and scroll to Your rows; closing a corrected filtered row uses the heading fallback; duplicate and blank/header label collisions match comparison.`);
+    await wideColumnReview(page, width);
     await context.close();
   }
   console.log(JSON.stringify({ status: 'passed', checks, screenshots: output }, null, 2));
