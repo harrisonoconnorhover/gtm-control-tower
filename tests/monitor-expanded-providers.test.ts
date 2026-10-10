@@ -46,6 +46,45 @@ describe('expanded native monitoring scope', () => {
     expect(page.contacts[0].coverage?.[0]).toContain('truncated');
   });
 
+  it('recognizes scoped empty associations in native HTTP 207 without discarding successful siblings', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.includes('/deals/companies/')) return Response.json({ status: 'COMPLETE', results: [{ from: { id: '1' }, to: [{ toObjectId: 44 }] }],
+        errors: [{ category: 'OBJECT_NOT_FOUND', subCategory: 'crm.associations.NO_ASSOCIATIONS_FOUND', context: { fromObjectId: ['2'], fromObjectType: ['deal'], toObjectType: ['company'] } }] }, { status: 207 });
+      if (url.includes('/associations/')) return Response.json({ status: 'COMPLETE', results: JSON.parse(String(init?.body)).inputs.map((input: { id: string }) => ({ from: input, to: [] })) });
+      return Response.json({ results: ['1', '2'].map((id) => ({ id, updatedAt, properties: { dealname: 'Fictional deal' } })) });
+    }));
+    const page = await hubspotMonitorSource('fixture').list('Deal:start');
+    expect(page.contacts[0].properties).toMatchObject({ company_ids: '["44"]', company_id: '44', contact_ids: '[]' });
+    expect(page.contacts[1].properties).toMatchObject({ company_ids: '[]', company_id: '', contact_ids: '[]' });
+    expect(page.contacts.every((record) => !record.coverage?.length)).toBe(true);
+  });
+
+  it('reads a native Company with explicitly no associated contacts as an observed empty list', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => url.includes('/associations/')
+      ? Response.json({ status: 'COMPLETE', results: [], errors: [{ category: 'OBJECT_NOT_FOUND', subCategory: 'crm.associations.NO_ASSOCIATIONS_FOUND',
+        context: { fromObjectId: ['4'], fromObjectType: ['company'], toObjectType: ['contact'] } }] }, { status: 207 })
+      : Response.json({ id: '4', updatedAt, properties: { name: 'Fictional company' } })));
+    const record = await hubspotMonitorSource('fixture').read('4', 'Company');
+    expect(record.properties.contact_ids).toBe('[]');
+    expect(record.coverage).toBeUndefined();
+  });
+
+  it.each(['unknown', 'wrong-type', 'conflicting', 'unscoped'])('keeps %s association errors uncertain instead of inventing an empty link', async (failure) => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.includes('/deals/companies/')) return Response.json({ status: 'COMPLETE', results: [
+        { from: { id: '1' }, to: [{ toObjectId: 44 }] }, ...(failure === 'conflicting' ? [{ from: { id: '2' }, to: [{ toObjectId: 45 }] }] : [])],
+      errors: [{ category: 'OBJECT_NOT_FOUND', subCategory: failure === 'unknown' ? 'crm.associations.OTHER_ERROR' : 'crm.associations.NO_ASSOCIATIONS_FOUND',
+        ...(failure === 'unscoped' ? {} : { context: { fromObjectId: ['2'], fromObjectType: [failure === 'wrong-type' ? 'company' : 'deal'], toObjectType: ['company'] } }) }] }, { status: 207 });
+      if (url.includes('/associations/')) return Response.json({ results: JSON.parse(String(init?.body)).inputs.map((input: { id: string }) => ({ from: input, to: [] })) });
+      return Response.json({ results: ['1', '2'].map((id) => ({ id, updatedAt, properties: { dealname: 'Fictional deal' } })) });
+    }));
+    const page = await hubspotMonitorSource('fixture').list('Deal:start');
+    expect(page.contacts[1].properties.company_ids).toBeUndefined();
+    expect(page.contacts[1].properties.company_id).toBeUndefined();
+    expect(page.contacts[1].coverage).toEqual([expect.stringMatching(/company_ids:.*unavailable/)]);
+    if (failure !== 'unscoped') expect(page.contacts[0].properties.company_id).toBe('44');
+  });
+
   it('reports per-object denied permissions and missing fields before scanning available native objects', async () => {
     const fetcher = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>(async (url) => {
       if (url.includes('/companies')) return new Response(null, { status: 403 });

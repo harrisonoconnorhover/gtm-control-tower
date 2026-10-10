@@ -189,7 +189,7 @@ export async function tickMonitor(accountId: string, token: string, options: { f
     await processIncidentRecheck(accountId,50,leaseId);
     const dueExpectationsRemain=await processDueIncidentExpectations(accountId,leaseId);
     const readyNativeRemain=(await takePendingMonitorEvents(accountId,1)).length>0;
-    if(readyNativeRemain || dueExpectationsRemain || (!coverageIssues.length && account.phase==='changes' && await hasIncidentRecheck(accountId))) {account.next_check_at=new Date(Date.now()+1000).toISOString();await checkpointMonitor(account,leaseId);}
+    if(readyNativeRemain || dueExpectationsRemain || (account.phase==='changes' && (await getIncidentCoverage(accountId)).status==='healthy' && await hasIncidentRecheck(accountId))) {account.next_check_at=new Date(Date.now()+1000).toISOString();await checkpointMonitor(account,leaseId);}
     run.status = 'completed'; run.finishedAt = finishedAt;
     await saveMonitorRun(run, leaseId);
   } catch (error) {

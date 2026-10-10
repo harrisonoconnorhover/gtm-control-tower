@@ -146,7 +146,8 @@ export async function ingestObservation(accountId: string, record: MonitorContac
     const duplicate = Boolean(before && !changed.length && !absent.length && !added.length && previous!.provider_updated_at === record.updatedAt);
     const observationId = await digest(`${accountId}\n${key}\n${record.updatedAt}\n${JSON.stringify(properties.map((field) => [field,record.properties[field]]))}`);
     const alreadySeen = await db.prepare('SELECT id FROM crm_observations WHERE id = ?').bind(observationId).first();
-    if (alreadySeen && !duplicate) return { accepted: false, changedFields: 0, incidents: [], reason: 'duplicate' };
+    const availabilityRefresh = Boolean(before && !options.cached && !changed.length && previous!.provider_updated_at === record.updatedAt);
+    if (alreadySeen && !duplicate && !availabilityRefresh) return { accepted: false, changedFields: 0, incidents: [], reason: 'duplicate' };
     if(previous&&previous.provider_updated_at===record.updatedAt&&changed.length) {
       const id=await digest(`ordering:${observationId}`);
       const prepared=await incidentStatements(db,accountId,{kind:'coverage',objectType,field:'timestamp_order',records:[key],title:'Conflicting values have the same native timestamp',severity:'warning',evidence:{recordKey:key,providerUpdatedAt:record.updatedAt,possibleChanges:changed,limitation:'The order of these values is uncertain. The saved record and repair evidence are unchanged until a newer native version is observed.'}},policy,now);
@@ -169,7 +170,8 @@ export async function ingestObservation(accountId: string, record: MonitorContac
       statements.push(db.prepare(`INSERT INTO crm_observed_records (account_id,record_key,object_type,record_id,provider_updated_at,observed_at,first_seen_at,payload_json) SELECT ?,?,?,?,?,?,?,? WHERE ${guard} ON CONFLICT(account_id,record_key) DO UPDATE SET provider_updated_at=excluded.provider_updated_at,observed_at=excluded.observed_at,payload_json=excluded.payload_json WHERE excluded.provider_updated_at >= crm_observed_records.provider_updated_at`)
         .bind(accountId,key,objectType,record.id,record.updatedAt,now,now,JSON.stringify(record),...guardValues));
     }
-    if(duplicate&&!options.cached) statements.push(db.prepare(`UPDATE crm_observed_records SET observed_at=? WHERE account_id=? AND record_key=? AND ${guard}`).bind(now,accountId,key,...guardValues));
+    // Read coverage can recover without a native field or timestamp changing. A cached policy recheck is not a fresh read.
+    if((duplicate||(alreadySeen&&availabilityRefresh))&&!options.cached) statements.push(db.prepare(`UPDATE crm_observed_records SET observed_at=?,payload_json=? WHERE account_id=? AND record_key=? AND ${guard}`).bind(now,JSON.stringify({...before!,properties:record.properties,coverage:record.coverage}),accountId,key,...guardValues));
     const detections: Detection[] = [];
     for (const field of objectType==='Company'||objectType==='Account'?['domain']:objectType==='Contact'||objectType==='Lead'?['email']:[]) {
       const value=record.properties[field]?.trim().toLowerCase();
@@ -328,11 +330,15 @@ export async function recordMonitorCoverage(accountId:string,input:{status:'heal
   const db=await incidentDatabase();const previous=await getIncidentCoverage(accountId);const now=input.observedAt??new Date().toISOString();
   const last=await db.prepare("SELECT MAX(observed_at) AS at FROM crm_observations WHERE account_id=? AND changes_json!='[]'").bind(accountId).first<{at:string|null}>();
   const objects=await db.prepare('SELECT DISTINCT object_type FROM crm_observed_records WHERE account_id=?').bind(accountId).all<{object_type:string}>();
-  const coverage:IncidentCoverage={status:input.status==='healthy'&&input.phase==='baseline'?'baseline':input.status,phase:input.phase,lastCheckedAt:now,baselineStartedAt:input.baselineStartedAt??previous.baselineStartedAt??null,lastSuccessAt:input.status==='healthy'?now:previous.lastSuccessAt,staleAfterSeconds:input.staleAfterSeconds??previous.staleAfterSeconds??900,lastChangedAt:last?.at??null,scanned:input.scanned,error:input.error??null,objectTypes:input.objectTypes??objects.results.map(r=>r.object_type),capabilities:input.capabilities??previous.capabilities,limitations:input.limitations??['Polling may miss intermediate changes. Missing fields and unavailable objects are coverage gaps; they are not evidence of deletion.']};
+  // A healthy page cannot clear gaps on other saved records; incident history is deliberately not the health authority.
+  const gaps=await db.prepare("SELECT object_type,COUNT(*) AS count FROM crm_observed_records WHERE account_id=? AND json_array_length(payload_json,'$.coverage')>0 GROUP BY object_type ORDER BY object_type").bind(accountId).all<{object_type:string;count:number}>();
+  const status=input.status==='degraded'||gaps.results.length?'degraded':'healthy';
+  const error=[input.error,...(gaps.results.length?[`Saved records still have read coverage gaps (${gaps.results.map(row=>`${row.object_type}: ${row.count}`).join(', ')}). Fresh successful reads are required to clear them.`]:[])].filter(Boolean).join(' ').slice(0,1000)||null;
+  const coverage:IncidentCoverage={status:status==='healthy'&&input.phase==='baseline'?'baseline':status,phase:input.phase,lastCheckedAt:now,baselineStartedAt:input.baselineStartedAt??previous.baselineStartedAt??null,lastSuccessAt:status==='healthy'?now:previous.lastSuccessAt,staleAfterSeconds:input.staleAfterSeconds??previous.staleAfterSeconds??900,lastChangedAt:last?.at??null,scanned:input.scanned,error,objectTypes:input.objectTypes??objects.results.map(r=>r.object_type),capabilities:input.capabilities??previous.capabilities,limitations:input.limitations??['Polling may miss intermediate changes. Missing fields and unavailable objects are coverage gaps; they are not evidence of deletion.']};
   const statements=[db.prepare('INSERT INTO crm_incident_coverage(account_id,payload_json) VALUES(?,?) ON CONFLICT(account_id) DO UPDATE SET payload_json=excluded.payload_json').bind(accountId,JSON.stringify(coverage))];
   const policy=await getIncidentPolicy(accountId);
-  if(input.status==='degraded')statements.push(...(await incidentStatements(db,accountId,{kind:'coverage',objectType:'all',field:'connection',records:[],title:'Monitoring coverage is degraded',severity:'critical',evidence:{error:input.error??'The latest check did not complete.',lastHealthyAt:previous.status==='healthy'?previous.lastCheckedAt:null}},policy,now,true)).statements);
-  if(policy.activity.enabled&&input.phase==='changes'&&input.status==='healthy') {
+  if(status==='degraded')statements.push(...(await incidentStatements(db,accountId,{kind:'coverage',objectType:'all',field:'connection',records:[],title:'Monitoring coverage is degraded',severity:'critical',evidence:{error:error??'The latest check did not complete.',lastHealthyAt:previous.status==='healthy'?previous.lastCheckedAt:null}},policy,now,true)).statements);
+  if(policy.activity.enabled&&input.phase==='changes'&&status==='healthy') {
     const boundary=new Date(Date.parse(now)-policy.activity.quietMinutes*60_000).toISOString();
     const prior=new Date(Date.parse(boundary)-policy.activity.quietMinutes*60_000).toISOString();
     const counts=await db.prepare("SELECT COUNT(DISTINCT CASE WHEN observed_at>=? THEN record_key END) AS recent,COUNT(DISTINCT CASE WHEN observed_at>=? AND observed_at<? THEN record_key END) AS prior FROM crm_observations WHERE account_id=? AND phase='changes' AND changes_json!='[]'").bind(boundary,prior,boundary,accountId).first<{recent:number;prior:number}>();

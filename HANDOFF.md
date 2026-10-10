@@ -2,38 +2,37 @@
 
 ## Finished
 
-- Built `/#clean-csv` with upload/drop, a fictional sample, formatting previews, manual cell edits, review filters, row exclusions/restores, Undo, and CSV downloads. Existing `/#audit` links open the new workflow.
-- Preserved source column names/order, custom values, leading-zero strings, Unicode and quoted multiline fields. Repeated emails remain review warnings; rows are never merged or removed automatically.
-- Kept source data and edits in tab memory with no processing network requests or browser storage. Downloads explain unresolved warnings and counted formula protection.
-- Made browser cleanup the README and public-site entry point. Clarified Docker prerequisites and optional n8n.
-- Published feature commit `73a6aea` to GitHub main and Cloudflare Pages production on October 10, 2026; deployment `29780a86` is live.
+- Loaded 2,900 seed-42 records into designated HubSpot and Salesforce development accounts. Both native monitor runs passed: 29 automatic trims, 420 controlled changes and saved human triage.
+- Qualified both native Safe Import paths: 12 approved phone fills per provider, protected fields and three unchanged controls preserved, bounded continuation and repeated approval verified.
+- Fixed HubSpot's completed mixed association batches and aggregate coverage recovery. Healthy pages cannot hide unresolved read gaps. Improved triage accessibility and mobile incident navigation.
+- Added resumable native setup and a private offline report. Corrected future HubSpot domain mapping after identifying setup-induced company creation; retained current evidence unchanged.
+- Preserved main's browser CSV workspace: upload, formatting review, manual edits, exclusions, Undo and downloads with source columns and values retained in tab memory.
 
 ## Try It
 
-1. Open [the public CSV cleaner](https://gtm-control-tower.pages.dev/#clean-csv). For local development, run `npm ci`, then `npm run preview:public -- --port 4175`.
-2. Choose **Try sample CSV**, inspect and apply formatting changes, review a row, then **Download CSV**. Download before leaving or refreshing; work is not persisted.
-3. Read [the browser guide](docs/browser-csv.md). Files are limited to UTF-8 CSV, 10 MiB and 10,000 rows.
+1. Open `outputs/native-incidents/native-20261010/report.html` for private results. Test records remain available for inspection.
+2. Use `/app/incidents` for investigation, assignment and evidence download. Follow [native qualification](docs/native-incident-qualification.md) before rerunning temporal tests.
+3. Use `/#clean-csv` and [the browser guide](docs/browser-csv.md) for file cleanup. Download before closing or refreshing; edits are not persisted.
 
 ## Checks
 
-- 52 focused tests passed across browser CSV, existing CSV transformations and CRM audit tests.
-- TypeScript, full repository lint, static production build, focused browser-script lint and `git diff --check` passed.
-- Production browser QA passed on desktop and at 390px: uploads, exact download contents, edits, exclusions, Undo, custom mapping, malformed/invalid UTF-8 recovery, refresh reset and no page overflow.
-- The same full desktop/mobile suite passed on the public URL after deployment, including exact downloaded CSV contents. No script errors, processing HTTP requests, API/external requests or local/session storage were observed. Screenshots are under ignored `outputs/browser-csv/` and `outputs/browser-csv-live/`.
+- Combined branch: all 774 tests, TypeScript, lint, app/public builds and diff checks passed. Public CSV desktop/mobile checks passed, including exact downloads, Undo, invalid-file recovery and no processing requests or browser storage. Its preview server is stopped.
+- Native report: 158/158 checks passed, including 64 HubSpot and 38 Salesforce monitor checks, 22 browser checks per provider and 12 import assertions. Native readback, desktop/mobile presentation and report filtering passed.
+- The failed first HubSpot baseline remains retained. Exactly 237 documented test fields were restored and verified before the successful rerun; phone fills were preserved. All qualification monitors and local native-test servers are stopped.
 
 ## Decisions
 
-- Keep conservative real-file cleanup separate from the synthetic demo's owner, lifecycle and merge rules.
-- Preserve email local-part case, dots and plus tags; normalize only domains. Include unresolved rows unless explicitly excluded.
-- Escape formula-like CSV cells with an apostrophe and disclose the count. Spreadsheet type inference remains outside CSV control.
+- Native polling and local browser proof do not qualify hosted execution, webhook/CDC delivery, Slack or live models. These services were not invoked.
+- HubSpot's existing automation created 351 companies because of setup domain mismatches. These separately reported manual findings remain outside repair authority and were not deleted. Unknown writes require reconciliation.
+- Browser cleanup preserves email local parts and custom fields; unresolved rows remain included unless excluded. Formula-like CSV values receive disclosed apostrophe protection.
 
 ## Remaining
 
-- No browser-workflow blockers remain. [Broader GitHub CI](https://github.com/harrisonoconnorhover/gtm-control-tower/actions/runs/38077627592) was still running at handoff; focused local and live checks passed.
-- Edits are intentionally temporary; download before closing the tab.
+- Configure and qualify native subscriptions, Slack and optional models in the intended deployment.
+- Hosted Safe Import, individual team identities, arbitrary workflow repair, autonomous merging and automatic restoration remain outside this qualification.
 
 ## Review First
 
-1. [Browser workspace](components/browser-csv-workspace.tsx) and the live workflow.
-2. [CSV helpers](lib/browser-csv.ts) and [focused tests](tests/browser-csv.test.ts).
-3. [Browser acceptance script](scripts/check-browser-csv.mjs) and [usage guide](docs/browser-csv.md).
+1. [Native findings and limits](docs/native-incident-qualification.md), plus `lib/monitor-hubspot.ts` and `lib/crm-incidents.ts`.
+2. [Browser workspace](components/browser-csv-workspace.tsx), [CSV helpers](lib/browser-csv.ts) and [guide](docs/browser-csv.md).
+3. Private native report and retained failed-run/restoration evidence under `outputs/native-incidents/native-20261010`.

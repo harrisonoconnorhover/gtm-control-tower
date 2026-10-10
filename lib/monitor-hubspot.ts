@@ -99,9 +99,28 @@ export function hubspotMonitorSource(token: string): MonitorSource {
           const response = await request(`/crm/v4/associations/${definitions[type].api}/${target}/batch/read`, {
             method: 'POST', body: JSON.stringify({ inputs: selected.map((record) => ({ id: record.id })) }),
           });
-          if (!isRecord(response) || !Array.isArray(response.results) || (Array.isArray(response.errors) && response.errors.length)) throw new Error('Association batch incomplete.');
+          if (!isRecord(response) || !Array.isArray(response.results) || (response.status !== undefined && response.status !== 'COMPLETE')
+            || (response.errors !== undefined && !Array.isArray(response.errors))) throw new Error('Association batch incomplete.');
+          const errors = (response.errors ?? []) as unknown[];
+          const selectedIds = new Set(selected.map((record) => record.id));
+          const errorIds = (error: unknown): string[] => isRecord(error) && isRecord(error.context) && Array.isArray(error.context.fromObjectId)
+            && error.context.fromObjectId.every((id) => typeof id === 'string' && /^\d{1,30}$/.test(id)) ? error.context.fromObjectId as string[] : [];
+          // An unscoped error cannot safely be assigned to only one requested record.
+          if (errors.some((error) => !errorIds(error).length || errorIds(error).some((id) => !selectedIds.has(id)))) throw new Error('Association batch contains an unscoped error.');
+          const reportsEmpty = (error: unknown): boolean => isRecord(error) && error.category === 'OBJECT_NOT_FOUND'
+            && error.subCategory === 'crm.associations.NO_ASSOCIATIONS_FOUND' && isRecord(error.context)
+            && Array.isArray(error.context.fromObjectType) && error.context.fromObjectType.length === 1 && error.context.fromObjectType[0] === (type === 'Company' ? 'company' : 'deal')
+            && Array.isArray(error.context.toObjectType) && error.context.toObjectType.length === 1 && error.context.toObjectType[0] === (target === 'companies' ? 'company' : 'contact');
           for (const record of selected) {
-            const row = response.results.find((item) => isRecord(item) && isRecord(item.from) && String(item.from.id) === record.id);
+            const rows = response.results.filter((item) => isRecord(item) && isRecord(item.from) && String(item.from.id) === record.id);
+            const recordErrors = errors.filter((error) => errorIds(error).includes(record.id));
+            // HubSpot returns a scoped NO_ASSOCIATIONS_FOUND in HTTP 207 for an explicitly empty relationship.
+            // It is not a missing permission, and must not discard successful siblings in the same batch.
+            const empty = rows.length === 0 && recordErrors.length > 0 && recordErrors.every(reportsEmpty);
+            if (!empty && (rows.length !== 1 || recordErrors.length > 0)) {
+              record.coverage = [...record.coverage ?? [], `${key}: association response missing, conflicting, or unavailable for this record.`]; continue;
+            }
+            const row = empty ? { to: [] } : rows[0];
             if (!isRecord(row) || !Array.isArray(row.to) || row.paging || row.to.length > 1000) {
               record.coverage = [...record.coverage ?? [], `${key}: association response missing or truncated.`]; continue;
             }
@@ -109,12 +128,15 @@ export function hubspotMonitorSource(token: string): MonitorSource {
               if (!isRecord(edge) || (typeof edge.toObjectId === 'number' && !Number.isSafeInteger(edge.toObjectId))) return '';
               return String(edge.toObjectId);
             });
-            if (ids.some((id: string) => !/^\d{1,30}$/.test(id))) throw new Error('Invalid native association ID.');
+            if (ids.some((id: string) => !/^\d{1,30}$/.test(id))) {
+              record.coverage = [...record.coverage ?? [], `${key}: association response contains an invalid native ID.`]; continue;
+            }
             record.properties[key] = JSON.stringify([...new Set(ids)].sort());
             if (key === 'company_ids' && ids.length <= 1) record.properties.company_id = ids[0] ?? '';
           }
-        } catch {
-          for (const record of selected) record.coverage = [...record.coverage ?? [], `${key}: native association read unavailable; no relationship conclusion is possible.`];
+        } catch (error) {
+          const detail = error instanceof NativeMonitorHttpError ? ` (HTTP ${error.status})` : '';
+          for (const record of selected) record.coverage = [...record.coverage ?? [], `${key}: native association read unavailable${detail}; no relationship conclusion is possible.`];
         }
       }
     }

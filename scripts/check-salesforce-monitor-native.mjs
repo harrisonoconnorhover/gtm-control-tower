@@ -37,16 +37,24 @@ process.env.CONTROL_TOWER_SQLITE_PATH = resolve(output, 'monitor.db');
 process.env.CONTROL_TOWER_PERSISTENCE_ENABLED = 'true';
 const bundle = resolve(output, 'probe.mjs');
 await build({ stdin: {
-  contents: `export * from './lib/monitor'; export * from './lib/monitor-types'; export * from './lib/monitor-connection';`,
+  contents: `export * from './lib/monitor'; export * from './lib/monitor-types'; export * from './lib/monitor-connection'; export { getIncidentCoverage } from './lib/crm-incidents';`,
   resolveDir: root, loader: 'ts',
 }, bundle: true, platform: 'node', format: 'esm', packages: 'external', outfile: bundle });
 const originalFetch = globalThis.fetch;
-const calls = { get: 0, writes: 0 };
+const objectTypes = ['Lead', 'Contact', 'Account', 'Opportunity'];
+const metadataReadTypes = new Set();
+const calls = { get: 0, metadata: 0, relationshipQueries: 0, blocked: 0, writes: 0 };
 globalThis.fetch = async (input, init) => {
-  const url = new URL(String(input));
+  const url = new URL(input instanceof Request ? input.url : String(input));
   assert.equal(url.origin, instance.origin, 'Read-only qualification rejects other hosts.');
-  assert.equal((init?.method || 'GET').toUpperCase(), 'GET', 'Read-only qualification forbids CRM mutations.');
-  assert(/^\/services\/data\/v\d+\.\d+\/(?:query|sobjects\/(?:Lead|Contact)\/[A-Za-z0-9]{15}(?:[A-Za-z0-9]{3})?)$/.test(url.pathname), 'Read-only qualification rejects unsupported API paths.');
+  const method = (init?.method ?? (input instanceof Request ? input.method : 'GET')).toUpperCase();
+  const metadata = /^\/services\/data\/v\d+\.\d+\/sobjects\/(Lead|Contact|Account|Opportunity)\/describe$/.exec(url.pathname);
+  const allowedPath = metadata || /^\/services\/data\/v\d+\.\d+\/(?:query|sobjects\/(?:Lead|Contact|Account|Opportunity)\/[A-Za-z0-9]{15}(?:[A-Za-z0-9]{3})?)$/.test(url.pathname);
+  if (method !== 'GET' || !allowedPath) calls.blocked++;
+  assert.equal(method, 'GET', 'Read-only qualification forbids CRM mutations.');
+  assert(allowedPath, 'Read-only qualification allows only native queries, object metadata and selected record reads.');
+  if (metadata) { metadataReadTypes.add(metadata[1]); calls.metadata++; }
+  if (/\bFROM\s+OpportunityContactRole\b/i.test(url.searchParams.get('q') ?? '')) calls.relationshipQueries++;
   calls.get++;
   return originalFetch(input, { ...init, redirect: 'error' });
 };
@@ -54,9 +62,12 @@ try {
   const monitorModule = await import(pathToFileURL(bundle).href);
   const connection = await monitorModule.getMonitorConnection('salesforce');
   const sampledObjects = new Set();
+  const recordsByObject = Object.fromEntries(objectTypes.map((type) => [type, 0]));
   const source = { ...connection.source, list: async (after) => {
     const page = await connection.source.list(after);
     for (const record of page.contacts) {
+      assert(objectTypes.includes(record.objectType));
+      recordsByObject[record.objectType]++;
       if (sampledObjects.has(record.objectType)) continue;
       const reread = await connection.source.read(record.id, record.objectType);
       assert.equal(reread.id, record.id);
@@ -77,12 +88,24 @@ try {
     recordsScanned += view.runs[0]?.scanned ?? 0;
     assert.equal(view.config.automaticRepairs, false);
   } while (view.phase === 'baseline' && pages < 40);
-  const changes = await connection.source.changes(new Date(Date.now() - 86_400_000).toISOString(), new Date(Date.now() - 60_000).toISOString(), null);
-  assert(Array.isArray(changes.contacts));
+  const from = new Date(Date.now() - 86_400_000).toISOString(), through = new Date(Date.now() - 60_000).toISOString();
+  let changes, searchPages = 0, changeSearchRecords = 0;
+  do {
+    changes = await connection.source.changes(from, through, changes?.after ?? null);
+    assert(Array.isArray(changes.contacts));
+    changeSearchRecords += changes.contacts.length;
+    searchPages++;
+  } while (changes.after !== null && searchPages < 40);
+  const coverage = await monitorModule.getIncidentCoverage(connection.scope);
+  assert.deepEqual(view.objectTypes, objectTypes);
+  assert.deepEqual([...metadataReadTypes].sort(), [...objectTypes].sort());
+  assert.deepEqual(coverage.capabilities?.map((item) => item.objectType).sort(), [...objectTypes].sort());
+  assert.equal(calls.blocked, 0, 'A provider request fell outside the read-only guard; inspect adapter coverage before claiming qualification.');
   const summary = {
-    checkedAt: new Date().toISOString(), provider: 'salesforce', objectTypes: ['Lead', 'Contact'], nativeReads: true, nativeRepairsTested: false,
-    baselineComplete: view.phase === 'changes', baselinePages: pages, recordsScanned, nativeRecordReadTypes: [...sampledObjects],
-    observedFindings: view.totals, changeSearchRecords: changes.contacts.length, changeSearchHasMore: changes.after !== null,
+    checkedAt: new Date().toISOString(), provider: 'salesforce', objectTypes, nativeReads: true, nativeRepairsTested: false,
+    baselineComplete: view.phase === 'changes', baselinePages: pages, recordsScanned, recordsByObject, nativeRecordReadTypes: [...sampledObjects],
+    metadataReadTypes: [...metadataReadTypes], coverage,
+    observedFindings: view.totals, changeSearchRecords, changeSearchPages: searchPages, changeSearchHasMore: changes.after !== null,
     calls, output,
   };
   writeFileSync(resolve(output, 'summary.json'), JSON.stringify(summary, null, 2) + '\n', { mode: 0o600 });
