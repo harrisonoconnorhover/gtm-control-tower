@@ -30,6 +30,10 @@ That original run used advisory approximate review. A later [native follow-up](d
 
 ## What it does
 
+- Provides a connected [HubSpot Watchdog](docs/watchdog.md) at `/app/watchdog`:
+  recurring contact checks, a durable human triage queue, downloadable reports,
+  and optional verified company/job-title whitespace repairs. A separate runner
+  continues with the browser closed. Requires the self-hosted SQLite app.
 - Includes an [Inbound Routing Lab](docs/inbound-routing-lab.md): a working demo
   request form, 32 fictional requests, account matching, rep assignment, and
   deliberately broken handoffs with replay. Open `/#inbound-lab` in the showroom

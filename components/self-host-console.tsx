@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useMemo, useRef, useState } from 'react';
 import {
   csvFieldLabels,
@@ -244,6 +245,7 @@ export function SelfHostConsole({
 
   return (
     <section className="mb-6 overflow-hidden rounded-[30px] border border-[#83bcff]/20 bg-[#0b1b19]" aria-label="Self-hosted workspace setup">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 px-5 py-4 sm:px-6"><p className="text-xs text-[#9cb0a7]">Keep an eye on connected HubSpot contacts between imports.</p><Link href="/app/watchdog" className="rounded-full border border-[#cdfc54]/25 px-4 py-2 text-xs font-semibold text-[#cdfc54]">Open HubSpot Watchdog</Link></div>
       {catalog?.accessKeyRequired && <div className="border-b border-white/10 px-5 py-4 sm:px-6"><label className="grid max-w-lg gap-2 text-xs font-semibold text-[#9cb0a7]">Operator access key<input type="password" value={operatorKey} onChange={(event) => onOperatorKeyChange(event.target.value)} className="rounded-xl border border-white/10 bg-[#07130f] px-4 py-3 text-sm text-[#e5f1eb] outline-none focus:border-[#83bcff]/50" /></label><p className="mt-2 text-[10px] text-[#71877c]">Kept only in this browser tab and required for private CRM reads and writes.</p></div>}
       <div className="grid gap-6 border-b border-white/10 px-5 py-5 lg:grid-cols-[1fr_1fr_auto] lg:items-end sm:px-6">
         <label className="grid gap-2 text-xs font-semibold text-[#9cb0a7]">

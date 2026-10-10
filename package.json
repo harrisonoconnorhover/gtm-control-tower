@@ -26,6 +26,8 @@
     "test:operator-key": "node scripts/check-operator-key.mjs",
     "setup": "node scripts/setup.mjs",
     "doctor": "node scripts/doctor.mjs",
+    "watchdog": "node --env-file-if-exists=.env --env-file-if-exists=.env.local scripts/watchdog.mjs",
+    "test:watchdog-ui": "node scripts/check-watchdog.mjs",
     "db:generate": "drizzle-kit generate",
     "db:migrate:local": "wrangler d1 migrations apply DB --local --config wrangler.local.jsonc --persist-to .wrangler/state",
     "check:secrets": "node scripts/check-secrets.mjs",

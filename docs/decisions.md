@@ -747,3 +747,18 @@ tests and separate real SQL/storage evidence from injected invocation limits.
 The measured 99-update execution exceeds the documented single-invocation budget;
 cloud storage passing does not qualify hosted execution. Keep deployment and PR
 publication pending while that release blocker remains.
+
+## October 10, 2026 — Add a bounded HubSpot watchdog to the self-host
+
+Use deterministic connected-contact checks and a durable human triage queue.
+Monitoring polls provider changes after an initial baseline, with saved cursors
+and a separate HTTP runner so closing the browser does not stop checks. Default
+to five minutes; support an hourly cadence. Keep automatic repairs off until the
+operator enables the specific company/job-title whitespace policy. Ambiguous
+identity, owner, and lifecycle issues require a person; reports retain evidence.
+
+Use the existing SQLite adapter and operator key, with state scoped to HubSpot's
+verified portal ID. Keep this slice out of D1 because its execution budget has
+not been qualified. Bound pages and repairs, persist write attempts before send,
+and never automatically replay an uncertain write. This adds no AI provider,
+outbound Slack messages, public deployment, or new routing-policy assumptions.
