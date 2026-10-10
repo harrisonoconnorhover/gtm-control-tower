@@ -42,22 +42,23 @@ export type CsvContactCorrection = {
 };
 
 const fieldAliases = {
-  contactId: ['contact_id', 'contactid', 'id', 'record_id'],
-  fullName: ['full_name', 'fullname', 'name', 'contact_name'],
-  firstName: ['first_name', 'firstname'],
-  lastName: ['last_name', 'lastname', 'surname'],
-  rawEmail: ['raw_email', 'email', 'email_address', 'emailaddress'],
+  contactId: ['contact_id', 'id', 'record_id', 'hs_object_id'],
+  fullName: ['full_name', 'name', 'contact_name', 'contact_full_name', 'person_name', 'person_full_name'],
+  firstName: ['first_name', 'given_name', 'contact_first_name'],
+  lastName: ['last_name', 'surname', 'family_name', 'contact_last_name'],
+  rawEmail: ['raw_email', 'email', 'email_address', 'work_email', 'business_email', 'contact_email', 'primary_email'],
   normalizedEmail: ['normalized_email', 'normalizedemail'],
-  company: ['company', 'company_name', 'companyname', 'account', 'account_name'],
-  phone: ['phone', 'phone_number', 'phonenumber', 'mobile_phone', 'mobile'],
+  company: ['company', 'company_name', 'account', 'account_name', 'organization_name'],
+  phone: ['phone', 'phone_number', 'mobile_phone', 'mobile', 'business_phone', 'work_phone', 'contact_phone'],
   jobTitle: ['job_title', 'jobtitle', 'title', 'position'],
-  website: ['website', 'website_url', 'company_website', 'url'],
-  state: ['state', 'state_province', 'stateprovince', 'mailing_state', 'mailingstate', 'province'],
+  website: ['website', 'website_url', 'company_website', 'account_website', 'url'],
+  state: ['state', 'state_province', 'mailing_state', 'mailing_state_province', 'province'],
   region: ['region', 'territory', 'sales_region'],
   segment: ['segment', 'market_segment', 'company_segment'],
   lifecycleStage: ['lifecycle_stage', 'lifecyclestage', 'stage', 'status'],
   expectedLifecycleStage: ['expected_lifecycle_stage', 'expected_stage', 'target_stage'],
-  ownerId: ['owner_id', 'ownerid', 'owner', 'sales_owner'],
+  // sales_owner is retained for the generated public fixture, where it contains IDs.
+  ownerId: ['owner_id', 'hubspot_owner_id', 'contact_owner_id', 'sales_owner_id', 'sales_owner'],
   canonicalContactId: ['canonical_contact_id', 'canonical_id', 'merged_into'],
   recordStatus: ['record_status', 'recordstatus'],
   lastAction: ['last_action', 'lastaction'],
@@ -82,7 +83,7 @@ export const csvFieldLabels: Record<CsvFieldKey, string> = {
   segment: 'Segment',
   lifecycleStage: 'Lifecycle stage',
   expectedLifecycleStage: 'Expected lifecycle stage',
-  ownerId: 'Owner',
+  ownerId: 'Owner ID',
   canonicalContactId: 'Canonical contact ID',
   recordStatus: 'Record status',
   lastAction: 'Last action',
@@ -136,11 +137,21 @@ export function previewContactsCsv(csv: string): CsvPreview {
 }
 
 export function suggestCsvMapping(headers: string[]): CsvColumnMapping {
-  const normalizedHeaders = headers.map((header) => ({ original: header, normalized: normalizeHeader(header) }));
+  // Matching tolerates CRM label/API spelling differences without changing the
+  // parser's header validation or the original source labels used by mappings.
+  const matchingKey = (value: string) => normalizeHeader(value).replaceAll('_', '');
+  const normalizedHeaders = headers.map((header) => ({ original: header, normalized: matchingKey(header) }));
   return Object.fromEntries(
     Object.entries(fieldAliases).flatMap(([field, aliases]) => {
-      const match = normalizedHeaders.find((header) => (aliases as readonly string[]).includes(header.normalized));
-      return match ? [[field, match.original]] : [];
+      const canonicalKeys = new Set([matchingKey(field), matchingKey(csvFieldLabels[field as CsvFieldKey])]);
+      const aliasKeys = new Set(aliases.map(matchingKey));
+      const canonicalMatches = normalizedHeaders.filter((header) => canonicalKeys.has(header.normalized));
+      const matches = canonicalMatches.length
+        ? canonicalMatches
+        : normalizedHeaders.filter((header) => aliasKeys.has(header.normalized));
+      // Picking the first equally plausible column hides uncertainty and depends
+      // on file order. Leave that destination for the user's explicit mapping.
+      return matches.length === 1 ? [[field, matches[0].original]] : [];
     }),
   ) as CsvColumnMapping;
 }

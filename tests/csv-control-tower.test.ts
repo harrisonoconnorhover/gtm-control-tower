@@ -9,6 +9,8 @@ import {
   importContactsCsv,
   isDestinationReadyContact,
   previewContactsCsv,
+  suggestCsvMapping,
+  type CsvColumnMapping,
   type CsvContactCorrectionInput,
 } from '../lib/csv-control-tower';
 import { isHubSpotEligible } from '../lib/hubspot-sync';
@@ -22,6 +24,96 @@ C-3,Mia Santos,mia.santos @ gmail.com,,,West,SMB,lead,lead,
 C-4,Robin Cho,robin@oak.co,,Oak Co,Northeast,Mid-Market,mql,sql,NE-MM`;
 
 describe('CSV control tower', () => {
+  it('auto-maps common CRM headers while preserving their exact source labels', () => {
+    const headers = [
+      'ContactId', 'Contact Full Name', 'Given-name', 'FamilyName', 'Work E-mail',
+      'Account Name', 'Business Phone', 'JobTitle', 'Company Website', 'MailingState',
+      'Lifecycle Stage', 'HubSpot Owner ID', 'Untouched custom field',
+    ];
+    expect(suggestCsvMapping(headers)).toEqual({
+      contactId: 'ContactId', fullName: 'Contact Full Name', firstName: 'Given-name', lastName: 'FamilyName',
+      rawEmail: 'Work E-mail', company: 'Account Name', phone: 'Business Phone', jobTitle: 'JobTitle',
+      website: 'Company Website', state: 'MailingState', lifecycleStage: 'Lifecycle Stage', ownerId: 'HubSpot Owner ID',
+    });
+    expect(suggestCsvMapping(['  BUSINESS EMAIL  '])).toEqual({ rawEmail: '  BUSINESS EMAIL  ' });
+    const csv = `${headers.join(',')}\nC-123,Ada Lovelace,Ada,Lovelace,ada@example.com,Analytical Engines,555-0100,Engineer,https://example.com,Texas,customer,owner-1,untouched`;
+    expect(previewContactsCsv(csv).headers).toEqual(headers);
+    expect(importContactsCsv(csv).contacts[0]).toMatchObject({
+      contactId: 'C-123', fullName: 'Ada Lovelace', firstName: 'Ada', lastName: 'Lovelace',
+      rawEmail: 'ada@example.com', company: 'Analytical Engines', phone: '555-0100', jobTitle: 'Engineer',
+      website: 'https://example.com', state: 'Texas', lifecycleStage: 'customer', ownerId: 'owner-1',
+    });
+  });
+
+  it.each([
+    ['Record ID', { contactId: 'Record ID' }],
+    ['Person Full Name', { fullName: 'Person Full Name' }],
+    ['Contact Email', { rawEmail: 'Contact Email' }],
+    ['BusinessEmail', { rawEmail: 'BusinessEmail' }],
+    ['Work Phone', { phone: 'Work Phone' }],
+    ['Company Name', { company: 'Company Name' }],
+  ])('recognizes the explicit %s alias', (header, expected) => {
+    expect(suggestCsvMapping([header])).toEqual(expected);
+  });
+
+  it('prefers canonical labels or keys over aliases independently of source order', () => {
+    const headers = ['Work Email', 'Email', 'Record ID', 'Contact ID', 'Business Phone', 'Phone', 'Given Name', 'firstName'];
+    const expected = { rawEmail: 'Email', contactId: 'Contact ID', phone: 'Phone', firstName: 'firstName' };
+    expect(suggestCsvMapping(headers)).toEqual(expected);
+    expect(suggestCsvMapping([...headers].reverse())).toEqual(expected);
+  });
+
+  it('leaves equally plausible columns unmapped until explicitly chosen', () => {
+    const csv = 'Full Name,Work Email,Business Email,Mailing State,Province\nAda Lovelace,work@example.com,business@example.com,Texas,Ontario';
+    const headers = previewContactsCsv(csv).headers;
+    expect(suggestCsvMapping(headers)).toEqual({ fullName: 'Full Name' });
+    expect(suggestCsvMapping([...headers].reverse())).toEqual({ fullName: 'Full Name' });
+    expect(importContactsCsv(csv).contacts[0]).toMatchObject({ rawEmail: '', state: null });
+    expect(importContactsCsv(csv, { rawEmail: 'Business Email', state: 'Province' }).contacts[0])
+      .toMatchObject({ rawEmail: 'business@example.com', state: 'Ontario' });
+    // These headers are distinct under the existing parser rules, but equally
+    // plausible matches; matching normalization must not reject or choose one.
+    expect(previewContactsCsv('First Name,FirstName,Email\nAda,Grace,ada@example.com').suggestedMapping)
+      .toEqual({ rawEmail: 'Email' });
+  });
+
+  it('does not guess contact IDs from company IDs or owner IDs from owner names', () => {
+    expect(suggestCsvMapping(['Account ID', 'Company ID', 'Owner', 'Owner Name', 'Contact Owner', 'Primary inbox']))
+      .toEqual({});
+    const csv = 'Email,Owner\nada@example.com,reviewed-owner-id';
+    expect(importContactsCsv(csv).contacts[0].ownerId).toBeNull();
+    expect(importContactsCsv(csv, { ownerId: 'Owner' }).contacts[0].ownerId).toBe('reviewed-owner-id');
+  });
+
+  it('preserves explicit ignores after saving and restoring a mapping', () => {
+    const mapping = JSON.parse(JSON.stringify({ rawEmail: '', company: '', ownerId: '' })) as CsvColumnMapping;
+    const csv = 'Full Name,Email,Company,Owner ID\nAda Lovelace,ada@example.com,Analytical Engines,owner-1';
+    expect(importContactsCsv(csv, mapping).contacts[0]).toMatchObject({
+      fullName: 'Ada Lovelace', rawEmail: '', normalizedEmail: null, company: null, ownerId: null,
+    });
+  });
+
+  it('does not auto-fill a source column explicitly reassigned to another target', () => {
+    const mapping = JSON.parse(JSON.stringify({ fullName: 'Email', rawEmail: '' })) as CsvColumnMapping;
+    expect(importContactsCsv('Email\nAda Lovelace', mapping).contacts[0]).toMatchObject({
+      fullName: 'Ada Lovelace', rawEmail: '', normalizedEmail: null,
+    });
+  });
+
+  it('retains generated CRM fixture mappings and the exported mapping roundtrip', () => {
+    const fixture = readFileSync(new URL('../public/sec-public-company-messy-crm.csv', import.meta.url), 'utf8');
+    const preview = previewContactsCsv(fixture);
+    expect(preview.suggestedMapping).toMatchObject({
+      contactId: 'record_id', fullName: 'contact_name', rawEmail: 'email_address', company: 'account_name',
+      phone: 'mobile', jobTitle: 'title', website: 'company_website', region: 'sales_region',
+      segment: 'company_segment', lifecycleStage: 'status', expectedLifecycleStage: 'expected_stage',
+      ownerId: 'sales_owner', recordStatus: 'record_status', qualityFlags: 'issues',
+    });
+    const contacts = importContactsCsv(fixture).contacts;
+    const reimported = importContactsCsv(exportContactsCsv(contacts)).contacts;
+    expect(reimported).toEqual(contacts.map((contact, index) => ({ ...contact, updatedAt: reimported[index].updatedAt })));
+  });
+
   it('maps state separately from territory and preserves it in exported CSV', () => {
     const csv = 'contact_id,full_name,email,state_province,region,company,owner_id\nSTATE-1,Alex Example,alex@example.test,Texas,South,Example,owner-1';
     const preview = previewContactsCsv(csv);

@@ -25,6 +25,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:browser-csv": "node scripts/check-browser-csv.mjs",
+    "test:csv-mapping": "node scripts/check-csv-mapping.mjs",
     "test:operator-key": "node scripts/check-operator-key.mjs",
     "setup": "node scripts/setup.mjs",
     "doctor": "node scripts/doctor.mjs",
