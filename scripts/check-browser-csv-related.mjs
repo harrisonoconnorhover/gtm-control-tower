@@ -91,15 +91,21 @@ try {
     await page.getByRole('heading', { name: 'Review row 45', exact: true }).waitFor();
     assert.equal(await page.getByLabel('Company — row 45', { exact: true }).inputValue(), 'East');
     await page.getByRole('button', { name: 'Open row 1 to edit', exact: true }).click();
+    await comparison().getByRole('combobox').selectOption('63');
+    await comparison().getByRole('button', { name: 'Show all 8 columns', exact: true }).click();
     await page.getByLabel('Company — row 1', { exact: true }).fill('West updated');
     await comparison().waitFor({ state: 'hidden' });
     await page.getByText('Save row to refresh review notes and related-row comparisons.', { exact: true }).waitFor();
     await page.getByRole('button', { name: 'Save row', exact: true }).click();
     await comparison().waitFor();
+    assert.equal(await comparison().getByRole('combobox').inputValue(), '63', 'Saving must preserve the selected nonfirst peer.');
+    assert.equal(await comparison().getByRole('button', { name: 'Show differences only', exact: true }).getAttribute('aria-pressed'), 'true', 'Saving must preserve the choice to show all columns.');
+    await comparison().getByRole('heading', { name: 'Email', exact: true }).waitFor();
     assert((await comparison().innerText()).includes('"West updated"'), 'Saved edits must enter the comparison.');
     await page.getByRole('complementary', { name: 'Edit row 1', exact: true }).screenshot({ path: resolve(output, `related-${width}.png`) });
     assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'Related values must not overflow the page.');
 
+    await comparison().getByRole('combobox').selectOption('44');
     await comparison().getByRole('button', { name: 'Exclude row 45', exact: true }).click();
     const edited = values.map((row) => [...row]);
     edited[0][3] = 'West updated';
@@ -113,8 +119,16 @@ try {
     await page.getByRole('heading', { name: 'distant-related-rows.csv', exact: true }).waitFor();
     await comparison().waitFor();
     assert.equal(await page.getByLabel('Company — row 1', { exact: true }).inputValue(), 'West updated', 'Overview navigation must preserve the current comparison and edits.');
+    await page.getByLabel('Email — row 1', { exact: true }).fill('person2@example.com');
+    await page.getByRole('button', { name: 'Save row', exact: true }).click();
+    await comparison().getByRole('button', { name: 'Open row 2 to edit', exact: true }).waitFor();
+    assert.equal(await comparison().getByRole('button', { name: 'Open row 45 to edit', exact: true }).count(), 0, 'Leaving a group must fall back to a current peer rather than the previous choice.');
+    await page.getByLabel('Email — row 1', { exact: true }).fill('unique@example.com');
+    await page.getByRole('button', { name: 'Save row', exact: true }).click();
+    await comparison().waitFor({ state: 'hidden' });
+    assert.equal(await page.getByLabel('Email — row 1', { exact: true }).inputValue(), 'unique@example.com', 'Leaving every group must remove the comparison without losing the edit.');
     assert.deepEqual(errors, [], 'Comparison must not cause page errors, external requests or operator API calls.');
-    checks.push(`${width}px: off-page peer access, overlapping groups, different/all fields, duplicate/blank headers, quoted whitespace, draft/save refresh, explicit exclusion/Undo, exact download bytes and overview navigation.`);
+    checks.push(`${width}px: off-page peer access, overlapping groups, different/all fields, duplicate/blank headers, quoted whitespace, draft/save preserves peer and all-column choice, changed-group fallback, explicit exclusion/Undo, exact download bytes and overview navigation.`);
     await context.close();
   }
   console.log(JSON.stringify({ status: 'passed', checks, screenshots: output }, null, 2));

@@ -145,6 +145,30 @@ async function replacementPreview(page) {
   await page.getByText('Changes 1–5 of 16', { exact: true }).waitFor();
 }
 
+async function emailFormattingRules(page, viewport) {
+  await upload(page, 'email-rules.csv', 'Name,Email,Mailbox\nAda, Ada@EXAMPLE.COM , Other@EXAMPLE.COM ');
+  await page.getByText('Choose columns & formatting rules', { exact: true }).click();
+  const mapping = page.getByLabel('Email column', { exact: true });
+  const email = page.getByRole('checkbox', { name: /^Email\b/ });
+  const mailbox = page.getByRole('checkbox', { name: /^Mailbox\b/ });
+  assert(await email.isChecked() && await email.isDisabled(), 'Selected email trimming is included in email formatting, not an editable preference.');
+  await page.getByText('Included in email formatting', { exact: true }).waitFor();
+  await mapping.selectOption('2');
+  assert(await email.isChecked() && await email.isEnabled(), 'Changing email mapping must retain a previously selected trim preference.');
+  assert(await mailbox.isChecked() && await mailbox.isDisabled());
+  await mapping.selectOption('');
+  assert(!(await mailbox.isChecked()) && await mailbox.isEnabled(), 'Changing email mapping must not overwrite a previously unselected trim preference.');
+  await email.uncheck();
+  await mapping.selectOption('1');
+  assert(await email.isChecked() && await email.isDisabled());
+  await noPageOverflow(page);
+  await page.getByRole('region', { name: 'Suggested cleanup', exact: true }).screenshot({ path: resolve(output, `${viewport}-email-rules.png`) });
+  await page.getByRole('button', { name: 'Apply formatting changes', exact: true }).click();
+  assert.equal((await downloadCsv(page, `${viewport}-email-rules.csv`)).text, 'Name,Email,Mailbox\r\nAda,Ada@example.com, Other@EXAMPLE.COM ', 'Only the selected email is trimmed and normalized; the other column keeps its spacing.');
+  await mapping.selectOption('');
+  assert(!(await email.isChecked()) && await email.isEnabled(), 'The prior unchecked trim preference must survive email formatting.');
+}
+
 async function withoutIdentity(page, kind, source, lastColumn) {
   await upload(page, `${kind}.csv`, source);
   assert.equal(await page.getByRole('alert').count(), 0);
@@ -289,6 +313,7 @@ try {
   assert.equal(await page.getByRole('alert').count(), 0, 'A valid file should clear a previous parsing error.');
   await replacementPreview(page);
   await downloadClarity(page, 'desktop');
+  await emailFormattingRules(page, 'desktop');
   await withoutIdentity(page, 'companies', 'Company,Domain,Notes\nAcme,acme.example,Keep this\nAcme,acme.example,Keep this\n,,', 'Notes');
   await draftLifecycle(desktop);
   await desktop.assertPrivate();
@@ -336,12 +361,14 @@ try {
   assert.equal(await mobile.page.getByLabel('Record ID — row 3', { exact: true }).inputValue(), '00125', 'Reopening the download must remove the encoding marker from the first header.');
   assert.equal(await mobile.page.getByLabel('First name — row 3', { exact: true }).inputValue(), 'José');
   await downloadClarity(mobile.page, 'mobile');
+  await emailFormattingRules(mobile.page, 'mobile');
   await withoutIdentity(mobile.page, 'deals', 'Deal ID,Amount,Pipeline,Details\n00123,500,New,Keep this\n00123,500,New,Keep this\n,,,', 'Details');
   await mobile.assertPrivate();
   await mobile.context.close();
   outcomes.push('Mobile 390px: sample, cleanup, actual download and row editor; page width stays within viewport.');
   outcomes.push('Downloads: UTF-8 BOM bytes verified; accented names and exact CSV content preserved; reopening a downloaded sample retains the original first header.');
   outcomes.push('Download clarity: desktop/mobile top warning, actual filename, browser Downloads guidance, row/column/review counts and pending formatting count include current drafts; replacement files restart formatting preview at change 1.');
+  outcomes.push('Email rules: selected email trimming is visibly included and disabled; mapping changes retain prior checked/unchecked trim preferences; only the selected email is normalized in the download.');
   outcomes.push('No email/name: company and deal files open, empty/repeated rows appear in review, edits/exclusion/restore/Undo recalculate findings, and every source cell downloads; legacy #audit link works.');
   outcomes.push('Both sessions: no page errors, external requests, CSV API/processing requests or CSV browser storage; visiting the separate inbound lab permits only its existing empty GET to demo-intake and its own fictional practice storage.');
   console.log(JSON.stringify({ status: 'passed', outcomes, screenshots: output }, null, 2));

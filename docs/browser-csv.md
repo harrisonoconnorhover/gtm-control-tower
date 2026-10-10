@@ -39,7 +39,7 @@ Opening another CSV starts a new history. Excluded rows remain available in the
 For wide files, **Find a column** narrows the editor by column name or number.
 **Previous row** and **Next row** follow your current row filter and search, keeping
 pending edits as you move. Duplicate or unnamed columns show their source position;
-exported headers stay unchanged.
+these display labels are not written into your CSV headers.
 
 ## What cleanup changes
 
@@ -73,9 +73,10 @@ names correctly without an import wizard; see [Microsoft's guidance](https://sup
 CSV tools that do not recognize this marker may treat it as part of the first
 header. The cleaner removes it when reopening a downloaded file.
 
-Formula-like cells receive a leading apostrophe on export so spreadsheet software
-does not treat them as formulas. The download area shows how many cells will be
-protected. This is an export change; the in-memory values remain unchanged.
+Formula-like cells, including column headers, receive a leading apostrophe on
+export so spreadsheet software does not treat them as formulas. The download area
+shows how many cells will be protected. This is an export change; the in-memory
+values remain unchanged.
 Spreadsheet software may still convert dates, numbers, or leading-zero IDs when
 opening a CSV. Import columns as text in your spreadsheet when those exact values
 matter.
