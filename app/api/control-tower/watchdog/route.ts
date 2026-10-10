@@ -1,14 +1,14 @@
-import { readHubSpotAccountIdentity } from '@/lib/crm-account';
+import { getWatchdogConnection } from '@/lib/watchdog-connection';
 import { operatorAccessError } from '@/lib/operator-auth';
 import { configureWatchdog, getWatchdogOverview, tickWatchdog, triageWatchdogFinding } from '@/lib/watchdog';
-import type { WatchdogConfig } from '@/lib/watchdog-types';
+import type { WatchdogConfig, WatchdogProvider } from '@/lib/watchdog-types';
 
 export async function GET(request: Request) {
   const denied = operatorAccessError(request);
   if (denied) return denied;
   try {
-    const { accountId } = await connection();
-    return Response.json({ watchdog: await getWatchdogOverview(accountId) }, { headers: { 'cache-control': 'no-store' } });
+    const connection = await getWatchdogConnection(parseProvider(new URL(request.url).searchParams.get('provider') ?? undefined));
+    return Response.json({ watchdog: { ...await getWatchdogOverview(connection.scope), ...(connection.instanceUrl ? { instanceUrl: connection.instanceUrl } : {}) } }, { headers: { 'cache-control': 'no-store' } });
   } catch (error) {
     return failure(error);
   }
@@ -26,13 +26,14 @@ export async function POST(request: Request) {
     return Response.json({ error: 'Send a valid watchdog action.' }, { status: 400 });
   }
   try {
-    const { accountId, token } = await connection();
+    const connection = await getWatchdogConnection(parseProvider(body.provider));
+    const { scope: accountId, token } = connection;
     if (body.action === 'configure') {
       const config = parseConfig(body.config);
       await configureWatchdog(accountId, config);
     } else if (body.action === 'tick') {
       if (body.force !== undefined && typeof body.force !== 'boolean') throw new InputError('Force must be true or false.');
-      await tickWatchdog(accountId, token, { force: body.force === true });
+      await tickWatchdog(accountId, token, { force: body.force === true, ...(connection.provider === 'salesforce' ? { source: connection.source } : {}) });
     } else if (body.action === 'triage') {
       if (typeof body.id !== 'string' || !body.id || body.id.length > 200
         || !['open', 'in_progress', 'resolved'].includes(String(body.status))
@@ -47,20 +48,16 @@ export async function POST(request: Request) {
     } else {
       throw new InputError('Choose configure, tick, or triage.');
     }
-    return Response.json({ watchdog: await getWatchdogOverview(accountId) }, { headers: { 'cache-control': 'no-store' } });
+    return Response.json({ watchdog: { ...await getWatchdogOverview(accountId), ...(connection.instanceUrl ? { instanceUrl: connection.instanceUrl } : {}) } }, { headers: { 'cache-control': 'no-store' } });
   } catch (error) {
     return failure(error);
   }
 }
 
-async function connection() {
-  if (process.env.CONTROL_TOWER_PERSISTENCE_ENABLED === 'false') {
-    throw new Error('Watchdog requires persistent local SQLite storage. Enable CONTROL_TOWER_PERSISTENCE_ENABLED.');
-  }
-  const token = process.env.HUBSPOT_ACCESS_TOKEN?.trim();
-  if (!token) throw new Error('Connect HubSpot with HUBSPOT_ACCESS_TOKEN on the self-hosted server to use Watchdog.');
-  const { accountId } = await readHubSpotAccountIdentity(token);
-  return { accountId, token };
+function parseProvider(value: unknown): WatchdogProvider {
+  if (value === undefined || value === 'hubspot') return 'hubspot';
+  if (value === 'salesforce') return 'salesforce';
+  throw new InputError('Choose HubSpot or Salesforce for Watchdog.');
 }
 
 function parseConfig(value: unknown): WatchdogConfig {

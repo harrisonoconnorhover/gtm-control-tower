@@ -2,8 +2,8 @@ import type { CrmPlanRecord, CrmUpdatePolicy, CrmWritePlan, NativeCrmRecord } fr
 import type { CsvColumnMapping } from './csv-control-tower';
 
 export const SAFE_IMPORT_RECIPE = 'safe-update-contacts' as const;
-export const SAFE_IMPORT_RULES = 'Update existing contacts only. Fill empty fields from the file. Preserve populated CRM fields. Hold uncertain matches. Do not create, merge, or delete contacts.';
-export type CrmAccountIdentity = { connectorId: 'hubspot'; accountId: string };
+export const SAFE_IMPORT_RULES = 'Update existing CRM records only. Fill empty fields from the file. Preserve populated CRM fields. Hold uncertain matches. Do not create, merge, delete, or convert records.';
+export type CrmAccountIdentity = { connectorId: 'hubspot' | 'salesforce'; accountId: string };
 export type SafeImportRowStatus = 'proposed-update' | 'unchanged' | 'held' | 'unmatched' | 'skipped' | 'unresolved';
 export type SafeImportReviewRow = {
   contactId: string;
@@ -16,7 +16,7 @@ export type SafeImportReview = {
   id: string;
   workspaceId: string;
   workspaceRevision: number;
-  connectorId: 'hubspot';
+  connectorId: 'hubspot' | 'salesforce';
   account: CrmAccountIdentity;
   sourceFile: string;
   sourceFileHash: string;
@@ -41,6 +41,8 @@ export type SafeImportVerification = {
 export type SafeImportExecutionRecord = {
   contactId: string;
   nativeId: string;
+  // Historical HubSpot receipts predate this field and always target contacts.
+  objectType?: NativeCrmRecord['objectType'];
   status: 'pending' | 'sending' | 'accepted' | 'held' | 'unknown' | 'failed';
   error: string | null;
   verification?: SafeImportVerification;

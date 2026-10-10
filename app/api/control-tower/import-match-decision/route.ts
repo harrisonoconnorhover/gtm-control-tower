@@ -6,7 +6,7 @@ import { compareImportedContacts, type MatchField } from '@/lib/import-match';
 import { importMatchSourceKey, nativeMatchTargetKey, type ConfirmedImportMatch } from '@/lib/import-match-decision';
 import { readConfirmedTarget, signImportMatch } from '@/lib/import-match-decision-server';
 import { toHubSpotSyncContact } from '@/lib/hubspot-sync';
-import { toSalesforceSyncLead } from '@/lib/salesforce-sync';
+import { toSalesforceSyncLead, toSalesforceUpdateContact } from '@/lib/salesforce-sync';
 import { portableCrmFieldNames, type NativeCrmRecord } from '@/lib/crm-workflow';
 
 import type { LiveContactState } from '@/lib/live-control-tower';
@@ -32,6 +32,7 @@ export async function POST(request: Request) {
     const rows = workspace.state.contacts.filter((row) => row.contactId === payload.contactId);
     if (rows.length !== 1) return failure('Choose a unique saved import row.', 409);
     const row = rows[0];
+    const safeImport = workspace.state.importRecipe === 'safe-update-contacts' && workspace.state.importRecordMode === 'update-existing';
     const decisions = { ...row.crmMatchDecisions };
     if (payload.action === 'clear') {
       delete decisions[connectorId];
@@ -42,14 +43,15 @@ export async function POST(request: Request) {
         || typeof payload.scanId !== 'string' || !payload.scanId || payload.scanId.length > 120
         || typeof payload.nativeId !== 'string'
         || !(connectorId === 'hubspot' ? /^\d+$/ : /^(?:[A-Za-z0-9]{15}|[A-Za-z0-9]{18})$/).test(payload.nativeId)
-        || payload.objectType !== (connectorId === 'hubspot' ? 'contact' : 'lead')
+        || !(connectorId === 'hubspot' ? payload.objectType === 'contact'
+          : payload.objectType === 'lead' || (safeImport && payload.objectType === 'contact'))
         || !Array.isArray(payload.fields) || !payload.fields.length || payload.fields.length > allowedFields.size
         || !payload.fields.every((field) => allowedFields.has(field as MatchField))
         || new Set(payload.fields).size !== payload.fields.length) {
         return failure('Choose a supported candidate and matching fields, and give a reason of 1–500 characters.', 400);
       }
       let portable;
-      try { portable = connectorId === 'hubspot' ? toHubSpotSyncContact(row) : toSalesforceSyncLead(row); }
+      try { portable = connectorId === 'hubspot' ? toHubSpotSyncContact(row) : safeImport ? toSalesforceUpdateContact(row) : toSalesforceSyncLead(row); }
       catch { return failure('Resolve this row’s import issues before confirming a match.', 409); }
       const scan = await getDuplicateScan(payload.scanId);
       const coverageIssue = snapshotCoverageIssue(workspace.id, connectorId, scan);
@@ -65,7 +67,7 @@ export async function POST(request: Request) {
       }], records, payload.fields as MatchField[]);
       const candidate = report.rows[0]?.candidates.find(({ record }) => record.nativeId === payload.nativeId && record.objectType === payload.objectType)?.record;
       if (!candidate) return failure('This record is not a current candidate for the saved row. Refresh the comparison.', 409);
-      const target = await readConfirmedTarget(connectorId, payload.nativeId);
+      const target = await readConfirmedTarget(connectorId, payload.nativeId, payload.objectType as 'lead' | 'contact');
       if (!target || target.objectType !== payload.objectType || target.isConverted) return failure('This CRM record is missing or no longer eligible. Refresh the snapshot.', 409);
       const snapshotTarget: NativeCrmRecord = {
         nativeId: candidate.nativeId, objectType: candidate.objectType, email: candidate.email,
@@ -73,6 +75,11 @@ export async function POST(request: Request) {
         isConverted: false,
         fields: Object.fromEntries(portableCrmFieldNames.map((field) => [field, candidate[field] || null])) as NativeCrmRecord['fields'],
       };
+      if (connectorId === 'salesforce' && target.objectType === 'contact') {
+        // The snapshot includes Account context; only Contact-owned fields are approved.
+        snapshotTarget.fields.company = null;
+        snapshotTarget.fields.website = null;
+      }
       if (nativeMatchTargetKey(target) !== nativeMatchTargetKey(snapshotTarget)) return failure('The CRM record changed since this suggestion. Refresh the snapshot and review it again.', 409);
       const decision: Omit<ConfirmedImportMatch, 'signature'> = {
         connectorId, scanId: scan!.id, sourceKey: payload.sourceKey as string,

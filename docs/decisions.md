@@ -762,3 +762,24 @@ verified portal ID. Keep this slice out of D1 because its execution budget has
 not been qualified. Bound pages and repairs, persist write attempts before send,
 and never automatically replay an uncertain write. This adds no AI provider,
 outbound Slack messages, public deployment, or new routing-policy assumptions.
+
+## October 10, 2026 — Salesforce operations and a shared inbox
+
+Extend the existing account-bound review/executor and Watchdog engines. Safe Import
+checks both Salesforce objects and permits uniquely matched unconverted Leads or
+Contacts; Contact company/website stay outside scope because they belong to Account.
+Use Organization.Id as identity, object-qualified native IDs, and disable Lead
+assignment rules on PATCH. Do not infer an order for customized Lead statuses or
+copy HubSpot lifecycle/owner rules into Salesforce.
+
+Keep Watchdog settings and findings separate by provider, org and object. Poll
+Salesforce SystemModstamp windows with stable ID continuation, and preserve
+existing HubSpot storage. Only Lead Company/Title and Contact Title whitespace
+repairs qualify for the explicit opt-in; no ownership/status/Account mutation.
+
+Add a small SQLite import task above existing workspaces and immutable reviews.
+Commit upload/workspace together, deduplicate by provider and source hash, and
+derive task status from actual review/execution evidence. Compose Watchdog findings
+into the same Inbox without duplicating their storage or approval logic. No model,
+Slack or role system is required for this operator vertical slice. Hosted bounded
+Safe Import execution remains a separate unresolved release requirement.

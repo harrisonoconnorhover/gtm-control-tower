@@ -81,10 +81,10 @@ describe('persisted import decisions and update policy', () => {
   const now = new Date('2026-09-27T22:00:00.000Z');
   const source = () => importContactsCsv('contact_id,full_name,email,company,owner_id\nKEEP,Nina Shah,nina@costco.example,Costco,owner-1\nSKIP,Nina Shah,nina@costco.example,Costco,owner-1').contacts;
 
-  it('saves and reloads the update-existing recipe and source digest', async () => {
+  it.each(['hubspot', 'salesforce'] as const)('saves and reloads the %s update-existing recipe and source digest', async (destinationType) => {
     const { createWorkspace, saveWorkspace, getWorkspace } = await import('../lib/workspace-store');
     const workspace = await createWorkspace('Safe event attendees');
-    const state = { ...emptyWorkspaceState(), contacts: source(), originalContacts: source(), destinationType: 'hubspot' as const,
+    const state = { ...emptyWorkspaceState(), contacts: source(), originalContacts: source(), destinationType,
       importRecordMode: 'update-existing' as const, importRecipe: 'safe-update-contacts' as const, sourceFileHash: 'a'.repeat(64) };
     const saved = await saveWorkspace(workspace.id, state);
     expect((await getWorkspace(workspace.id))?.state).toEqual(saved.state);
@@ -96,7 +96,7 @@ describe('persisted import decisions and update policy', () => {
     const safe = { ...emptyWorkspaceState(), destinationType: 'hubspot' as const,
       importRecordMode: 'update-existing' as const, importRecipe: 'safe-update-contacts' as const };
     for (const override of [
-      { importRecordMode: 'create-and-update' }, { destinationType: 'salesforce' },
+      { importRecordMode: 'create-and-update' }, { destinationType: 'csv' },
       { crmUpdatePolicy: { mode: 'replace', fields: [...defaultCrmUpdatePolicy().fields], clearBlanks: false } },
       { crmUpdatePolicy: { mode: 'fill-empty', fields: ['phone'], clearBlanks: false } },
     ]) expect(() => validateWorkspaceState({ ...safe, ...override })).toThrow(/Safe Import requires/);

@@ -45,7 +45,7 @@ export class NoModelImportAssistant implements ImportAssistant {
     }
     if (!/\bupdate\b/.test(normalized) || (!/\bexisting\b/.test(normalized) && !normalized.includes('safe import'))) {
       return { status: 'needs-decision', interpretation: 'Choose the supported import rules before preparing a review.',
-        question: 'Update existing HubSpot contacts only, filling empty fields?', suggestedMapping };
+        question: 'Update existing CRM records only, filling empty supported fields?', suggestedMapping };
     }
     return { status: 'supported', interpretation: SAFE_IMPORT_RULES, suggestedMapping,
       settings: { recipe: SAFE_IMPORT_RECIPE, recordMode: 'update-existing', updatePolicy: defaultCrmUpdatePolicy() } };
@@ -66,7 +66,7 @@ export class NoModelImportAssistant implements ImportAssistant {
       const reasons = [...new Set(rows.map((row) => row.reason).filter(Boolean))];
       text = rows.length ? `${rows.length} rows have no scheduled update. ${reasons.join(' ')}` : 'No rows are held or unresolved in this saved review.';
     } else {
-      text = `${SAFE_IMPORT_RULES} Primary email, ownership, lifecycle stage, consent, subscription status, and external identifiers are outside the writable fields. This review accounts for ${review.rows.length} source rows.`;
+      text = `${SAFE_IMPORT_RULES} Primary email, ownership, lifecycle stage, consent, subscription status, and external identifiers are outside the writable fields.${review.connectorId === 'salesforce' ? ' Salesforce Contact company and website are Account fields and are also outside this recipe.' : ''} This review accounts for ${review.rows.length} source rows.`;
     }
     return { text, contactIds, reviewId: review.id };
   }

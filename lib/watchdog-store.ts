@@ -1,5 +1,5 @@
 import { getDatabase, type DatabaseAdapter } from '@/db';
-import { WATCHDOG_DEFAULT_CONFIG, type WatchdogConfig, type WatchdogFinding, type WatchdogRun } from './watchdog-types';
+import { WATCHDOG_DEFAULT_CONFIG, watchdogAccountIdentity, watchdogRecordKey, type WatchdogConfig, type WatchdogFinding, type WatchdogRun } from './watchdog-types';
 import { validWatchdogEmail, type WatchdogIssue, type WatchdogSnapshot } from './watchdog-rules';
 
 export type WatchdogAccount = {
@@ -54,7 +54,7 @@ export async function watchdogDatabase(): Promise<DatabaseAdapter> {
 }
 
 export async function getWatchdogAccount(accountId: string): Promise<WatchdogAccount> {
-  if (!/^[a-zA-Z0-9_-]{1,120}$/.test(accountId)) throw new Error('Invalid HubSpot account identity.');
+  if (!/^[a-zA-Z0-9_-]{1,120}$/.test(accountId)) throw new Error('Invalid CRM account identity.');
   const db = await watchdogDatabase();
   await db.prepare('INSERT INTO watchdog_accounts (account_id, config_json) VALUES (?, ?) ON CONFLICT(account_id) DO NOTHING')
     .bind(accountId, JSON.stringify(WATCHDOG_DEFAULT_CONFIG)).run();
@@ -83,7 +83,7 @@ export async function claimWatchdogTick(accountId: string, force: boolean): Prom
   if (!row) return null;
   // Interrupted sending attempts are never candidates for another automatic PATCH.
   await db.batch([
-    db.prepare(`UPDATE watchdog_findings SET status = 'unknown', repair_error = 'A previous repair was interrupted. Verify HubSpot manually; it will not be replayed.'
+    db.prepare(`UPDATE watchdog_findings SET status = 'unknown', repair_error = 'A previous repair was interrupted. Verify the CRM manually; it will not be replayed.'
       WHERE account_id = ? AND id IN (SELECT finding_id FROM watchdog_repairs WHERE account_id = ? AND state = 'sending')`)
       .bind(accountId, accountId),
     db.prepare(`UPDATE watchdog_repairs SET state = 'unknown', finished_at = ?, error = 'Worker interrupted; remote outcome unknown.'
@@ -132,7 +132,7 @@ export async function getWatchdogSnapshot(accountId: string, contactId: string):
 export async function saveWatchdogObservation(accountId: string, leaseId: string, snapshot: WatchdogSnapshot, label: string, issues: WatchdogIssue[], assignee: string): Promise<{ findings: WatchdogFinding[]; opened: number }> {
   const db = await watchdogDatabase();
   const now = new Date().toISOString();
-  const previous = await getContactFindings(accountId, snapshot.contact.id);
+  const previous = await getContactFindings(accountId, watchdogRecordKey(snapshot.contact));
   const statements = issues.map((issue) => db.prepare(`INSERT INTO watchdog_findings
     (id, account_id, contact_id, rule, status, assignee, first_seen_at, last_seen_at, evidence_json, auto_eligible)
     SELECT ?, ?, ?, ?, 'open', ?, ?, ?, ?, ? WHERE ${leasePredicate}
@@ -140,8 +140,8 @@ export async function saveWatchdogObservation(accountId: string, leaseId: string
       status = CASE WHEN watchdog_findings.status IN ('fixed', 'resolved') THEN 'open' ELSE watchdog_findings.status END,
       occurrences = watchdog_findings.occurrences + CASE WHEN watchdog_findings.status IN ('fixed', 'resolved') THEN 1 ELSE 0 END,
       last_seen_at = excluded.last_seen_at, resolved_at = NULL, evidence_json = excluded.evidence_json, auto_eligible = excluded.auto_eligible`)
-    .bind(crypto.randomUUID(), accountId, snapshot.contact.id, issue.rule, assignee, now, now,
-      JSON.stringify({ ...issue, contactLabel: label }),
+    .bind(crypto.randomUUID(), accountId, watchdogRecordKey(snapshot.contact), issue.rule, assignee, now, now,
+      JSON.stringify({ ...issue, contactLabel: label, provider: snapshot.contact.provider ?? 'hubspot', objectType: snapshot.contact.objectType ?? 'Contact' }),
       issue.rule === 'text_whitespace' && Object.values(issue.after).every(Boolean) && validWatchdogEmail(snapshot.contact.properties.email ?? '') ? 1 : 0,
       accountId, leaseId, now));
   for (const finding of previous) {
@@ -153,11 +153,11 @@ export async function saveWatchdogObservation(accountId: string, leaseId: string
   statements.push(db.prepare(`INSERT INTO watchdog_snapshots (account_id, contact_id, payload_json)
     SELECT ?, ?, ? WHERE ${leasePredicate}
     ON CONFLICT(account_id, contact_id) DO UPDATE SET payload_json = excluded.payload_json`)
-    .bind(accountId, snapshot.contact.id, JSON.stringify(snapshot), accountId, leaseId, now));
+    .bind(accountId, watchdogRecordKey(snapshot.contact), JSON.stringify(snapshot), accountId, leaseId, now));
   await db.batch(statements);
   await assertWatchdogLease(accountId, leaseId);
   return {
-    findings: await getContactFindings(accountId, snapshot.contact.id),
+    findings: await getContactFindings(accountId, watchdogRecordKey(snapshot.contact)),
     opened: issues.filter((issue) => !previous.some((finding) => finding.rule === issue.rule && !['resolved', 'fixed'].includes(finding.status))).length,
   };
 }
@@ -188,7 +188,7 @@ export async function claimWatchdogRepair(accountId: string, leaseId: string, fi
     SELECT ?, ?, ?, ?, ?, 'sending', ?, ?, ? WHERE ${leasePredicate}
     AND EXISTS (SELECT 1 FROM watchdog_findings WHERE id = ? AND account_id = ? AND status = 'open')
     AND NOT EXISTS (SELECT 1 FROM watchdog_repairs WHERE account_id = ? AND finding_id = ? AND state IN ('sending', 'unknown')) RETURNING id`)
-    .bind(id, accountId, finding.id, finding.contactId, leaseId, JSON.stringify(finding.before), JSON.stringify(finding.after), now,
+    .bind(id, accountId, finding.id, finding.provider === 'salesforce' ? `${finding.objectType}:${finding.contactId}` : finding.contactId, leaseId, JSON.stringify(finding.before), JSON.stringify(finding.after), now,
       accountId, leaseId, new Date(Date.now() + 15_000).toISOString(), finding.id, accountId, accountId, finding.id).first<{ id: string }>();
   if (!row) return null;
   await db.prepare(`UPDATE watchdog_findings SET status = 'unknown', repair_error = 'Repair dispatched; waiting for verified readback.'
@@ -238,12 +238,12 @@ export async function readWatchdogReport(accountId: string): Promise<{ findings:
     db.prepare('SELECT payload_json FROM watchdog_runs WHERE account_id = ? ORDER BY started_at DESC, rowid DESC LIMIT 25').bind(accountId).all<{ payload_json: string }>(),
     db.prepare('SELECT status, COUNT(*) AS count FROM watchdog_findings WHERE account_id = ? GROUP BY status').bind(accountId).all<{ status: WatchdogFinding['status']; count: number }>(),
   ]);
-  return { findings: findings.results.map(hydrateFinding), runs: runs.results.map((row) => JSON.parse(row.payload_json) as WatchdogRun), counts: counts.results };
+  return { findings: findings.results.map(hydrateFinding), runs: runs.results.map((row) => { const run = JSON.parse(row.payload_json) as WatchdogRun; return { ...run, accountId: watchdogAccountIdentity(run.accountId).accountId }; }), counts: counts.results };
 }
 
 function hydrateFinding(row: FindingRow): WatchdogFinding {
   return {
-    ...JSON.parse(row.evidence_json), id: row.id, accountId: row.account_id, contactId: row.contact_id,
+    provider: 'hubspot', objectType: 'Contact', ...JSON.parse(row.evidence_json), id: row.id, accountId: watchdogAccountIdentity(row.account_id).accountId, contactId: row.contact_id.replace(/^(Lead|Contact):/, ''),
     rule: row.rule, status: row.status, assignee: row.assignee, note: row.note,
     firstSeenAt: row.first_seen_at, lastSeenAt: row.last_seen_at, resolvedAt: row.resolved_at,
     occurrences: row.occurrences, repairError: row.repair_error,

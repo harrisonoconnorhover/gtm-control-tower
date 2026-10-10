@@ -6,12 +6,14 @@ import { getDuplicateScanRecords, getLatestDuplicateScan } from './duplicate-sca
 import { reviewImportCreates, snapshotCoverageIssue } from './import-create-review';
 import type { SavedWorkspace } from './workspace';
 import { toHubSpotSyncContact } from './hubspot-sync';
-import { toSalesforceSyncLead } from './salesforce-sync';
+import { toSalesforceSyncLead, toSalesforceUpdateContact } from './salesforce-sync';
+import { salesforceConnection } from './crm-account';
 import { importMatchSourceKey, isConfirmedImportMatch, nativeMatchTargetKey, type ConfirmedImportMatch } from './import-match-decision';
 import { readConfirmedTarget, verifyImportMatch } from './import-match-decision-server';
 
 export async function createGovernedCrmPlan(connectorId: CrmWritePlan['connectorId'], sourceFile: string, contacts: PortableCrmContact[], workspace: SavedWorkspace, updatePolicy: CrmUpdatePolicy) {
   const recordMode = normalizeImportRecordMode(workspace.state.importRecordMode);
+  const safeImport = workspace.state.importRecipe === 'safe-update-contacts' && recordMode === 'update-existing';
   const rowHolds = new Map<string, string>();
   for (const contact of contacts) {
     const saved = workspace.state.contacts.filter((row) => row?.contactId === contact.contactId);
@@ -24,22 +26,23 @@ export async function createGovernedCrmPlan(connectorId: CrmWritePlan['connector
       continue;
     }
     try {
-      const portable = connectorId === 'hubspot' ? toHubSpotSyncContact(saved[0]) : toSalesforceSyncLead(saved[0]);
+      const portable = connectorId === 'hubspot' ? toHubSpotSyncContact(saved[0])
+        : safeImport ? toSalesforceUpdateContact(saved[0]) : toSalesforceSyncLead(saved[0]);
       if (['contactId', 'email', ...portableCrmFieldNames].some((field) => (portable[field as keyof PortableCrmContact]?.trim() || null) !== (contact[field as keyof PortableCrmContact]?.trim() || null))) {
         rowHolds.set(contact.contactId, 'This row changed in the saved import. Refresh the workspace and comparison.');
       }
     } catch { rowHolds.set(contact.contactId, 'This saved row is not eligible for this CRM. Resolve its import issues before writing.'); }
   }
-  const existing = await readExisting(connectorId, contacts);
-  const matchDecisions = await applyConfirmedMatches(connectorId, contacts, workspace, existing, rowHolds);
+  const existing = await readExisting(connectorId, contacts, safeImport);
+  const matchDecisions = await applyConfirmedMatches(connectorId, contacts, workspace, existing, rowHolds, safeImport);
   const now = new Date();
-  const initialPlan = buildCrmWritePlan(connectorId, sourceFile, contacts, existing, now, undefined, updatePolicy, rowHolds, matchDecisions, recordMode);
+  const initialPlan = buildCrmWritePlan(connectorId, sourceFile, contacts, existing, now, undefined, updatePolicy, rowHolds, matchDecisions, recordMode, safeImport);
   for (const record of initialPlan.records) {
     if (record.operation === 'create' && workspace.state.contacts.some((row) => row.contactId === record.contactId && hasPomadeOrigin(row))) {
       rowHolds.set(record.contactId, 'This Pomade handoff permits existing-record updates only. No new CRM person will be created.');
     }
   }
-  const exactPlan = buildCrmWritePlan(connectorId, sourceFile, contacts, existing, now, undefined, updatePolicy, rowHolds, matchDecisions, recordMode);
+  const exactPlan = buildCrmWritePlan(connectorId, sourceFile, contacts, existing, now, undefined, updatePolicy, rowHolds, matchDecisions, recordMode, safeImport);
   const createIds = new Set(exactPlan.records.filter((record) => recordMode === 'update-existing'
     ? !record.matches.length && !rowHolds.has(record.contactId)
     : record.operation === 'create').map((record) => record.contactId));
@@ -54,7 +57,7 @@ export async function createGovernedCrmPlan(connectorId: CrmWritePlan['connector
       : 'No confirmed existing match. This row will not be imported.';
     reviewed.review.status = 'held';
   }
-  return buildCrmWritePlan(connectorId, sourceFile, contacts, existing, now, reviews, updatePolicy, rowHolds, matchDecisions, recordMode);
+  return buildCrmWritePlan(connectorId, sourceFile, contacts, existing, now, reviews, updatePolicy, rowHolds, matchDecisions, recordMode, safeImport);
 }
 
 async function applyConfirmedMatches(
@@ -63,6 +66,7 @@ async function applyConfirmedMatches(
   workspace: SavedWorkspace,
   existing: Map<string, NativeCrmRecord[]>,
   rowHolds: Map<string, string>,
+  allowSalesforceContacts: boolean,
 ): Promise<Map<string, CrmMatchDecision>> {
   const included = workspace.state.contacts.filter((row) => row.recordStatus === 'active' && !row.importExclusion);
   const includedIds = new Set(included.map((row) => row.contactId));
@@ -118,9 +122,9 @@ async function applyConfirmedMatches(
   for (const contact of contacts) {
     const decision = selections.get(contact.contactId);
     if (!decision || rowHolds.has(contact.contactId)) continue;
-    const current = await readConfirmedTarget(connectorId, decision.target.nativeId);
-    if (!current || current.objectType !== (connectorId === 'hubspot' ? 'contact' : 'lead')
-      || (connectorId === 'salesforce' && current.isConverted !== false)
+    const current = await readConfirmedTarget(connectorId, decision.target.nativeId, decision.target.objectType);
+    if (!current || (connectorId === 'hubspot' ? current.objectType !== 'contact'
+      : current.objectType === 'contact' ? !allowSalesforceContacts : current.isConverted !== false)
       || nativeMatchTargetKey(current) !== nativeMatchTargetKey(decision.target)) {
       hold(contact.contactId, 'The confirmed CRM record changed or is no longer an eligible update target. Review and confirm this person again before importing.');
       continue;
@@ -135,21 +139,12 @@ async function applyConfirmedMatches(
   return decisions;
 }
 
-export async function readExisting(connectorId: CrmWritePlan['connectorId'], contacts: PortableCrmContact[]) {
+export async function readExisting(connectorId: CrmWritePlan['connectorId'], contacts: PortableCrmContact[], includeContactFields = false) {
   if (connectorId === 'hubspot') {
     const token = process.env.HUBSPOT_ACCESS_TOKEN;
     if (!token) throw new Error('HubSpot preview requires a private-app token with contact read and write scopes.');
     return readHubSpotExisting(contacts, token);
   }
   const { apiRoot, headers } = salesforceConnection();
-  return readSalesforceExisting(contacts, apiRoot, headers);
-}
-
-
-function salesforceConnection() {
-  const instanceUrl = new URL(process.env.SALESFORCE_INSTANCE_URL || '');
-  if (instanceUrl.protocol !== 'https:') throw new Error('Salesforce instance must use HTTPS.');
-  const accessToken = process.env.SALESFORCE_ACCESS_TOKEN;
-  if (!accessToken) throw new Error('Salesforce connection unavailable.');
-  return { apiRoot: `${instanceUrl.origin}/services/data/v${process.env.SALESFORCE_API_VERSION ?? '67.0'}`, headers: { authorization: `Bearer ${accessToken}`, accept: 'application/json' } };
+  return readSalesforceExisting(contacts, apiRoot, headers, includeContactFields);
 }

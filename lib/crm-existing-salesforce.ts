@@ -2,6 +2,12 @@ import type { NativeCrmRecord, PortableCrmContact } from './crm-workflow';
 
 const MAX_QUERY_PAGES = 10;
 const LEAD_FIELDS = 'Id, Email, IsConverted, FirstName, LastName, Company, Phone, Title, Website';
+const CONTACT_FIELDS = 'Id, Email, FirstName, LastName, Phone, Title';
+
+export function isSalesforcePersonId(nativeId: string, objectType: NativeCrmRecord['objectType']): boolean {
+  if (objectType !== 'lead' && objectType !== 'contact') return false;
+  return (objectType === 'lead' ? /^00Q(?:[A-Za-z0-9]{12}|[A-Za-z0-9]{15})$/ : /^003(?:[A-Za-z0-9]{12}|[A-Za-z0-9]{15})$/).test(nativeId);
+}
 
 /** Read the selected Lead again, including conversion status, before planning an update. */
 export async function readSalesforceLeadById(
@@ -9,19 +15,27 @@ export async function readSalesforceLeadById(
   apiRoot: string,
   headers: Record<string, string>,
 ): Promise<NativeCrmRecord | null> {
-  if (!/^(?:[A-Za-z0-9]{15}|[A-Za-z0-9]{18})$/.test(nativeId)) {
+  return readSalesforceRecordById(nativeId, 'lead', apiRoot, headers);
+}
+
+/** Object-qualified native reads keep Contact and Lead evidence separate. */
+export async function readSalesforceRecordById(
+  nativeId: string, objectType: NativeCrmRecord['objectType'], apiRoot: string, headers: Record<string, string>,
+): Promise<NativeCrmRecord | null> {
+  if (!isSalesforcePersonId(nativeId, objectType)) {
     throw new Error('Salesforce lookup requires a 15- or 18-character record ID');
   }
   const root = validatedApiRoot(apiRoot);
-  const query = new URLSearchParams({ fields: LEAD_FIELDS.replaceAll(' ', '') });
-  const response = await fetch(`${root.href}/sobjects/Lead/${nativeId}?${query}`, {
+  const objectName = objectType === 'lead' ? 'Lead' : 'Contact';
+  const query = new URLSearchParams({ fields: (objectType === 'lead' ? LEAD_FIELDS : CONTACT_FIELDS).replaceAll(' ', '') });
+  const response = await fetch(`${root.href}/sobjects/${objectName}/${nativeId}?${query}`, {
     cache: 'no-store', redirect: 'manual', headers, signal: AbortSignal.timeout(30_000),
   });
   if (response.status === 404) return null;
   if (!response.ok || response.status === 207) throw new Error(`Salesforce lookup returned ${response.status}`);
   const value: unknown = await response.json();
-  const record = toNativeRecord(value, 'lead');
-  if (record.nativeId !== nativeId) throw new Error('Salesforce lookup returned an unrequested Lead ID');
+  const record = toNativeRecord(value, objectType, true);
+  if (record.nativeId !== nativeId) throw new Error('Salesforce lookup returned an unrequested record ID');
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/u.test(record.email)) {
     throw new Error('Salesforce lookup returned a malformed email');
   }
@@ -33,6 +47,7 @@ export async function readSalesforceExisting(
   contacts: PortableCrmContact[],
   apiRoot: string,
   headers: Record<string, string>,
+  includeContactFields = false,
 ): Promise<Map<string, NativeCrmRecord[]>> {
   const emails = new Set(contacts.map((contact) => contact.email.trim().toLowerCase()));
   const matches = new Map<string, NativeCrmRecord[]>();
@@ -45,7 +60,7 @@ export async function readSalesforceExisting(
   for (const objectType of ['lead', 'contact'] as const) {
     const fields = objectType === 'lead'
       ? LEAD_FIELDS
-      : 'Id, Email';
+      : includeContactFields ? CONTACT_FIELDS : 'Id, Email';
     const objectName = objectType === 'lead' ? 'Lead' : 'Contact';
     const query = `SELECT ${fields} FROM ${objectName} WHERE Email IN (${quotedEmails})`;
     let nextUrl = `${root.href}/query?q=${encodeURIComponent(query)}`;
@@ -60,13 +75,14 @@ export async function readSalesforceExisting(
         headers,
         signal: AbortSignal.timeout(30_000),
       });
-      if (!response.ok) throw new Error(`Salesforce query returned ${response.status}`);
+      if (!response.ok || response.status === 207) throw new Error(`Salesforce query returned ${response.status}`);
       const payload: unknown = await response.json();
       if (!isRecord(payload) || !Array.isArray(payload.records) || typeof payload.done !== 'boolean') {
         throw new Error('Salesforce query returned malformed records or pagination metadata');
       }
       for (const value of payload.records) {
-        const record = toNativeRecord(value, objectType);
+        const record = toNativeRecord(value, objectType, includeContactFields);
+        if (includeContactFields && !isSalesforcePersonId(record.nativeId, objectType)) throw new Error('Salesforce returned an invalid native object identity');
         if (!emails.has(record.email)) throw new Error('Salesforce query returned an unrequested email');
         const identity = `${record.objectType}:${record.nativeId}`;
         const previous = seenRecords.get(identity);
@@ -103,12 +119,12 @@ function validatedApiRoot(apiRoot: string): URL {
   return root;
 }
 
-function toNativeRecord(value: unknown, objectType: 'lead' | 'contact'): NativeCrmRecord {
+function toNativeRecord(value: unknown, objectType: 'lead' | 'contact', includeContactFields = false): NativeCrmRecord {
   if (!isRecord(value) || typeof value.Id !== 'string' || !value.Id.trim()
     || typeof value.Email !== 'string' || !value.Email.trim()) {
     throw new Error('Salesforce query returned a malformed record identity');
   }
-  if (objectType === 'contact') {
+  if (objectType === 'contact' && !includeContactFields) {
     return {
       nativeId: value.Id,
       objectType,
@@ -116,21 +132,22 @@ function toNativeRecord(value: unknown, objectType: 'lead' | 'contact'): NativeC
       fields: { firstName: null, lastName: null, company: null, phone: null, jobTitle: null, website: null },
     };
   }
-  if (typeof value.IsConverted !== 'boolean') {
+  if (objectType === 'lead' && typeof value.IsConverted !== 'boolean') {
     throw new Error('Salesforce query returned a Lead without a conversion status');
   }
   return {
     nativeId: value.Id,
     objectType,
-    isConverted: value.IsConverted,
+    ...(objectType === 'lead' ? { isConverted: value.IsConverted as boolean } : {}),
     email: value.Email.trim().toLowerCase(),
     fields: {
       firstName: nullableString(value.FirstName),
       lastName: nullableString(value.LastName),
-      company: nullableString(value.Company),
+      // Contact company/website live on Account; Safe Import never updates Account.
+      company: objectType === 'lead' ? nullableString(value.Company) : null,
       phone: nullableString(value.Phone),
       jobTitle: nullableString(value.Title),
-      website: nullableString(value.Website),
+      website: objectType === 'lead' ? nullableString(value.Website) : null,
     },
   };
 }

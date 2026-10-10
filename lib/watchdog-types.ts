@@ -1,3 +1,6 @@
+export type WatchdogProvider = 'hubspot' | 'salesforce';
+export type WatchdogObjectType = 'Lead' | 'Contact';
+
 export type WatchdogRule = 'email_missing' | 'email_invalid' | 'owner_missing' | 'lifecycle_regression' | 'text_whitespace';
 export type WatchdogStatus = 'open' | 'in_progress' | 'resolved' | 'fixed' | 'unknown';
 
@@ -9,12 +12,16 @@ export type WatchdogConfig = {
 };
 
 export type WatchdogContact = {
+  provider?: WatchdogProvider;
+  objectType?: WatchdogObjectType;
   id: string;
   updatedAt: string;
   properties: Record<string, string>;
 };
 
 export type WatchdogFinding = {
+  provider: WatchdogProvider;
+  objectType: WatchdogObjectType;
   id: string;
   accountId: string;
   contactId: string;
@@ -50,6 +57,9 @@ export type WatchdogRun = {
 };
 
 export type WatchdogOverview = {
+  provider: WatchdogProvider;
+  objectTypes: WatchdogObjectType[];
+  instanceUrl?: string;
   accountId: string;
   config: WatchdogConfig;
   phase: 'baseline' | 'changes';
@@ -68,3 +78,18 @@ export const WATCHDOG_DEFAULT_CONFIG: WatchdogConfig = {
   intervalSeconds: 300,
   defaultAssignee: 'RevOps',
 };
+
+/** Existing HubSpot keys stay intact; Salesforce is namespaced by provider, org, and object. */
+export function watchdogAccountScope(provider: WatchdogProvider, accountId: string): string {
+  return provider === 'salesforce' ? `salesforce_${accountId}` : accountId;
+}
+
+export function watchdogAccountIdentity(scope: string): { provider: WatchdogProvider; accountId: string } {
+  return scope.startsWith('salesforce_')
+    ? { provider: 'salesforce', accountId: scope.slice('salesforce_'.length) }
+    : { provider: 'hubspot', accountId: scope };
+}
+
+export function watchdogRecordKey(contact: Pick<WatchdogContact, 'id' | 'provider' | 'objectType'>): string {
+  return contact.provider === 'salesforce' ? `${contact.objectType}:${contact.id}` : contact.id;
+}

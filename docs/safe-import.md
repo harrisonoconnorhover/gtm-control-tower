@@ -1,11 +1,11 @@
 # Safe Import: Update existing contacts
 
-The persistent self-hosted `/app/lab` offers a named CSV-to-HubSpot Contact
-workflow. It runs without any AI model, account, or Anthropic dependency.
+The persistent self-hosted `/app/lab` offers a CSV update workflow for HubSpot
+Contacts and Salesforce Leads/Contacts. It requires a connected CRM but no AI model.
 
 1. Select **Update existing contacts safely**. Read the visible import rules.
 2. Upload a CSV, inspect its existing column mapping, then import it locally.
-3. Select **Prepare review**. This reads HubSpot in batches of at most 100 and
+3. Choose HubSpot or Salesforce and select **Prepare review**. This reads the CRM in batches of at most 100 and
    saves one whole-file proposal. Every source row is proposed, unchanged, held,
    unmatched, skipped, or unresolved. Failed/incomplete lookups block approval.
 4. Open a row to inspect current, imported, and proposed values for all six fields.
@@ -24,9 +24,11 @@ workspace storage; do not commit customer files or credentials.
 
 ## Protected update contract
 
-The saved recipe requires `importRecordMode: "update-existing"`, HubSpot as the
+The saved recipe requires `importRecordMode: "update-existing"`, HubSpot or Salesforce as the
 destination, and the six-field `fill-empty` policy with `clearBlanks: false`.
-Writable fields are first name, last name, company, phone, job title, and website.
+Writable fields for HubSpot Contacts and Salesforce Leads are first name, last name, company, phone, job title, and website.
+Salesforce Contacts support first name, last name, phone and title only; company,
+website and the Account relationship are out of scope. Reviews show those field decisions explicitly.
 Primary email, ownership, lifecycle stage, consent, subscription status, and
 external identifiers are outside the write payload.
 
@@ -45,17 +47,28 @@ an update. Known aliases, confirmations, and targets learned in different batche
 are checked for competing rows across the whole import.
 
 The general record mode defaults legacy imports to `create-and-update`. The
-existing stricter Pomade holds remain. Salesforce's existing Lead workflow is
-preserved; this recipe does not write Salesforce Contacts.
+existing stricter Pomade holds remain. Legacy Salesforce imports remain Lead-only;
+Contact updates are enabled only inside the saved Safe Import recipe. Exact-email
+lookup checks both objects, holds multiple matches, and rejects converted Leads.
 
 ## Approval, recovery, and verification
 
 The browser submits a saved review ID, never a replacement plan. Approval is
-stored with the actual HubSpot portal ID returned by the account-information
-API. Both approval and readback require the same account. Preparing a review
+stored with the actual HubSpot portal ID or Salesforce `Organization.Id`.
+Both approval and readback require the same account. Preparing a HubSpot review
 requires account-information read permission (`account-info/v3/details`) as well
 as the contact read permissions; execution additionally requires contact writes.
 No credential digest is used as an account identity.
+
+Salesforce requires API access, Organization identity lookup and readable Lead/Contact
+fields; writes need edit access to the selected object/fields. Configure
+`SALESFORCE_INSTANCE_URL`, `SALESFORCE_ACCESS_TOKEN`, and `SALESFORCE_API_VERSION`.
+An expired session fails closed. With the existing authenticated CLI org,
+`npm run configure:salesforce` refreshes the ignored local environment; restart the
+app and runner afterward. Automatic OAuth refresh is not implemented.
+Updates use native object IDs and
+[`Sforce-Auto-Assign: FALSE`](https://developer.salesforce.com/docs/platform/api-rest/guide/headers-autoassign.html)
+to suppress Lead assignment rules. Other organization automation can still run.
 
 Reviews expire after 15 minutes. The server rebuilds the whole comparison before
 approval and checks the saved workspace again before each write. It immediately
@@ -98,6 +111,7 @@ Passing storage tests does not qualify that deployment path.
 ```bash
 npm test -- tests/safe-import-route.test.ts tests/safe-import-review-server.test.ts tests/safe-import-execution.test.ts tests/crm-account.test.ts tests/import-assistant.test.ts
 CONTROL_TOWER_BROWSER_BASE_URL=http://127.0.0.1:3021 node scripts/check-safe-import.mjs
+SAFE_IMPORT_PROVIDER=salesforce CONTROL_TOWER_BROWSER_BASE_URL=http://127.0.0.1:3021 node scripts/check-safe-import.mjs
 ```
 
 The 106-row route fixture uses simulated HubSpot and real temporary SQLite:
@@ -111,3 +125,8 @@ Browser checks use simulated CRM responses and real workspace persistence.
 The separate opt-in native runner uses existing synthetic development contacts
 and reviewed restoration. No deployment, downstream-effect, or production-scale
 proof is claimed by the simulated acceptance checks.
+
+On October 10, 2026 a read-only Salesforce preparation check verified Organization
+identity and one existing Lead plus one Contact: two unchanged rows, complete saved
+review, eight GET requests, zero CRM writes. Salesforce fills and uncertain outcomes
+were tested with fictional API responses and real temporary SQLite, not native writes.

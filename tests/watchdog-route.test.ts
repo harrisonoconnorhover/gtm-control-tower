@@ -2,10 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const service = vi.hoisted(() => ({
   getWatchdogOverview: vi.fn(), configureWatchdog: vi.fn(), tickWatchdog: vi.fn(), triageWatchdogFinding: vi.fn(),
-  readHubSpotAccountIdentity: vi.fn(),
+  readHubSpotAccountIdentity: vi.fn(), readSalesforceAccountIdentity: vi.fn(), salesforceConnection: vi.fn(),
 }));
 vi.mock('@/lib/watchdog', () => service);
-vi.mock('@/lib/crm-account', () => ({ readHubSpotAccountIdentity: service.readHubSpotAccountIdentity }));
+vi.mock('@/lib/crm-account', () => ({ readHubSpotAccountIdentity: service.readHubSpotAccountIdentity, readSalesforceAccountIdentity: service.readSalesforceAccountIdentity, salesforceConnection: service.salesforceConnection }));
 import { GET, POST } from '@/app/api/control-tower/watchdog/route';
 
 const config = { enabled: true, automaticRepairs: false, intervalSeconds: 300, defaultAssignee: 'RevOps' };
@@ -23,6 +23,8 @@ beforeEach(() => {
   vi.stubEnv('CONTROL_TOWER_SYNC_KEY', 'operator-test');
   vi.stubEnv('HUBSPOT_ACCESS_TOKEN', 'fictional-token');
   vi.stubEnv('CONTROL_TOWER_PERSISTENCE_ENABLED', 'true');
+  service.salesforceConnection.mockReturnValue({ apiRoot: 'https://fixture.my.salesforce.com/services/data/v67.0', headers: { authorization: 'Bearer fictional-sf' } });
+  service.readSalesforceAccountIdentity.mockResolvedValue({ connectorId: 'salesforce', accountId: '00D000000000001' });
   service.readHubSpotAccountIdentity.mockResolvedValue({ connectorId: 'hubspot', accountId: '12345' });
   service.getWatchdogOverview.mockResolvedValue({ accountId: '12345', config, findings: [], runs: [] });
 });
@@ -68,5 +70,35 @@ describe('watchdog operator endpoint', () => {
     vi.stubEnv('CONTROL_TOWER_PERSISTENCE_ENABLED', 'false');
     expect((await POST(request({ action: 'tick' }))).status).toBe(503);
     expect(service.tickWatchdog).not.toHaveBeenCalled();
+  });
+});
+
+
+describe('Salesforce Watchdog operator endpoint', () => {
+  it('scopes configuration and reads to the verified org and returns its native instance link metadata', async () => {
+    service.getWatchdogOverview.mockResolvedValue({ provider: 'salesforce', accountId: '00D000000000001', config, findings: [], runs: [] });
+    const response = await POST(request({ action: 'configure', provider: 'salesforce', accountId: '00D000000000002', config }));
+    expect(response.status).toBe(200);
+    expect(service.configureWatchdog).toHaveBeenCalledWith('salesforce_00D000000000001', config);
+    expect(((await response.json()) as { watchdog: { instanceUrl: string } }).watchdog.instanceUrl).toBe('https://fixture.my.salesforce.com');
+    expect(service.readHubSpotAccountIdentity).not.toHaveBeenCalled();
+    const get = new Request('http://localhost/api/control-tower/watchdog?provider=salesforce', { headers: { 'x-control-tower-key': 'operator-test' } });
+    expect((await GET(get)).status).toBe(200);
+    expect(service.getWatchdogOverview).toHaveBeenLastCalledWith('salesforce_00D000000000001');
+  });
+
+  it('dispatches ticks using a server-created provider source, never caller supplied records or credentials', async () => {
+    expect((await POST(request({ action: 'tick', provider: 'salesforce', force: true, records: [{ id: 'injected' }], token: 'injected' }))).status).toBe(200);
+    expect(service.tickWatchdog).toHaveBeenCalledWith('salesforce_00D000000000001', '', {
+      force: true, source: expect.objectContaining({ provider: 'salesforce', accountId: '00D000000000001' }),
+    });
+  });
+
+  it('rejects unsupported providers and unverifiable native orgs without scanning or configuring', async () => {
+    expect((await POST(request({ action: 'tick', provider: 'other' }))).status).toBe(400);
+    service.readSalesforceAccountIdentity.mockRejectedValue(new Error('Organization unavailable'));
+    expect((await POST(request({ action: 'configure', provider: 'salesforce', config }))).status).toBe(503);
+    expect(service.tickWatchdog).not.toHaveBeenCalled();
+    expect(service.configureWatchdog).not.toHaveBeenCalled();
   });
 });

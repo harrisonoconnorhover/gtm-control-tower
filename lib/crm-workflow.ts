@@ -253,6 +253,7 @@ export function buildCrmWritePlan(
   excludedRows?: Map<string, string>,
   matchDecisions?: Map<string, CrmMatchDecision>,
   recordMode: ImportRecordMode = 'create-and-update',
+  allowSalesforceContactUpdates = false,
 ): CrmWritePlan {
   const policy = normalizeCrmUpdatePolicy(updatePolicy);
   const mode = normalizeImportRecordMode(recordMode);
@@ -314,7 +315,8 @@ export function buildCrmWritePlan(
     if ((matchedInputs.get(recordKey(match))?.size ?? 0) > 1) {
       return hold('Multiple imported rows match the same CRM record. Resolve the rows before writing.');
     }
-    if (connectorId === 'salesforce' && (match.objectType === 'contact' || match.isConverted)) {
+    if (connectorId === 'salesforce' && ((match.objectType === 'contact' && !allowSalesforceContactUpdates)
+      || (match.objectType === 'lead' && match.isConverted !== false))) {
       return hold(match.objectType === 'contact'
         ? 'An existing Salesforce Contact has this email. Review that Contact instead of creating a Lead.'
         : 'An existing converted Salesforce Lead has this email. Review its conversion instead of creating another Lead.');
@@ -329,6 +331,9 @@ export function buildCrmWritePlan(
       const decision = (action: ImportFieldDecision['action'], reasonCode: string): ImportFieldDecision => ({
         field, importedValue: next, currentValue: before, proposedValue: before, action, reasonCode,
       });
+      if (connectorId === 'salesforce' && match.objectType === 'contact' && (field === 'company' || field === 'website')) {
+        return decision('preserve', 'salesforce-contact-account-field-protected');
+      }
       if (mode === 'update-existing' && isSuspiciousValue(before)) return decision('review', 'suspicious-existing-value-preserved');
       if (!policy.fields.includes(field)) return decision('preserve', 'field-not-selected');
       if (mode === 'update-existing' && next !== null && !isValidIncomingValue(field, next)) return decision('review', 'invalid-import-value');

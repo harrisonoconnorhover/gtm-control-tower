@@ -1,4 +1,6 @@
 import type { LiveContactState } from './live-control-tower';
+import type { PortableCrmContact } from './crm-workflow';
+import { isHubSpotEligible } from './hubspot-sync';
 
 export type SalesforceSyncLead = {
   contactId: string;
@@ -70,6 +72,23 @@ export function toSalesforceSyncLead(contact: LiveContactState): SalesforceSyncL
     jobTitle: nullableBounded(contact.jobTitle, 128),
     website: nullableBounded(contact.website, 255),
   };
+}
+
+/** Updates do not require create-only LastName/Company input. Never truncate a reviewed value. */
+export function toSalesforceUpdateContact(contact: LiveContactState): PortableCrmContact {
+  if (!isHubSpotEligible(contact) || !contact.normalizedEmail) throw new Error('This row has no usable Salesforce identity.');
+  const name = splitFullName(contact.fullName === contact.contactId && !contact.firstName && !contact.lastName ? '' : contact.fullName);
+  const result: PortableCrmContact = {
+    contactId: contact.contactId.trim(), email: contact.normalizedEmail.trim().toLowerCase(),
+    firstName: (contact.firstName || name.firstName).trim(), lastName: (contact.lastName || name.lastName).trim(),
+    company: contact.company?.trim() || null, phone: contact.phone?.trim() || null,
+    jobTitle: contact.jobTitle?.trim() || null, website: contact.website?.trim() || null,
+  };
+  const limits = { contactId: 120, email: 80, firstName: 40, lastName: 80, company: 255, phone: 40, jobTitle: 128, website: 255 };
+  for (const [field, maximum] of Object.entries(limits)) {
+    if ((result[field as keyof PortableCrmContact]?.length ?? 0) > maximum) throw new Error(`The imported ${field} exceeds the Salesforce field limit.`);
+  }
+  return result;
 }
 
 export function isSalesforceSyncBatch(value: unknown): value is SalesforceSyncBatch {

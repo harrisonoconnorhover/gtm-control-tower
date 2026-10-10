@@ -30,10 +30,12 @@ That original run used advisory approximate review. A later [native follow-up](d
 
 ## What it does
 
-- Provides a connected [HubSpot Watchdog](docs/watchdog.md) at `/app/watchdog`:
-  recurring contact checks, a durable human triage queue, downloadable reports,
+- Provides a connected [CRM Watchdog](docs/watchdog.md) at `/app/watchdog` for
+  HubSpot Contacts and Salesforce Leads/Contacts: recurring checks, a durable human triage queue, downloadable reports,
   and optional verified company/job-title whitespace repairs. A separate runner
   continues with the browser closed. Requires the self-hosted SQLite app.
+- Combines incoming CSV lists and Watchdog findings in the [Operations Inbox](docs/operations-inbox.md)
+  at `/app/work`, with saved ownership, exact-review links, and verified outcomes.
 - Includes an [Inbound Routing Lab](docs/inbound-routing-lab.md): a working demo
   request form, 32 fictional requests, account matching, rep assignment, and
   deliberately broken handoffs with replay. Open `/#inbound-lab` in the showroom
@@ -163,7 +165,7 @@ an operator API. Those capabilities exist only in the self-hosted application.
 
 In the persistent self-hosted `/app/lab`, select **Update existing contacts safely**,
 upload and map your CSV, then **Prepare review** for the whole file. Existing
-HubSpot Contacts receive only approved blank-field fills; populated fields and
+HubSpot Contacts or Salesforce Leads/Contacts receive only approved blank-field fills; populated fields and
 primary email stay protected. Identity holds require review, and unmatched rows
 never create contacts. Approval is bound to the saved review and actual CRM
 account, with durable execution and automatic readback. No AI model is required.
@@ -296,7 +298,8 @@ slice is documented in [Flow, Apex, and Agentforce proof](docs/salesforce-agentf
   at provider merges or deletes records created by a successful run.
 - Duplicate-audit approval saves a review decision only; no confidence band
   triggers an automatic native merge.
-- Salesforce Contact matches, converted Leads, and ambiguous matches are held.
+- Legacy Salesforce imports hold Contact matches. Safe Import supports existing
+  Contacts, preserving their Account relationship; converted Leads and ambiguous matches stay held.
   Both direct connectors hold multiple imported rows targeting the same CRM
   record. Exact matching does not infer identity from names or companies.
 - HubSpot direct creates never fall back to an update on conflict. Salesforce

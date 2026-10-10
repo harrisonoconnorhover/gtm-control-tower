@@ -223,6 +223,7 @@ export function ControlTowerDashboard() {
   const [importRecordMode, setImportRecordMode] = useState<'update-existing' | 'create-and-update'>('create-and-update');
   const [sourceFileHash, setSourceFileHash] = useState<string | undefined>();
   const [safeReviewEpoch, setSafeReviewEpoch] = useState(0);
+  const [initialReviewId, setInitialReviewId] = useState<string | undefined>();
   const [safeImportBusy, setSafeImportBusy] = useState(false);
   const [policyError, setPolicyError] = useState<string | null>(null);
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
@@ -340,7 +341,10 @@ export function ControlTowerDashboard() {
           setPersistenceStatus('disabled');
           return;
         }
-        const storedId = window.localStorage.getItem('gtm-control-tower-workspace-id');
+        const params = new URLSearchParams(window.location.search);
+        const requestedId = params.get('workspaceId');
+        setInitialReviewId(params.get('reviewId') ?? undefined);
+        const storedId = requestedId ?? window.localStorage.getItem('gtm-control-tower-workspace-id');
         if (storedId) {
           const savedResponse = await fetch(`/api/control-tower/workspace?id=${encodeURIComponent(storedId)}`, { cache: 'no-store' });
           if (savedResponse.ok) {
@@ -348,6 +352,7 @@ export function ControlTowerDashboard() {
             if (!cancelled) applySavedWorkspace(saved.workspace);
             return;
           }
+          if (requestedId) throw new Error('The requested workspace could not be loaded.');
         }
         const createdResponse = await fetch('/api/control-tower/workspace', {
           method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'create' }),
@@ -458,7 +463,7 @@ export function ControlTowerDashboard() {
     startWalkthrough = false,
   ) {
     if (workspaceBusy) throw new Error('Wait for the current workspace operation to finish before loading a file.');
-    if (safeImport && importedSource !== 'csv') throw new Error('Safe Import uses a CSV source and the direct HubSpot Contacts connector.');
+    if (safeImport && importedSource !== 'csv') throw new Error('Safe Import uses a CSV source and a direct HubSpot or Salesforce connector.');
     const sourceDigest = await globalThis.crypto.subtle.digest('SHA-256', new TextEncoder().encode(source));
     const hash = Array.from(new Uint8Array(sourceDigest), (byte) => byte.toString(16).padStart(2, '0')).join('');
     const imported = importContactsCsv(source, mapping);
@@ -612,6 +617,7 @@ export function ControlTowerDashboard() {
 
   function invalidateCrmReview(preserveProgress = false, clearSafeReview = true) {
     if (clearSafeReview) {
+      setInitialReviewId(undefined);
       if (workspaceId) window.localStorage.removeItem(`gtm-control-tower-safe-import-${workspaceId}`);
       setSafeReviewEpoch((epoch) => epoch + 1);
     }
@@ -665,17 +671,18 @@ export function ControlTowerDashboard() {
     if (persistenceStatus === 'disabled') throw new Error('Enable saved workspaces before using Safe Import. CSV preview and export remain available.');
     const policy = active ? defaultCrmUpdatePolicy() : updatePolicy;
     const recipe = active ? SAFE_IMPORT_RECIPE : undefined;
+    const safeDestination = destinationType === 'salesforce' ? 'salesforce' : 'hubspot';
     const recordMode = active ? 'update-existing' : 'create-and-update';
     crmRequestInFlight.current = true;
     setCorrectionSaving(true);
     try {
       const saved = await persistWorkspace('import_recipe_changed', {
         importRecipe: recipe, importRecordMode: recordMode, crmUpdatePolicy: policy,
-        ...(active ? { sourceType: 'csv', destinationType: 'hubspot' } : {}),
+        ...(active ? { sourceType: 'csv', destinationType: safeDestination } : {}),
       });
       if (!saved) throw new Error('The workflow setting could not be saved. Your previous workflow remains selected.');
       setImportRecipe(recipe); setImportRecordMode(recordMode); setUpdatePolicy(policy);
-      if (active) { setSourceType('csv'); setDestinationType('hubspot'); setDataMode('csv'); }
+      if (active) { setSourceType('csv'); setDestinationType(safeDestination); setDataMode('csv'); }
       setPolicyError(null);
       invalidateCrmReview();
     } finally { crmRequestInFlight.current = false; setCorrectionSaving(false); }
@@ -806,12 +813,18 @@ export function ControlTowerDashboard() {
     void persistWorkspace('source_changed', { sourceType: next });
   }
 
-  function changeDestinationType(next: ConnectorId) {
-    if (workspaceBusy) return;
-    if (safeImport && next !== 'hubspot') { setPolicyError('Safe Import updates HubSpot Contacts. Choose ordinary import to use another destination.'); return; }
-    invalidateCrmReview();
-    setDestinationType(next);
-    void persistWorkspace('destination_changed', { destinationType: next });
+  async function changeDestinationType(next: ConnectorId) {
+    if (crmRequestInFlight.current || workspaceBusy) return;
+    if (safeImport && next !== 'hubspot' && next !== 'salesforce') { setPolicyError('Safe Import updates existing HubSpot Contacts or Salesforce Leads and Contacts. Choose ordinary import to use another destination.'); return; }
+    crmRequestInFlight.current = true;
+    setCorrectionSaving(true);
+    try {
+      if (!await persistWorkspace('destination_changed', { destinationType: next })) throw new Error('The CRM destination could not be saved. Your previous destination remains selected.');
+      setDestinationType(next);
+      setPolicyError(null);
+      invalidateCrmReview();
+    } catch (failure) { setPolicyError(failure instanceof Error ? failure.message : 'CRM destination save failed.'); }
+    finally { crmRequestInFlight.current = false; setCorrectionSaving(false); }
   }
 
   function activateWarehouseMode() {
@@ -1150,7 +1163,7 @@ export function ControlTowerDashboard() {
         </section>
 
         <div id="workspace-console" className="scroll-mt-6">
-        <SafeImportRecipeSelector active={safeImport} disabled={workspaceBusy}
+        <SafeImportRecipeSelector active={safeImport} disabled={workspaceBusy} destinationType={destinationType === 'salesforce' ? 'salesforce' : 'hubspot'}
           onAdopt={() => selectImportRecipe(true)} onOrdinary={() => selectImportRecipe(false)} />
         {crmRequestPending && <p role="status" className="mb-4 rounded-2xl border border-[#cdfc54]/20 bg-[#cdfc54]/[0.07] px-4 py-3 text-sm text-[#cdfc54]">
           CRM request in progress. Workspace controls unlock after the result and any receipt saving finish.
@@ -1179,7 +1192,7 @@ export function ControlTowerDashboard() {
         />
         </fieldset>
         {safeImport && policyError && <p role="alert" className="mb-4 text-sm text-[#ffb19a]">{policyError}</p>}
-        {safeImport && (!hubSpotConfigured || !hubSpotSafeWriteback) && <p className="mb-4 rounded-2xl border border-[#e6bd68]/20 p-4 text-sm text-[#e6bd68]">Configure the direct HubSpot connector to prepare this contact workflow. Delegated n8n and legacy sync cannot execute Safe Import.</p>}
+        {safeImport && (destinationType === 'salesforce' ? !salesforceConfigured || !salesforceSafeWriteback : !hubSpotConfigured || !hubSpotSafeWriteback) && <p className="mb-4 rounded-2xl border border-[#e6bd68]/20 p-4 text-sm text-[#e6bd68]">Configure the direct {destinationType === 'salesforce' ? 'Salesforce' : 'HubSpot'} connector to prepare this workflow. Delegated n8n and legacy sync cannot execute Safe Import.</p>}
         </div>
 
         {receiptSaveWarning && <p role="alert" className="mb-4 rounded-2xl border border-[#e6bd68]/30 bg-[#e6bd68]/5 p-4 text-sm text-[#e6bd68]">{receiptSaveWarning}</p>}
@@ -1223,8 +1236,8 @@ export function ControlTowerDashboard() {
 
         {dataMode === 'csv' && safeImport && csvContacts.length > 0 && <SafeImportReview
           key={`${workspaceId}-${safeReviewEpoch}`} workspaceId={workspaceId} contacts={csvContacts}
-          workspaceRevision={workspaceRevision}
-          accessKey={hubSpotSyncKey} disabled={workspaceBusy || persistenceStatus !== 'saved' || !hubSpotConfigured || !hubSpotSafeWriteback}
+          workspaceRevision={workspaceRevision} initialReviewId={initialReviewId} destinationType={destinationType === 'salesforce' ? 'salesforce' : 'hubspot'}
+          accessKey={hubSpotSyncKey} disabled={workspaceBusy || persistenceStatus !== 'saved' || (destinationType === 'salesforce' ? !salesforceConfigured || !salesforceSafeWriteback : !hubSpotConfigured || !hubSpotSafeWriteback)}
           onBusyChange={setSafeImportBusy} onDecision={changeImportMatchDecision}
           onSkip={(contactId, reason) => changeImportSelection(contactId, reason)} />}
 

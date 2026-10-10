@@ -15,14 +15,17 @@ const reasons: Record<string, string> = {
   'fill-empty-field': 'Fill the empty field', 'populated-crm-value-preserved': 'Preserve the CRM value; incoming value differs',
   'blank-import-preserved': 'Preserve the CRM value; imported cell is empty', 'same-value': 'No change',
   'field-not-selected': 'Preserve the CRM value; field is outside the selected policy',
+  'salesforce-contact-account-field-protected': 'Preserve the Contact account relationship; company and website are outside this recipe',
   'suspicious-existing-value-preserved': 'Preserve the CRM value; questionable existing value needs review',
   'invalid-import-value': 'Preserve the CRM value; imported value needs review', 'record-held': 'No update scheduled; identity is held',
 };
 const rowLabels = { 'proposed-update': 'Proposed update', unchanged: 'No changes', held: 'Identity review', unmatched: 'No confirmed existing match', skipped: 'Skipped', unresolved: 'Lookup unresolved' };
 
-export function SafeImportRecipeSelector({ active, disabled, onAdopt, onOrdinary }: {
-  active: boolean; disabled: boolean; onAdopt: () => Promise<void>; onOrdinary: () => Promise<void>;
+export function SafeImportRecipeSelector({ active, disabled, destinationType = 'hubspot', onAdopt, onOrdinary }: {
+  active: boolean; disabled: boolean; destinationType?: 'hubspot' | 'salesforce'; onAdopt: () => Promise<void>; onOrdinary: () => Promise<void>;
 }) {
+  const isSalesforce = destinationType === 'salesforce';
+  const recordsLabel = isSalesforce ? 'Salesforce Leads and Contacts' : 'HubSpot Contacts';
   const [request, setRequest] = useState('');
   const [proposal, setProposal] = useState<ImportIntentProposal | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -34,11 +37,11 @@ export function SafeImportRecipeSelector({ active, disabled, onAdopt, onOrdinary
   return <section aria-label="Import workflow" className="mb-6 rounded-3xl border border-[#cdfc54]/20 bg-[#0c1d17] p-5 sm:p-6">
     <p className="font-mono text-[10px] uppercase tracking-wider text-[#cdfc54]">Import workflow · no AI model needed</p>
     <div className="mt-3 flex flex-wrap items-center gap-3">
-      <h3 className="mr-auto text-xl font-semibold">Safe Import: Update existing contacts</h3>
-      {!active ? <button type="button" onClick={() => void adopt()} disabled={disabled} className={primary}>Update existing contacts safely</button>
-        : <><span className="rounded-full bg-[#cdfc54]/10 px-3 py-1 text-xs text-[#cdfc54]">Selected · HubSpot Contacts</span><button type="button" disabled={disabled} className={secondary} onClick={() => void onOrdinary().catch((failure) => setError(failure instanceof Error ? failure.message : 'Workflow save failed.'))}>Use ordinary import</button></>}
+      <h3 className="mr-auto text-xl font-semibold">Safe Import: Update existing {isSalesforce ? 'Leads and Contacts' : 'contacts'}</h3>
+      {!active ? <button type="button" onClick={() => void adopt()} disabled={disabled} className={primary}>Update existing {isSalesforce ? 'CRM records' : 'contacts'} safely</button>
+        : <><span className="rounded-full bg-[#cdfc54]/10 px-3 py-1 text-xs text-[#cdfc54]">Selected · {recordsLabel}</span><button type="button" disabled={disabled} className={secondary} onClick={() => void onOrdinary().catch((failure) => setError(failure instanceof Error ? failure.message : 'Workflow save failed.'))}>Use ordinary import</button></>}
     </div>
-    {active && <div className="mt-4 rounded-2xl bg-[#07130f]/70 p-4"><p className="text-xs font-semibold text-[#b8d8ff]">Import rules</p><p className="mt-2 text-sm leading-6 text-[#c9d8d0]">{SAFE_IMPORT_RULES}</p><p className="mt-2 text-xs leading-5 text-[#8fa99d]">Upload your file, check the column mapping, and prepare a whole-file review. Only the approved six contact fields can change. Primary email, ownership, lifecycle stage, consent, subscriptions, and external identifiers stay untouched.</p></div>}
+    {active && <div className="mt-4 rounded-2xl bg-[#07130f]/70 p-4"><p className="text-xs font-semibold text-[#b8d8ff]">Import rules</p><p className="mt-2 text-sm leading-6 text-[#c9d8d0]">{SAFE_IMPORT_RULES}</p><p className="mt-2 text-xs leading-5 text-[#8fa99d]">Upload your file, check the column mapping, and prepare a whole-file review. {isSalesforce ? 'Leads can fill first name, last name, company, phone, title, and website. Contacts can fill first name, last name, phone, and title; account relationships and company websites stay untouched. Lead and Contact matches are checked together; ambiguous identities stay on hold.' : 'Only the approved six contact fields can change.'} Primary email, ownership, lifecycle or Lead status, conversion, consent, subscriptions, and external identifiers stay untouched.</p></div>}
     <details className="mt-4">
       <summary className="cursor-pointer text-xs font-semibold text-[#b8d8ff]">Describe the import you want</summary>
       <label className="mt-3 block text-xs text-[#9db1a7]">Your request<textarea value={request} onChange={(event) => { setRequest(event.target.value); setProposal(null); }} rows={3} maxLength={2000} disabled={disabled} className="mt-2 block w-full resize-y rounded-xl border border-white/15 bg-[#07130f] p-3 text-sm text-[#edf8f2]" placeholder="Update existing contacts without wiping out good information, flag questionable matches, and show me exactly what will happen." /></label>
@@ -50,13 +53,13 @@ export function SafeImportRecipeSelector({ active, disabled, onAdopt, onOrdinary
 }
 
 type Props = {
-  workspaceId: string | null; workspaceRevision: number | null; contacts: LiveContactState[]; accessKey: string; disabled: boolean;
+  workspaceId: string | null; workspaceRevision: number | null; destinationType?: 'hubspot' | 'salesforce'; initialReviewId?: string; contacts: LiveContactState[]; accessKey: string; disabled: boolean;
   onBusyChange: (busy: boolean) => void; onDecision: (action: ImportMatchDecisionAction) => Promise<void>;
   onSkip: (contactId: string, reason: string) => Promise<void>;
 };
 type Response = { review: SafeImportReview | null; execution?: SafeImportExecution | null; error?: string };
 
-export function SafeImportReview({ workspaceId, workspaceRevision, contacts, accessKey, disabled, onBusyChange, onDecision, onSkip }: Props) {
+export function SafeImportReview({ workspaceId, workspaceRevision, destinationType = 'hubspot', initialReviewId, contacts, accessKey, disabled, onBusyChange, onDecision, onSkip }: Props) {
   const [review, setReview] = useState<SafeImportReview | null>(null);
   const [execution, setExecution] = useState<SafeImportExecution | null>(null);
   const [pending, setPending] = useState<string | null>(null);
@@ -68,11 +71,13 @@ export function SafeImportReview({ workspaceId, workspaceRevision, contacts, acc
   const [rowFilter, setRowFilter] = useState('all');
   const [rowPage, setRowPage] = useState(0);
   const requestLock = useRef(false);
+  const connectorId = review?.connectorId ?? destinationType;
+  const providerLabel = connectorId === 'salesforce' ? 'Salesforce' : 'HubSpot';
   const storageKey = workspaceId ? `gtm-control-tower-safe-import-${workspaceId}` : null;
   const recoveryKey = workspaceId ? `gtm-control-tower-safe-import-recovery-${workspaceId}` : null;
   useEffect(() => {
     if (!workspaceId) return;
-    const reviewId = window.localStorage.getItem(`gtm-control-tower-safe-import-recovery-${workspaceId}`)
+    const reviewId = initialReviewId ?? window.localStorage.getItem(`gtm-control-tower-safe-import-recovery-${workspaceId}`)
       ?? window.localStorage.getItem(`gtm-control-tower-safe-import-${workspaceId}`);
     let cancelled = false;
     requestLock.current = true;
@@ -87,7 +92,7 @@ export function SafeImportReview({ workspaceId, workspaceRevision, contacts, acc
     return () => { cancelled = true; };
     // Workspace changes remount this component; an operator key change reruns the authorized read.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [workspaceId, accessKey]);
+  }, [workspaceId, accessKey, initialReviewId]);
 
   async function request(action: 'prepare' | 'approve' | 'recover' | 'load', reviewId?: string): Promise<Response> {
     const response = await fetch('/api/control-tower/safe-import', {
@@ -133,13 +138,13 @@ export function SafeImportReview({ workspaceId, workspaceRevision, contacts, acc
   const page = Math.min(rowPage, Math.max(0, Math.ceil(filteredRows.length / rowPageSize) - 1));
   const visibleRows = filteredRows.slice(page * rowPageSize, (page + 1) * rowPageSize);
   return <section aria-label="Safe Import review" className="mb-6 rounded-3xl border border-[#cdfc54]/20 bg-[#0c1d17] p-5 sm:p-6">
-    <div className="flex flex-wrap items-start justify-between gap-4"><div><p className="font-mono text-[10px] uppercase tracking-wider text-[#cdfc54]">Whole-file review</p><h3 className="mt-1 text-xl font-semibold">Inspect every row before approving updates</h3><p className="mt-2 max-w-2xl text-xs leading-5 text-[#9db1a7]">Prepare review reads HubSpot and saves a proposal. It performs no CRM writes. Resolving a held row requires a fresh proposal and new approval.</p></div><button type="button" disabled={disabled || Boolean(pending) || !canPrepare || !workspaceId || !contacts.length} className={primary} onClick={() => void run('prepare')}>{pending === 'prepare' ? 'Reading whole file…' : review ? 'Prepare new review' : 'Prepare review'}</button></div>
-    {!workspaceId && <p className="mt-3 text-xs text-[#e6bd68]">A saved workspace and direct HubSpot connection are required.</p>}
+    <div className="flex flex-wrap items-start justify-between gap-4"><div><p className="font-mono text-[10px] uppercase tracking-wider text-[#cdfc54]">Whole-file review</p><h3 className="mt-1 text-xl font-semibold">Inspect every row before approving updates</h3><p className="mt-2 max-w-2xl text-xs leading-5 text-[#9db1a7]">Prepare review reads {providerLabel} and saves a proposal. It performs no CRM writes. Resolving a held row requires a fresh proposal and new approval.</p></div><button type="button" disabled={disabled || Boolean(pending) || !canPrepare || !workspaceId || !contacts.length} className={primary} onClick={() => void run('prepare')}>{pending === 'prepare' ? 'Reading whole file…' : review ? 'Prepare new review' : 'Prepare review'}</button></div>
+    {!workspaceId && <p className="mt-3 text-xs text-[#e6bd68]">A saved workspace and direct {providerLabel} connection are required.</p>}
     {error && <p role="alert" className="mt-4 rounded-xl bg-[#ff9c82]/5 p-3 text-sm text-[#ffb19a]">{error}</p>}
     {uncertain && <p role="status" className="mt-3 text-sm leading-6 text-[#e6bd68]">The execution outcome is unknown or incomplete. Reload the saved execution or reconcile native values before any new approval. This page will not resend the writes.</p>}
     {uncertain && reconciled && <p className="mt-2 text-xs leading-5 text-[#9db1a7]">Read-back evidence is saved. Acceptance remains unknown for interrupted writes. You can deliberately prepare a new review from current native values; it requires its own approval.</p>}
     {review && <>
-      <p className="mt-4 break-words text-xs leading-5 text-[#8fa99d]">{review.sourceFile} · {review.rows.length} rows · HubSpot account {review.account.accountId} · Workspace r{review.workspaceRevision} · Expires {new Date(review.expiresAt).toLocaleString()}</p>
+      <p className="mt-4 break-words text-xs leading-5 text-[#8fa99d]">{review.sourceFile} · {review.rows.length} rows · {providerLabel} account {review.account.accountId} · Workspace r{review.workspaceRevision} · Expires {new Date(review.expiresAt).toLocaleString()}</p>
       <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">{Object.entries(review.counts).map(([status, count]) => <div key={status} className="rounded-xl bg-[#07130f]/70 p-3"><p className={`text-2xl font-semibold ${status === 'proposed-update' ? 'text-[#cdfc54]' : status === 'held' || status === 'unresolved' ? 'text-[#e6bd68]' : ''}`}>{count}</p><p className="mt-1 text-xs leading-5 text-[#9db1a7]">{rowLabels[status as keyof typeof rowLabels]}</p></div>)}</div>
       {!fullyChecked && <p className="mt-3 text-sm text-[#e6bd68]">This file is not fully checked. Unchecked rows cannot be approved.</p>}
       {outdated && <p className="mt-3 text-sm text-[#e6bd68]">The saved workspace changed after this review. Prepare a new review before approving any updates.</p>}
@@ -152,12 +157,12 @@ export function SafeImportReview({ workspaceId, workspaceRevision, contacts, acc
         const contact = contacts.find((candidate) => candidate.contactId === row.contactId);
         return <details key={row.contactId} className="rounded-2xl border border-white/10 bg-[#07130f]/60 p-4"><summary className="cursor-pointer break-words text-sm font-semibold">{contact?.fullName || row.email || row.contactId}<span className="ml-2 font-normal text-[#9db1a7]">{row.contactId} · {rowLabels[row.status]}</span></summary>
           {row.reason && <p className="mt-3 text-xs leading-5 text-[#e6bd68]">{row.reason}</p>}
-          {row.record?.nativeId && <p className="mt-2 break-all text-xs text-[#9db1a7]">Existing HubSpot Contact {row.record.nativeId} · Primary email {row.record.matchDecision?.email || row.record.matches[0]?.email || 'empty'} is preserved.</p>}
+          {row.record?.nativeId && <p className="mt-2 break-all text-xs text-[#9db1a7]">Existing {providerLabel} {row.record.matches[0]?.objectType === 'lead' ? 'Lead' : 'Contact'} {row.record.nativeId} · Primary email {row.record.matchDecision?.email || row.record.matches[0]?.email || 'empty'} is preserved.</p>}
           {row.record?.fieldDecisions?.length ? <div className="mt-3 overflow-x-auto"><table className="w-full min-w-[650px] text-left text-xs leading-5"><thead><tr className="text-[#8fa99d]"><th className="py-2 pr-3">Field</th><th className="py-2 pr-3">Current CRM value</th><th className="py-2 pr-3">Imported value</th><th className="py-2 pr-3">Planned result</th><th className="py-2">Decision</th></tr></thead><tbody>{row.record.fieldDecisions.map((decision) => <FieldDecision key={decision.field} decision={decision} />)}</tbody></table></div> : <p className="mt-3 text-xs text-[#9db1a7]">No field writes are scheduled for this row.</p>}
-          {contact && ['held', 'unmatched', 'unresolved'].includes(row.status) && <div className="mt-4"><p className="mb-3 text-xs leading-5 text-[#9db1a7]">Compare identity evidence and confirm the specific existing person with a reason, or skip this row. Matching suggestions alone do not schedule updates.</p><ImportMatchReview contacts={[contact]} connectorId="hubspot" workspaceId={workspaceId} accessKey={accessKey} disabled={disabled || Boolean(pending)} onDecision={onDecision} /><SkipRow contactId={row.contactId} disabled={disabled || Boolean(pending)} onSkip={onSkip} /></div>}
+          {contact && ['held', 'unmatched', 'unresolved'].includes(row.status) && <div className="mt-4"><p className="mb-3 text-xs leading-5 text-[#9db1a7]">Compare identity evidence and confirm the specific existing person with a reason, or skip this row. Matching suggestions alone do not schedule updates.</p><ImportMatchReview safeImport contacts={[contact]} connectorId={connectorId} workspaceId={workspaceId} accessKey={accessKey} disabled={disabled || Boolean(pending)} onDecision={onDecision} /><SkipRow contactId={row.contactId} disabled={disabled || Boolean(pending)} onSkip={onSkip} /></div>}
         </details>;
       })}</div>
-      <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-white/10 pt-5"><p className="max-w-xl text-xs leading-5 text-[#9db1a7]">Approval authorizes this saved plan for this HubSpot account. Changed CRM values are held on the final check. CRM reads and writes are separate operations; downstream automations and concurrent external changes are not fully simulated or prevented.</p><button type="button" disabled={disabled || Boolean(pending) || !canApprove} onClick={() => void run('approve')} className={primary}>{pending === 'approve' ? 'Executing approved updates…' : `Approve ${review.counts['proposed-update']} contact updates`}</button></div>
+      <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-white/10 pt-5"><p className="max-w-xl text-xs leading-5 text-[#9db1a7]">Approval authorizes this saved plan for this {providerLabel} account. Changed CRM values are held on the final check. CRM reads and writes are separate operations; downstream automations and concurrent external changes are not fully simulated or prevented.</p><button type="button" disabled={disabled || Boolean(pending) || !canApprove} onClick={() => void run('approve')} className={primary}>{pending === 'approve' ? 'Executing approved updates…' : `Approve ${review.counts['proposed-update']} ${connectorId === 'salesforce' ? 'record' : 'contact'} updates`}</button></div>
       <details className="mt-4"><summary className="cursor-pointer text-xs font-semibold text-[#b8d8ff]">Ask about this saved review</summary><label className="mt-3 block text-xs text-[#9db1a7]">Question<input value={question} onChange={(event) => setQuestion(event.target.value)} className="mt-2 block w-full rounded-xl border border-white/15 bg-[#07130f] p-3 text-sm text-[#edf8f2]" /></label><button type="button" disabled={!question.trim()} className={`${secondary} mt-3`} onClick={() => void assistant.explainReview({ review, question }).then((result) => setExplanation(result.text))}>Explain recorded evidence</button>{explanation && <p role="status" className="mt-3 text-sm leading-6 text-[#c9d8d0]">{explanation}</p>}<p className="mt-2 text-xs text-[#71877c]">Deterministic explanation · no model configured</p></details>
     </>}
   </section>;
@@ -192,8 +197,8 @@ function download(format: 'json' | 'csv', review: SafeImportReview, execution: S
     const safe = /^\s*[=+\-@]/u.test(raw) ? `'${raw}` : raw;
     return `"${safe.replaceAll('"', '""')}"`;
   };
-  const header = ['review_id', 'account_id', 'source_file_hash', 'workspace_revision', 'contact_id', 'imported_email', 'row_status', 'row_reason', 'native_id', 'field', 'current_value', 'imported_value', 'proposed_value', 'action', 'reason_code'];
-  const lines = review.rows.flatMap((row) => (row.record?.fieldDecisions?.length ? row.record.fieldDecisions : [null]).map((decision) => [review.id, review.account.accountId, review.sourceFileHash, review.workspaceRevision, row.contactId, row.email, row.status, row.reason, row.record?.nativeId, decision?.field, decision?.currentValue, decision?.importedValue, decision?.proposedValue, decision?.action, decision?.reasonCode].map(cell).join(',')));
+  const header = ['review_id', 'provider', 'object_type', 'account_id', 'source_file_hash', 'workspace_revision', 'contact_id', 'imported_email', 'row_status', 'row_reason', 'native_id', 'field', 'current_value', 'imported_value', 'proposed_value', 'action', 'reason_code'];
+  const lines = review.rows.flatMap((row) => (row.record?.fieldDecisions?.length ? row.record.fieldDecisions : [null]).map((decision) => [review.id, review.connectorId, row.record?.matches[0]?.objectType, review.account.accountId, review.sourceFileHash, review.workspaceRevision, row.contactId, row.email, row.status, row.reason, row.record?.nativeId, decision?.field, decision?.currentValue, decision?.importedValue, decision?.proposedValue, decision?.action, decision?.reasonCode].map(cell).join(',')));
   const body = format === 'json' ? JSON.stringify({ review, execution }, null, 2) : '\uFEFF' + [header.map(cell).join(','), ...lines].join('\r\n') + '\r\n';
   const url = URL.createObjectURL(new Blob([body], { type: format === 'json' ? 'application/json' : 'text/csv;charset=utf-8' }));
   const link = document.createElement('a'); link.href = url; link.download = `${review.sourceFile.replace(/\.csv$/i, '')}-whole-import-review.${format}`; link.click(); URL.revokeObjectURL(url);

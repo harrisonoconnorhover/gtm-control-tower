@@ -118,7 +118,8 @@ export async function updateSafeImportExecution(execution: SafeImportExecution, 
   }
   if (!header || !current || JSON.stringify(current) !== JSON.stringify(baseline)
     || execution.records.length !== baseline.records.length
-    || execution.records.some((record, index) => record.contactId !== baseline.records[index].contactId || record.nativeId !== baseline.records[index].nativeId)) {
+    || execution.records.some((record, index) => record.contactId !== baseline.records[index].contactId || record.nativeId !== baseline.records[index].nativeId
+      || record.objectType !== baseline.records[index].objectType)) {
     throw new Error('Execution progress changed in another request. Read the saved execution before proceeding.');
   }
   // Targets come from the immutable review. Readback evidence lives per row,
@@ -161,6 +162,7 @@ async function hydrateExecution(db: DatabaseAdapter, json: string): Promise<Safe
         reviewId: review.id, workspaceId: review.workspaceId,
         records: review.plans.flatMap((plan) => plan.records.filter((record) => record.operation === 'update').map((record) => ({
           contactId: record.contactId, nativeId: record.nativeId!, status: 'pending' as const, error: null,
+          ...(review.connectorId === 'salesforce' ? { objectType: record.matches[0].objectType } : {}),
         }))),
       };
     }
@@ -173,7 +175,8 @@ async function hydrateExecution(db: DatabaseAdapter, json: string): Promise<Safe
   const byId = new Map(rows.results.map((row) => [row.contact_id, JSON.parse(row.payload_json) as SafeImportExecution['records'][number]]));
   execution.records = execution.records.map((record) => {
     const progress = byId.get(record.contactId);
-    if (progress && (progress.contactId !== record.contactId || progress.nativeId !== record.nativeId)) throw new Error('Saved execution progress has a different approved target.');
+    if (progress && (progress.contactId !== record.contactId || progress.nativeId !== record.nativeId
+      || progress.objectType !== record.objectType)) throw new Error('Saved execution progress has a different approved target.');
     return progress ?? record;
   });
   return execution;

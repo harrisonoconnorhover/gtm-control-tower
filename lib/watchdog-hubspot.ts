@@ -1,4 +1,4 @@
-import type { WatchdogContact } from './watchdog-types';
+import type { WatchdogContact, WatchdogObjectType, WatchdogProvider } from './watchdog-types';
 
 export const WATCHDOG_PROPERTIES = [
   'email', 'firstname', 'lastname', 'company', 'jobtitle',
@@ -7,10 +7,12 @@ export const WATCHDOG_PROPERTIES = [
 
 export type WatchdogPage = { contacts: WatchdogContact[]; after: string | null; total?: number };
 export type WatchdogSource = {
+  provider?: WatchdogProvider;
+  accountId?: string;
   list: (after: string | null) => Promise<WatchdogPage>;
   changes: (from: string, through: string, after: string | null) => Promise<WatchdogPage>;
-  read: (id: string) => Promise<WatchdogContact>;
-  patch: (id: string, properties: Record<string, string>) => Promise<void>;
+  read: (id: string, objectType?: WatchdogObjectType) => Promise<WatchdogContact>;
+  patch: (id: string, properties: Record<string, string>, objectType?: WatchdogObjectType) => Promise<void>;
 };
 
 /** Only this narrow adapter can write. It never creates, merges, or deletes records. */
@@ -28,6 +30,7 @@ export function hubspotWatchdogSource(token: string): WatchdogSource {
     return response.status === 204 ? null : response.json();
   }
   return {
+    provider: 'hubspot',
     async list(after) {
       const query = new URLSearchParams({ limit: '50', archived: 'false', properties: WATCHDOG_PROPERTIES.join(',') });
       if (after) query.set('after', after);
@@ -90,7 +93,7 @@ function parseContact(value: unknown): WatchdogContact {
     if (field !== null && field !== undefined && typeof field !== 'string') throw new Error('HubSpot returned an invalid contact property.');
     properties[key] = typeof field === 'string' ? field : '';
   }
-  return { id: value.id, updatedAt: value.updatedAt, properties };
+  return { provider: 'hubspot', objectType: 'Contact', id: value.id, updatedAt: value.updatedAt, properties };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

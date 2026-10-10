@@ -87,8 +87,8 @@ export function validateWorkspaceState(value: unknown): WorkspaceState {
   const crmUpdatePolicy = normalizeCrmUpdatePolicy(state.crmUpdatePolicy);
   if (state.importRecipe !== undefined && state.importRecipe !== 'safe-update-contacts') throw new Error('Unsupported import recipe.');
   if (state.importRecipe === 'safe-update-contacts'
-    && (importRecordMode !== 'update-existing' || !isSafeContactUpdatePolicy(crmUpdatePolicy) || destinationType !== 'hubspot')) {
-    throw new Error('Safe Import requires HubSpot Contacts, update-existing mode, and all six fields with fill-empty and no blank clearing.');
+    && (importRecordMode !== 'update-existing' || !isSafeContactUpdatePolicy(crmUpdatePolicy) || !['hubspot', 'salesforce'].includes(destinationType))) {
+    throw new Error('Safe Import requires HubSpot or Salesforce, update-existing mode, and the protected fill-empty policy with no blank clearing.');
   }
   if (state.sourceFileHash !== undefined && (typeof state.sourceFileHash !== 'string' || !/^[a-f0-9]{64}$/u.test(state.sourceFileHash))) {
     throw new Error('Source file hash must be a SHA-256 digest.');

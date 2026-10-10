@@ -196,3 +196,91 @@ describe('durable HubSpot watchdog', () => {
     expect((await getWatchdogAccount('search-cap')).cursor).toBeNull();
   });
 });
+
+function salesforceContact(type: 'Lead' | 'Contact', overrides: Record<string, string> = {}): WatchdogContact {
+  return { id: `${type === 'Lead' ? '00Q' : '003'}000000000001`, provider: 'salesforce', objectType: type,
+    updatedAt: new Date(Date.now() - 600_000).toISOString(), properties: {
+      email: 'fixture@example.com', firstname: 'Fictional', lastname: 'Person', jobtitle: ' Engineer ', owner_id: '005000000000001',
+      ...(type === 'Lead' ? { company: ' Acme ', status: 'Custom status', is_converted: 'false' } : { account_id: '001000000000001' }), ...overrides,
+    } };
+}
+function salesforceFixture(records: WatchdogContact[], org: string) {
+  return { ...fixture(records), provider: 'salesforce' as const, accountId: org };
+}
+
+describe('durable Salesforce Watchdog', () => {
+  it('uses Salesforce field semantics without applying HubSpot stage ordering or Account name repairs', () => {
+    const record = salesforceContact('Contact', { company: ' Linked Account ', lifecyclestage: 'customer', hubspot_owner_id: '' });
+    const previous = { contact: record, lifecycleHighWater: 'customer' };
+    const inspected = inspectWatchdogContact({ ...record, properties: { ...record.properties, lifecyclestage: 'lead' } }, previous);
+    expect(inspected.issues.map((issue) => issue.rule)).toEqual(['text_whitespace']);
+    expect(inspected.issues[0].after).toEqual({ jobtitle: 'Engineer' });
+    expect(inspected.snapshot.lifecycleHighWater).toBeNull();
+  });
+
+  it('keeps provider/org/object scopes isolated and repairs each object through the narrow adapter contract', async () => {
+    const org = '00D000000000101';
+    const scope = `salesforce_${org}`;
+    await enable(scope, true);
+    const source = salesforceFixture([salesforceContact('Lead'), salesforceContact('Contact')], org);
+    const report = await tickWatchdog(scope, '', { source, force: true });
+    expect(report).toMatchObject({ provider: 'salesforce', accountId: org, totals: { fixed: 2 }, objectTypes: ['Lead', 'Contact'] });
+    expect(report.findings.map((finding) => finding.objectType).sort()).toEqual(['Contact', 'Lead']);
+    expect(source.patch.mock.calls).toContainEqual(['00Q000000000001', { company: 'Acme', jobtitle: 'Engineer' }, 'Lead']);
+    expect(source.patch.mock.calls).toContainEqual(['003000000000001', { jobtitle: 'Engineer' }, 'Contact']);
+    expect((await getWatchdogOverview(org)).findings).toEqual([]);
+    await expect(triageWatchdogFinding(`salesforce_00D000000000102`, { id: report.findings[0].id, status: 'resolved', assignee: 'Human', note: '' })).rejects.toThrow('not found');
+    const db = await getDatabase();
+    const saved = await db.prepare('SELECT contact_id FROM watchdog_snapshots WHERE account_id = ? ORDER BY contact_id').bind(scope).all<{ contact_id: string }>();
+    expect(saved.results.map((row) => row.contact_id)).toEqual(['Contact:003000000000001', 'Lead:00Q000000000001']);
+  });
+
+  it('rejects a source bound to another org or provider before listing records', async () => {
+    const org = '00D000000000103';
+    const scope = `salesforce_${org}`;
+    await enable(scope, true);
+    const wrongOrg = salesforceFixture([salesforceContact('Lead')], '00D000000000104');
+    const report = await tickWatchdog(scope, '', { source: wrongOrg, force: true });
+    expect(report.runs[0]).toMatchObject({ status: 'failed', scanned: 0 });
+    expect(wrongOrg.list).not.toHaveBeenCalled();
+    const wrongProvider = fixture([contact('1')]);
+    await tickWatchdog(scope, '', { source: wrongProvider, force: true });
+    expect(wrongProvider.list).not.toHaveBeenCalled();
+  });
+
+  it('holds converted or stale records before writes and never retries an unknown Salesforce outcome', async () => {
+    const org = '00D000000000105';
+    const scope = `salesforce_${org}`;
+    await enable(scope, true);
+    const source = salesforceFixture([salesforceContact('Lead'), salesforceContact('Contact')], org);
+    const read = source.read;
+    source.read = vi.fn(async (id: string) => {
+      if (id.startsWith('00Q')) throw new Error('Salesforce returned a converted Lead.');
+      return read(id);
+    });
+    source.patch.mockRejectedValue(new Error('Fictional lost PATCH response'));
+    let report = await tickWatchdog(scope, '', { source, force: true });
+    expect(report.findings.find((finding) => finding.objectType === 'Lead')?.repairError).toContain('converted');
+    expect(report.findings.find((finding) => finding.objectType === 'Contact')?.status).toBe('unknown');
+    expect(source.patch).toHaveBeenCalledTimes(1);
+    report = await tickWatchdog(scope, '', { source, force: true });
+    expect(source.patch).toHaveBeenCalledTimes(1);
+    expect(report.totals.unknown).toBe(1);
+  });
+});
+
+it('holds Salesforce readback when a protected owner or account field changes', async () => {
+  const org = '00D000000000106';
+  const scope = `salesforce_${org}`;
+  await enable(scope, true);
+  const source = salesforceFixture([salesforceContact('Contact')], org);
+  const originalPatch = source.patch;
+  source.patch = vi.fn(async (id, properties) => {
+    await originalPatch(id, { ...properties, owner_id: '005000000000002' });
+  });
+  const report = await tickWatchdog(scope, '', { source, force: true });
+  expect(report.totals).toMatchObject({ unknown: 1, fixed: 0 });
+  expect(report.findings[0].repairError).toContain('protected fields changed');
+  await tickWatchdog(scope, '', { source, force: true });
+  expect(source.patch).toHaveBeenCalledTimes(1);
+});

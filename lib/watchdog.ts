@@ -1,4 +1,4 @@
-import { hubspotWatchdogSource, WATCHDOG_PROPERTIES, type WatchdogSource } from './watchdog-hubspot';
+import { hubspotWatchdogSource, type WatchdogSource } from './watchdog-hubspot';
 import { inspectWatchdogContact, watchdogContactLabel } from './watchdog-rules';
 import {
   assertWatchdogLease, checkpointWatchdog, claimWatchdogRepair, claimWatchdogTick, finishWatchdogRepair,
@@ -6,6 +6,7 @@ import {
   saveWatchdogObservation, saveWatchdogRun, setWatchdogConfig, setWatchdogFindingError, updateWatchdogTriage,
   type WatchdogAccount,
 } from './watchdog-store';
+import { watchdogAccountIdentity, watchdogRecordKey } from './watchdog-types';
 import type { WatchdogConfig, WatchdogContact, WatchdogFinding, WatchdogOverview, WatchdogRun } from './watchdog-types';
 
 const INDEX_LAG_MS = 120_000;
@@ -13,15 +14,16 @@ const OVERLAP_MS = 300_000;
 const RECONCILE_MS = 86_400_000;
 
 export async function getWatchdogOverview(accountId: string): Promise<WatchdogOverview> {
+  const identity = watchdogAccountIdentity(accountId);
   const account = await getWatchdogAccount(accountId);
   const report = await readWatchdogReport(accountId);
   const count = (status: WatchdogFinding['status']) => report.counts.find((row) => row.status === status)?.count ?? 0;
   return {
-    accountId, config: JSON.parse(account.config_json) as WatchdogConfig, phase: account.phase,
+    ...identity, objectTypes: identity.provider === 'salesforce' ? ['Lead', 'Contact'] : ['Contact'], config: JSON.parse(account.config_json) as WatchdogConfig, phase: account.phase,
     lastCheckedAt: account.last_checked_at, watermark: account.watermark, nextCheckAt: account.next_check_at,
     findings: report.findings, runs: report.runs,
     totals: { open: count('open'), inProgress: count('in_progress'), fixed: count('fixed'), resolved: count('resolved'), unknown: count('unknown') },
-    coverageNote: `${account.phase === 'baseline' ? 'Full contact baseline is incomplete; saved pages continue on subsequent ticks.' : 'Contact baseline complete; polling changed contacts.'} Each tick scans at most 50 contacts and attempts at most 5 repairs. Polling uses a 2-minute indexing lag, a 5-minute overlap, and a daily full reconciliation. It is not an event stream: intermediate changes and archived/deleted contacts are outside coverage. This report shows up to 100 findings and 25 recent runs; totals include all saved findings.`,
+    coverageNote: `${identity.provider === 'salesforce' ? 'Salesforce: unconverted Leads and Contacts; email format and text whitespace only. Lead Status, ownership, conversion, and Account changes require human investigation. ' : ''}${account.phase === 'baseline' ? 'Full record baseline is incomplete; saved pages continue on subsequent ticks.' : 'Record baseline complete; polling changed records.'} Each tick scans at most 50 records and attempts at most 5 repairs. Polling uses a 2-minute indexing lag, a 5-minute overlap, and a daily full reconciliation. It is not an event stream: intermediate changes and archived/deleted records are outside coverage.${identity.provider === 'salesforce' ? ' Converted Leads leave the scan; their existing findings need human review.' : ''} This report shows up to 100 findings and 25 recent runs; totals include all saved findings.`,
   };
 }
 
@@ -45,7 +47,7 @@ export async function triageWatchdogFinding(accountId: string, input: { id: stri
   return getWatchdogOverview(accountId);
 }
 
-/** Routes supply a natively verified account identity. A source override is only for local fixture tests. */
+/** Routes supply a natively verified account identity and the matching native source; tests may supply fixtures. */
 export async function tickWatchdog(accountId: string, token: string, options: { force?: boolean; source?: WatchdogSource } = {}): Promise<WatchdogOverview> {
   const account = await claimWatchdogTick(accountId, options.force === true);
   if (!account?.lease_id) return getWatchdogOverview(accountId);
@@ -57,7 +59,11 @@ export async function tickWatchdog(accountId: string, token: string, options: { 
   };
   try {
     await saveWatchdogRun(run, leaseId);
+    const identity = watchdogAccountIdentity(accountId);
     const source = options.source ?? hubspotWatchdogSource(token);
+    if ((source.provider ?? 'hubspot') !== identity.provider || (source.accountId && source.accountId !== identity.accountId)) {
+      throw new Error('Watchdog source does not match the saved provider and account.');
+    }
     if (account.phase === 'changes' && !account.cursor && !account.window_end
       && account.last_baseline_at && Date.now() - Date.parse(account.last_baseline_at) >= RECONCILE_MS) {
       startBaseline(account);
@@ -72,9 +78,9 @@ export async function tickWatchdog(accountId: string, token: string, options: { 
       ? await source.list(account.cursor)
       : await source.changes(new Date(Date.parse(account.watermark!) - OVERLAP_MS).toISOString(), account.window_end!, account.cursor);
     if (page.contacts.length > 50 || (page.after !== null && (!page.after.trim() || page.after === account.cursor || !page.contacts.length))) {
-      throw new Error('HubSpot returned an invalid, empty, or repeated page cursor. The saved cursor was not advanced.');
+      throw new Error('CRM returned an invalid, empty, or repeated page cursor. The saved cursor was not advanced.');
     }
-    if (account.phase === 'changes' && (page.total === undefined || page.total >= 10_000)) {
+    if (identity.provider === 'hubspot' && account.phase === 'changes' && (page.total === undefined || page.total >= 10_000)) {
       startBaseline(account);
       account.next_check_at = new Date(Date.now() + 1000).toISOString();
       await checkpointWatchdog(account, leaseId);
@@ -83,19 +89,22 @@ export async function tickWatchdog(accountId: string, token: string, options: { 
     const inspectedIds = new Set<string>();
     for (const contact of page.contacts) {
       await assertWatchdogLease(accountId, leaseId);
-      const previous = await getWatchdogSnapshot(accountId, contact.id);
+      if ((contact.provider ?? 'hubspot') !== identity.provider || (identity.provider === 'salesforce' && !['Lead', 'Contact'].includes(contact.objectType ?? ''))) {
+        throw new Error('Watchdog record does not match the connected provider and object scope.');
+      }
+      const previous = await getWatchdogSnapshot(accountId, watchdogRecordKey(contact));
       run.scanned += 1;
       // Search indexing may replay an older value after a verified repair.
       if (previous && Date.parse(previous.contact.updatedAt) > Date.parse(contact.updatedAt)) continue;
       const inspected = inspectWatchdogContact(contact, previous);
       const observed = await saveWatchdogObservation(accountId, leaseId, inspected.snapshot, watchdogContactLabel(contact), inspected.issues, config.defaultAssignee);
       run.opened += observed.opened;
-      inspectedIds.add(contact.id);
+      inspectedIds.add(watchdogRecordKey(contact));
     }
     // Drain saved findings as well as this page, including records detected before repair opt-in.
     if (config.automaticRepairs) {
       for (const { finding, snapshot } of await getPendingWatchdogRepairs(accountId)) {
-        inspectedIds.add(snapshot.contact.id);
+        inspectedIds.add(watchdogRecordKey(snapshot.contact));
         const fixed = await repairContact(accountId, leaseId, source, snapshot.contact, finding);
         if (fixed) {
           run.fixed += 1;
@@ -147,14 +156,19 @@ async function repairContact(accountId: string, leaseId: string, source: Watchdo
   let fresh: WatchdogContact;
   try {
     await assertWatchdogLease(accountId, leaseId, true);
-    fresh = await source.read(observed.id);
-    if (fresh.id !== observed.id || fresh.updatedAt !== observed.updatedAt
-      || WATCHDOG_PROPERTIES.some((key) => (fresh.properties[key] ?? '') !== (observed.properties[key] ?? ''))) {
-      await setWatchdogFindingError(accountId, leaseId, finding.id, 'Contact changed after detection. No repair was sent; review the next observation.');
+    fresh = await source.read(observed.id, observed.objectType);
+    if (watchdogRecordKey(fresh) !== watchdogRecordKey(observed) || fresh.updatedAt !== observed.updatedAt
+      || Object.keys({ ...fresh.properties, ...observed.properties }).some((key) => (fresh.properties[key] ?? '') !== (observed.properties[key] ?? ''))) {
+      await setWatchdogFindingError(accountId, leaseId, finding.id, 'Record changed after detection. No repair was sent; review the next observation.');
       return null;
     }
   } catch (error) {
     await setWatchdogFindingError(accountId, leaseId, finding.id, error instanceof Error ? error.message.slice(0, 600) : 'Fresh read failed; no repair was sent.');
+    return null;
+  }
+  const recomputed = inspectWatchdogContact(fresh, null).issues.find((issue) => issue.rule === 'text_whitespace');
+  if (!recomputed || JSON.stringify(recomputed.after) !== JSON.stringify(finding.after) || Object.values(finding.after).some((value) => !value)) {
+    await setWatchdogFindingError(accountId, leaseId, finding.id, 'Saved repair no longer matches the supported whitespace rule. No repair was sent.');
     return null;
   }
   await assertWatchdogLease(accountId, leaseId, true);
@@ -162,12 +176,12 @@ async function repairContact(accountId: string, leaseId: string, source: Watchdo
   if (!repairId) return null;
   try {
     await assertWatchdogLease(accountId, leaseId, true);
-    await source.patch(observed.id, finding.after);
+    await source.patch(observed.id, finding.after, observed.objectType);
     await assertWatchdogLease(accountId, leaseId);
-    const verified = await source.read(observed.id);
-    if (verified.id !== observed.id || Object.entries(finding.after).some(([key, value]) => verified.properties[key] !== value)
-      || ['email', 'hubspot_owner_id', 'lifecyclestage'].some((key) => (verified.properties[key] ?? '') !== (fresh.properties[key] ?? ''))) {
-      throw new Error('Repair readback did not match the expected values, or protected fields changed. Verify the contact in HubSpot.');
+    const verified = await source.read(observed.id, observed.objectType);
+    if (watchdogRecordKey(verified) !== watchdogRecordKey(observed) || Object.entries(finding.after).some(([key, value]) => verified.properties[key] !== value)
+      || Object.keys(fresh.properties).filter((key) => !(key in finding.after) && key !== 'lastmodifieddate').some((key) => (verified.properties[key] ?? '') !== (fresh.properties[key] ?? ''))) {
+      throw new Error('Repair readback did not match the expected values, or protected fields changed. Verify the record in its CRM.');
     }
     await assertWatchdogLease(accountId, leaseId);
     await finishWatchdogRepair(accountId, leaseId, repairId, finding.id, 'verified', null);

@@ -15,9 +15,9 @@ mkdirSync(output, { recursive: true });
 const at = '2026-10-10T14:00:00.000Z';
 const accountId = '900000001';
 const fixtureKey = 'fictional-watchdog-ui-key';
-const common = { accountId, severity: 'warning', status: 'open', assignee: 'RevOps', note: '', firstSeenAt: at, lastSeenAt: at, resolvedAt: null, occurrences: 1, repairError: null };
+const common = { provider: 'hubspot', objectType: 'Contact', accountId, severity: 'warning', status: 'open', assignee: 'RevOps', note: '', firstSeenAt: at, lastSeenAt: at, resolvedAt: null, occurrences: 1, repairError: null };
 let overview = {
-  accountId,
+  provider: 'hubspot', objectTypes: ['Contact'], accountId,
   config: { enabled: false, automaticRepairs: false, intervalSeconds: 300, defaultAssignee: 'RevOps' },
   phase: 'changes', lastCheckedAt: at, watermark: at, nextCheckAt: null,
   coverageNote: 'Fictional UI fixture: one completed baseline and subsequent contact changes. Not live HubSpot evidence.',
@@ -29,6 +29,18 @@ let overview = {
   ],
   runs: [{ id: 'fixture-run-1', accountId, startedAt: at, finishedAt: at, status: 'completed', scanned: 7, opened: 4, fixed: 1, needsReview: 3, error: null, phase: 'changes' }],
   totals: { open: 2, inProgress: 0, fixed: 1, resolved: 0, unknown: 1 },
+};
+const salesforceOverview = {
+  provider: 'salesforce', objectTypes: ['Lead', 'Contact'], accountId: '00DFICTIONAL0001', instanceUrl: 'https://fixture.my.salesforce.com',
+  config: { enabled: false, automaticRepairs: false, intervalSeconds: 300, defaultAssignee: 'Sales Operations' },
+  phase: 'changes', lastCheckedAt: at, watermark: at, nextCheckAt: null,
+  coverageNote: 'Fictional Salesforce UI fixture: unconverted Leads and Contacts. Not live Salesforce evidence.',
+  findings: [
+    { ...common, provider: 'salesforce', objectType: 'Lead', accountId: '00DFICTIONAL0001', id: 'salesforce-lead', contactId: '00QFICTIONAL0001', contactLabel: 'Salesforce Lead', rule: 'email_missing', summary: 'Lead has no email.', detail: 'Confirm the address with the owner.', before: { Email: '' }, after: {} },
+    { ...common, provider: 'salesforce', objectType: 'Contact', accountId: '00DFICTIONAL0001', id: 'salesforce-contact', contactId: '003FICTIONAL0001', contactLabel: 'Salesforce Contact', rule: 'text_whitespace', status: 'unknown', summary: 'Contact title repair needs verification.', detail: 'The fictional readback was interrupted.', before: { Title: ' Director ' }, after: { Title: 'Director' }, repairError: 'Fictional Salesforce readback interruption.' },
+  ],
+  runs: [{ id: 'salesforce-run-1', accountId: '00DFICTIONAL0001', startedAt: at, finishedAt: at, status: 'completed', scanned: 6, opened: 2, fixed: 0, needsReview: 2, error: null, phase: 'changes' }],
+  totals: { open: 1, inProgress: 0, fixed: 0, resolved: 0, unknown: 1 },
 };
 const errors = [], requests = [];
 let getCount = 0, mode = 'ready', externalRequests = 0;
@@ -48,36 +60,39 @@ await context.route('**/*', async (route) => {
     assert.equal(url.pathname, '/api/control-tower/watchdog', 'Only the mocked Watchdog endpoint is allowed.');
     assert.equal(request.headers()['x-control-tower-key'], fixtureKey, 'The operator key must be sent in a header.');
     assert(!url.search.includes(fixtureKey), 'Keys must not appear in URLs.');
+    const provider = url.searchParams.get('provider') ?? 'hubspot';
+    const activeOverview = provider === 'salesforce' ? salesforceOverview : overview;
     if (request.method() === 'GET') {
       getCount++;
       if (mode === 'unconfigured') return route.fulfill({ status: 503, json: { error: 'Fictional HubSpot setup is incomplete.' } });
-      return route.fulfill({ json: { watchdog: overview } });
+      return route.fulfill({ json: { watchdog: activeOverview } });
     }
     assert.equal(request.method(), 'POST');
     const body = request.postDataJSON(); requests.push(body);
+    assert.equal(body.provider, provider, 'Mutation provider must match the selected CRM.');
     if (body.action === 'configure') {
-      assert.deepEqual(Object.keys(body).sort(), ['action', 'config']);
-      overview.config = body.config;
-      overview.nextCheckAt = body.config.enabled ? '2026-10-10T14:05:00.000Z' : null;
+      assert.deepEqual(Object.keys(body).sort(), ['action', 'config', 'provider']);
+      activeOverview.config = body.config;
+      activeOverview.nextCheckAt = body.config.enabled ? '2026-10-10T14:05:00.000Z' : null;
     } else if (body.action === 'triage') {
-      assert.deepEqual(Object.keys(body).sort(), ['action', 'assignee', 'id', 'note', 'status']);
-      const finding = overview.findings.find((entry) => entry.id === body.id);
+      assert.deepEqual(Object.keys(body).sort(), ['action', 'assignee', 'id', 'note', 'provider', 'status']);
+      const finding = activeOverview.findings.find((entry) => entry.id === body.id);
       assert(finding, 'Triage must reference an existing finding.');
       Object.assign(finding, { status: body.status, assignee: body.assignee, note: body.note });
-      overview.totals = {
-        open: overview.findings.filter((entry) => entry.status === 'open').length,
-        inProgress: overview.findings.filter((entry) => entry.status === 'in_progress').length,
-        fixed: overview.findings.filter((entry) => entry.status === 'fixed').length,
-        resolved: overview.findings.filter((entry) => entry.status === 'resolved').length,
-        unknown: overview.findings.filter((entry) => entry.status === 'unknown').length,
+      activeOverview.totals = {
+        open: activeOverview.findings.filter((entry) => entry.status === 'open').length,
+        inProgress: activeOverview.findings.filter((entry) => entry.status === 'in_progress').length,
+        fixed: activeOverview.findings.filter((entry) => entry.status === 'fixed').length,
+        resolved: activeOverview.findings.filter((entry) => entry.status === 'resolved').length,
+        unknown: activeOverview.findings.filter((entry) => entry.status === 'unknown').length,
       };
     } else {
       assert.equal(body.action, 'tick');
-      assert.deepEqual(body, { action: 'tick', force: true });
-      assert(overview.config.enabled, 'Manual checks require saved enabled monitoring.');
-      overview.runs.unshift({ ...overview.runs[0], id: 'fixture-manual-run', opened: 0, fixed: 0 });
+      assert.deepEqual(body, { action: 'tick', force: true, provider });
+      assert(activeOverview.config.enabled, 'Manual checks require saved enabled monitoring.');
+      activeOverview.runs.unshift({ ...activeOverview.runs[0], id: 'fixture-manual-run', opened: 0, fixed: 0 });
     }
-    return route.fulfill({ json: { watchdog: overview } });
+    return route.fulfill({ json: { watchdog: activeOverview } });
   } catch (error) { errors.push(error.message); return route.fulfill({ status: 400, json: { error: error.message } }); }
 });
 
@@ -129,7 +144,7 @@ try {
   await page.getByLabel('Decision or next step', { exact: true }).fill('Confirm the address with the account owner.');
   await page.getByRole('button', { name: 'Save review', exact: true }).click();
   await page.getByRole('status').filter({ hasText: 'Review decision saved.' }).waitFor();
-  assert.deepEqual(requests.find((body) => body.action === 'triage'), { action: 'triage', id: 'missing-email', status: 'in_progress', assignee: 'Morgan — RevOps', note: 'Confirm the address with the account owner.' });
+  assert.deepEqual(requests.find((body) => body.action === 'triage'), { action: 'triage', provider: 'hubspot', id: 'missing-email', status: 'in_progress', assignee: 'Morgan — RevOps', note: 'Confirm the address with the account owner.' });
   assert.equal(await page.getByRole('link', { name: 'Open in HubSpot ↗', exact: true }).getAttribute('href'), `https://app.hubspot.com/contacts/${accountId}/contact/101`);
   await page.getByRole('button', { name: /Alex Morgan/ }).click();
   await page.getByRole('columnheader', { name: 'Previously observed', exact: true }).waitFor();
@@ -183,6 +198,36 @@ try {
   await page.screenshot({ path: resolve(output, 'unconfigured-mobile.png'), fullPage: true });
 
   assert.equal(requests.length, writesBeforeReload);
+  mode = 'ready';
+  await page.getByRole('combobox', { name: 'CRM to monitor', exact: true }).selectOption('salesforce');
+  await page.getByText('Salesforce 00DFICTIONAL0001', { exact: true }).waitFor();
+  assert.equal(requests.length, writesBeforeReload, 'Switching providers is read-only.');
+  assert(await page.getByRole('button', { name: 'Run check now', exact: true }).isDisabled());
+  assert(!(await page.getByRole('checkbox', { name: /Automatically repair extra spaces/ }).isChecked()), 'A HubSpot repair opt-in cannot enable Salesforce repairs.');
+  await page.getByText(/Contact account relationships stay untouched/).waitFor();
+  await page.getByRole('button', { name: /Salesforce Lead/ }).click();
+  assert.equal(await page.getByRole('link', { name: 'Open in Salesforce ↗', exact: true }).getAttribute('href'), 'https://fixture.my.salesforce.com/lightning/r/Lead/00QFICTIONAL0001/view');
+  await page.getByRole('button', { name: /Salesforce Contact/ }).click();
+  assert.equal(await page.getByRole('link', { name: 'Open in Salesforce ↗', exact: true }).getAttribute('href'), 'https://fixture.my.salesforce.com/lightning/r/Contact/003FICTIONAL0001/view');
+  await page.getByText(/will not blindly replay this repair/).waitFor();
+  const salesforceReport = JSON.parse(await downloadText('Report JSON'));
+  assert.equal(salesforceReport.provider, 'salesforce');
+  assert.equal(salesforceReport.findings[1].status, 'unknown');
+  await page.getByRole('checkbox', { name: /Enable scheduled monitoring/ }).check();
+  await page.getByRole('button', { name: 'Save settings', exact: true }).click();
+  await page.getByRole('heading', { name: 'Monitoring enabled', exact: true }).waitFor();
+  assert.equal(requests.at(-1).provider, 'salesforce');
+  assert.equal(requests.at(-1).config.automaticRepairs, false);
+  await page.getByRole('button', { name: 'Run check now', exact: true }).click();
+  await page.getByRole('status').filter({ hasText: 'Check returned.' }).waitFor();
+  assert.equal(requests.at(-1).provider, 'salesforce');
+  await checkWidth('Salesforce mobile');
+  await page.screenshot({ path: resolve(output, 'salesforce-mobile.png'), fullPage: true });
+  const writesBeforeSalesforceReload = requests.length;
+  await page.goto(new URL('/app/watchdog?provider=salesforce&finding=salesforce-contact', base).href);
+  await page.getByRole('heading', { name: 'Salesforce Contact', exact: true }).waitFor();
+  assert.equal(await page.getByRole('combobox', { name: 'CRM to monitor', exact: true }).inputValue(), 'salesforce');
+  assert.equal(requests.length, writesBeforeSalesforceReload, 'A Salesforce inbox deep link must not trigger a write.');
   assert.deepEqual(errors, []);
-  console.log(JSON.stringify({ passed: true, evidence: 'fictional UI fixture; no live CRM calls', reads: getCount, writes: { configure: requests.filter((body) => body.action === 'configure').length, triage: requests.filter((body) => body.action === 'triage').length, manualChecks: requests.filter((body) => body.action === 'tick').length }, externalRequests, downloads: 2, viewports: ['1440x1100', '390x844'], screenshots: output }, null, 2));
+  console.log(JSON.stringify({ passed: true, evidence: 'fictional UI fixture; no live CRM calls', reads: getCount, writes: { configure: requests.filter((body) => body.action === 'configure').length, triage: requests.filter((body) => body.action === 'triage').length, manualChecks: requests.filter((body) => body.action === 'tick').length }, externalRequests, downloads: 3, providers: ['hubspot', 'salesforce'], viewports: ['1440x1100', '390x844'], screenshots: output }, null, 2));
 } finally { await context.close(); await browser.close(); }

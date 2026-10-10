@@ -1,6 +1,7 @@
 import { createGovernedCrmPlan } from './governed-crm-plan';
 import { defaultCrmUpdatePolicy, isSafeContactUpdatePolicy, type CrmWritePlan, type PortableCrmContact } from './crm-workflow';
 import { isHubSpotEligible, toHubSpotSyncContact } from './hubspot-sync';
+import { toSalesforceUpdateContact } from './salesforce-sync';
 import type { SavedWorkspace } from './workspace';
 import { MAX_PERSISTED_CONTACTS } from './workspace';
 import { safeImportCounts, type CrmAccountIdentity, type SafeImportReview, type SafeImportReviewRow } from './safe-import';
@@ -19,8 +20,8 @@ export async function safeImportWorkspaceFingerprint(workspace: SavedWorkspace):
 export function assertSafeImportWorkspace(workspace: SavedWorkspace): void {
   const s = workspace.state;
   if (s.importRecipe !== 'safe-update-contacts' || s.importRecordMode !== 'update-existing'
-    || s.destinationType !== 'hubspot' || !s.crmUpdatePolicy || !isSafeContactUpdatePolicy(s.crmUpdatePolicy)) {
-    throw new Error('Select and save Safe Import: Update existing contacts with the HubSpot destination and protected field policy.');
+    || !['hubspot', 'salesforce'].includes(s.destinationType) || !s.crmUpdatePolicy || !isSafeContactUpdatePolicy(s.crmUpdatePolicy)) {
+    throw new Error('Select and save Safe Import: Update existing contacts with a HubSpot or Salesforce destination and protected field policy.');
   }
   if (!s.sourceFileHash || !/^[a-f0-9]{64}$/u.test(s.sourceFileHash)) throw new Error('Upload the CSV again to retain its source-file hash before preparing this review.');
   if (!s.contacts.length || s.contacts.length > MAX_PERSISTED_CONTACTS) throw new Error('Use between 1 and 5,000 saved import rows.');
@@ -39,6 +40,8 @@ type ReviewDependencies = {
 export async function buildSafeImportReview(workspace: SavedWorkspace, account: CrmAccountIdentity,
   overrides: Partial<ReviewDependencies> = {}): Promise<SafeImportReview> {
   assertSafeImportWorkspace(workspace);
+  const connectorId = workspace.state.destinationType as SafeImportReview['connectorId'];
+  if (account.connectorId !== connectorId) throw new Error('The verified CRM account does not match the saved destination.');
   const { createPlan, now } = { createPlan: createGovernedCrmPlan, now: () => new Date(), ...overrides };
   const started = now();
   const policy = defaultCrmUpdatePolicy();
@@ -51,7 +54,7 @@ export async function buildSafeImportReview(workspace: SavedWorkspace, account: 
     } else if (!isHubSpotEligible(row)) {
       rows.set(row.contactId, { ...base, status: 'held', reason: `Resolve this row before importing: ${row.qualityFlags.join(', ') || 'no usable email identity'}. No update is scheduled.` });
     } else {
-      try { portable.push(toHubSpotSyncContact(row)); }
+      try { portable.push(connectorId === 'hubspot' ? toHubSpotSyncContact(row) : toSalesforceUpdateContact(row)); }
       catch { rows.set(row.contactId, { ...base, status: 'held', reason: 'The imported values are not eligible for this CRM. Correct this row before importing.' }); }
     }
   }
@@ -59,8 +62,9 @@ export async function buildSafeImportReview(workspace: SavedWorkspace, account: 
   for (let offset = 0; offset < portable.length; offset += 100) {
     const batch = portable.slice(offset, offset + 100);
     try {
-      const plan = await createPlan('hubspot', workspace.state.fileName ?? 'contacts.csv', batch, workspace, policy);
+      const plan = await createPlan(connectorId, workspace.state.fileName ?? 'contacts.csv', batch, workspace, policy);
       if (plan.requested !== batch.length || plan.records.length !== batch.length
+        || plan.connectorId !== connectorId
         || plan.recordMode !== 'update-existing' || plan.records.some((row) => row.operation === 'create')
         || batch.some((input) => plan.records.filter((row) => row.contactId === input.contactId).length !== 1)) {
         throw new Error('The governed planner did not account for this complete update-only batch.');
@@ -112,7 +116,7 @@ export async function buildSafeImportReview(workspace: SavedWorkspace, account: 
   const allRows = [...rows.values()];
   const expiresAt = new Date(started.getTime() + 15 * 60_000).toISOString();
   return {
-    id: crypto.randomUUID(), workspaceId: workspace.id, workspaceRevision: workspace.revision, connectorId: 'hubspot', account,
+    id: crypto.randomUUID(), workspaceId: workspace.id, workspaceRevision: workspace.revision, connectorId, account,
     sourceFile: workspace.state.fileName ?? 'contacts.csv', sourceFileHash: workspace.state.sourceFileHash!,
     workspaceFingerprint: await safeImportWorkspaceFingerprint(workspace), mapping: workspace.state.mapping,
     recordMode: 'update-existing', updatePolicy: policy, createdAt: started.toISOString(), expiresAt,

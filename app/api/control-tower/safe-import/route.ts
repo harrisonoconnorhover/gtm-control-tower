@@ -1,6 +1,6 @@
 import { operatorAccessError } from '@/lib/operator-auth';
 import { getWorkspace, persistenceEnabled } from '@/lib/workspace-store';
-import { readHubSpotAccountIdentity, sameCrmAccount } from '@/lib/crm-account';
+import { readCrmAccountIdentity, sameCrmAccount } from '@/lib/crm-account';
 import { buildSafeImportReview, safeImportEvidenceFingerprint, safeImportWorkspaceFingerprint } from '@/lib/safe-import-review-server';
 import { getSafeImportReview, getLatestSafeImportReview, saveSafeImportReview, getSafeImportExecution } from '@/lib/safe-import-store';
 import { executeSafeImportReview, reconcileSafeImportExecution } from '@/lib/safe-import-execution';
@@ -25,12 +25,14 @@ export async function POST(request: Request) {
   try {
     const workspace = await getWorkspace(payload.workspaceId);
     if (!workspace) return respond({ error: 'Saved workspace not found.' }, 404);
-    const account = await readHubSpotAccountIdentity(process.env.HUBSPOT_ACCESS_TOKEN ?? '');
+    const connectorId = workspace.state.destinationType;
+    if (connectorId !== 'hubspot' && connectorId !== 'salesforce') return respond({ error: 'Select a HubSpot or Salesforce destination for Safe Import.' }, 409);
+    const account = await readCrmAccountIdentity(connectorId);
     if (payload.action === 'prepare') {
       const review = await buildSafeImportReview(workspace, account);
       const latest = await getWorkspace(workspace.id);
       if (!latest || review.workspaceFingerprint !== await safeImportWorkspaceFingerprint(latest)
-        || !sameCrmAccount(account, await readHubSpotAccountIdentity(process.env.HUBSPOT_ACCESS_TOKEN ?? ''))) {
+        || !sameCrmAccount(account, await readCrmAccountIdentity(connectorId))) {
         return respond({ error: 'The workspace or CRM account changed while reading. Prepare a new review.' }, 409);
       }
       await saveSafeImportReview(review);
@@ -41,7 +43,7 @@ export async function POST(request: Request) {
       ? await getSafeImportReview(workspace.id, payload.reviewId) : await getLatestSafeImportReview(workspace.id);
     if (!review && payload.action === 'load') return respond({ review: null, execution: null });
     if (!review) return respond({ error: 'Saved review not found for this workspace.' }, 404);
-    if (!sameCrmAccount(review.account, account)) return respond({ error: 'The configured HubSpot account differs from this review. Execution and verification are unavailable until that account is restored.' }, 409);
+    if (!sameCrmAccount(review.account, account)) return respond({ error: 'The configured CRM account differs from this review. Execution and verification are unavailable until that account is restored.' }, 409);
     const execution = await getSafeImportExecution(workspace.id, review.id);
     if (payload.action === 'load') return respond({ review, execution });
     if (payload.action === 'recover') {

@@ -2,39 +2,39 @@
 
 ## Finished
 
-- Added a connected HubSpot Watchdog at `/app/watchdog`: baseline and incremental contact scans, five deterministic checks, saved findings, assignments, review notes, and CSV/JSON reports.
-- Added optional company/job-title whitespace repairs with fresh-read checks, durable attempts, native readback, five-repair batches, and no automatic replay of uncertain outcomes.
-- Added a browser-independent runner and optional Docker Compose service. Monitoring and repairs both start disabled; settings are bound to the verified HubSpot account.
-- Completed a read-only native check: all 31 connected contacts scanned, two missing-email findings, contact change search accepted, zero native writes. Private evidence: `outputs/watchdog-native-IDGJGk/summary.json`.
+- Extended Safe Import to existing Salesforce Leads and Contacts, with verified organization identity, ambiguous-match holds, protected Contact Account fields, reviewed updates, and native readback.
+- Extended Watchdog to Salesforce: bounded baseline/change polling, persistent findings, assignments, reports, and optional Lead Company/Title or Contact Title whitespace repairs. HubSpot behavior and saved records remain compatible.
+- Added `/app/work`: CSV intake for either CRM, atomic upload/task persistence, duplicate-upload reuse, source-derived review/execution states, assignments, and links to exact reviews or findings.
+- Added provider-aware browser controls and background runner configuration. Refreshed the ignored local Salesforce session through the existing CLI connection. No CRM records were changed.
 
 ## Try It
 
-1. Follow [Watchdog setup](docs/watchdog.md), configure the self-host's HubSpot token and operator key, and open `/app/watchdog`.
-2. Enable monitoring and save settings; run a manual check. To continue with the browser closed, run `npm run watchdog` or `docker compose --profile watchdog up --build app watchdog`.
-3. Review findings, assign work, and export a report. Automatic repair is a separate explicit opt-in.
+1. Start the persistent self-host following [README](README.md); configure direct CRM credentials and `CONTROL_TOWER_SYNC_KEY`. Open `/app/work` and submit a CSV with an Email column.
+2. Open its saved workspace, prepare the review, inspect changes and held identities, then approve the saved proposal when appropriate.
+3. Open `/app/watchdog`, select each CRM, and enable monitoring. Run `npm run watchdog`; for Docker set `CONTROL_TOWER_WATCHDOG_PROVIDERS=hubspot,salesforce` and use the Watchdog Compose profile. Automatic repairs require their own saved opt-in.
 
 ## Checks
 
-- 34 tests across six focused Watchdog/self-hosting suites passed, including paging, deduplication, repair batches, concurrent workers, stale holds, interrupted claims, unknown outcomes, and account/auth boundaries.
-- TypeScript, focused ESLint, application build, script syntax, Compose configuration, Git diff, and secret scan (2,030 Git objects) passed.
-- Desktop/mobile browser fixture passed settings, triage, downloads, reload/poll behavior, empty/error states, and layout checks; zero external requests. Screenshots: `.runtime/watchdog-ui/`.
-- Native qualification exercised actual account identity, contact list, rule detection, and change search only. Automatic repairs were tested against fictional provider records.
+- Full suite: 626 tests across 48 files passed. TypeScript, build, changed-file ESLint, script syntax, Compose configuration, diff checks and secret scan (2,069 Git objects) passed. Full lint completed with zero errors and ten unused-variable warnings in ignored generated qualification outputs.
+- Four browser probes passed: HubSpot Safe Import, Salesforce Safe Import, both-provider Watchdog, and Operations Inbox. Desktop/mobile layouts checked; fictional API fixtures, zero external requests.
+- Native read-only: Salesforce Watchdog scanned 139 records with four findings; HubSpot scanned 31 with two. Salesforce Safe Import saved a complete two-row Lead/Contact review. All native checks made zero writes.
+- Private summaries: `outputs/salesforce-watchdog-native-6V4x8J/summary.json`, `outputs/watchdog-native-E9bO42/summary.json`, `outputs/salesforce-safe-import-native-gaNiqT/summary.json`.
 
 ## Decisions
 
-- Use explicit rules and human triage; five-minute default polling with one-minute/hourly choices. Scope is Contacts and self-hosted SQLite.
-- Keep repairs narrow and optional. A native read-then-PATCH race remains; no atomic external-writer guarantee is claimed.
-- Preserve existing Safe Import behavior and the static public showcase. No Slack messages or public deployment were added.
+- Reuse existing review/execution and finding storage. Inbox status comes from saved evidence; unresolved or unverified work is not completed.
+- Salesforce rules respect object differences. No inferred Lead status order or Contact Account edits; PATCH suppresses Lead assignment rules.
+- Keep this operator slice on SQLite with existing authentication. See [decisions](docs/decisions.md).
 
 ## Remaining
 
-- Native automatic-write qualification and hosted/D1 support are unqualified; this feature rejects D1 explicitly.
-- Polling cannot capture every intermediate change, and archived/deleted contacts are outside coverage. Daily baseline reconciliation reduces indexing gaps.
-- Intentional lifecycle regressions can reopen on observation; operators must interpret the finding. Queue assignments do not notify people externally.
-- Earlier Safe Import whole-file D1 execution limits remain; see `docs/safe-import-native-check.md`. This change does not resolve that separate release blocker.
+- Native Salesforce automatic writes are unqualified; write behavior passed fictional-provider tests. External writers and downstream automation can still race or alter records.
+- Existing Safe Import whole-file D1 execution remains blocked; no hosted deployment or public publication performed.
+- Polling can miss intermediate changes. Converted/deleted records leave scanning coverage; existing findings may need human resolution.
+- Tokens can expire; automatic OAuth refresh, Slack notifications and team roles are not included. Old CSV-lab workspaces are not backfilled into the Inbox.
 
 ## Review First
 
-- `docs/watchdog.md` for setup, behavior, and limits.
-- `lib/watchdog.ts`, `lib/watchdog-store.ts`, and focused tests for scan/repair behavior.
-- `/app/watchdog` for the operator experience and reports.
+- [Operations Inbox](docs/operations-inbox.md) and `/app/work`.
+- [Salesforce/HubSpot Safe Import](docs/safe-import.md) and `lib/safe-import-execution.ts`.
+- [Watchdog](docs/watchdog.md) and `lib/watchdog-salesforce.ts`.
