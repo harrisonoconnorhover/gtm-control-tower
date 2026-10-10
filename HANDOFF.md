@@ -2,37 +2,37 @@
 
 ## Finished
 
-- Confirmed the live browser workspace opens company files without email or name columns. The reported blocker belongs to the older uploader; both `#audit` and `#clean-csv` now open the generic workspace.
-- Added review findings for empty rows and exact repeated whole rows, independent of email mapping. Findings recalculate after edits, exclusions, restoration, and Undo.
-- Clarified optional email checks and acceptance of contacts, companies, deals, and other tables. Every included source row and column remains downloadable.
-- Preserved the prior native HubSpot/Salesforce work and evidence. See [native qualification](docs/native-incident-qualification.md) for its 2,900-record test and limits.
+- Rebuilt the contact CSV mapper around one row per source column: original CSV header and example on the left, editable Control Tower field on the right, with match counts and clear labels.
+- Added deterministic automatic matches for common CRM headers, including Work Email, Company Name, Business Phone, given/family names, and API-style capitalization. Ambiguous matches remain available for manual review.
+- Added Auto-map headers to restore suggestions. Moving a destination clears its previous source; unknown columns stay visible as not imported.
+- Fixed ignored fields returning after preset serialization. Explicit exclusions survive saving, reload, and import; stale or conflicting preset sources remain unmapped.
+- Preserved browser CSV cleanup and native CRM qualification work documented in the existing guides.
 
 ## Try It
 
-1. Open [the live CSV workspace](https://gtm-control-tower.pages.dev/#clean-csv). Refresh if the older email/name blocker is still visible.
-2. For the new review findings locally, run `npm run build:public`, then `npx vite preview --config vite.public.config.ts --host 127.0.0.1 --port 4175`. Open `http://127.0.0.1:4175/#audit` and choose a file with no email or name columns.
-3. Repeated and empty rows appear in **Needs review**. Edit, exclude, restore, or download; no row is removed automatically.
+1. Start the updated self-hosted app and open `/app/lab`. Choose a contact CSV to preview.
+2. Review **Your CSV column → Control Tower field**, including the source examples and automatic matches. Change a destination or choose **Do not import this column**, then **Validate + load**.
+3. To repeat browser verification against a disposable local app, run `CONTROL_TOWER_BROWSER_BASE_URL=http://127.0.0.1:3217 npm run test:csv-mapping` after starting that app with isolated SQLite.
 
 ## Checks
 
-- All 24 browser CSV unit tests passed. TypeScript, focused lint, script syntax, public production build, and diff checks passed.
-- Desktop and 390px mobile browser checks passed against the production build, including company/deal files without identity columns, exact download contents, findings, edits, exclusions, restoration, Undo, and the legacy URL.
-- Browser tests confirmed no page errors, API/external calls, processing requests, or persistent browser storage. Desktop/mobile screenshots were visually inspected.
-- A fictional company CSV opened successfully on the current live site. The added generic findings have not been publicly deployed.
+- All 64 focused CSV/browser-CSV unit tests passed. TypeScript, focused ESLint, script syntax, app/public production builds, and diff checks passed.
+- Desktop 1440px and mobile 390px production-browser checks passed, with five real local workspace imports and saved preset readback. Verified automatic matches, source examples, ignored-field persistence, reassignment, reset, ambiguous aliases, and stale presets.
+- No JavaScript errors, external requests, or CRM calls occurred in browser verification. Screenshots were visually inspected. Private results are in `outputs/csv-mapping/`.
 
 ## Decisions
 
-- Exact full-row equality is a review hint; it does not establish a duplicate person or authorize merging.
-- Empty-row and repeated-row checks work without identity; email checks only run when a column is selected.
-- Preserve the separate connected contact importer's identity requirement and source-data privacy.
+- Suggest matches from explicit header aliases, not cell contents or fuzzy guesses. Canonical names take precedence; equal candidates need review.
+- Each source maps to one target. Explicit empty mappings override inferred defaults and survive JSON storage.
+- This mapper loads contacts into the saved workspace. Generic browser CSV cleanup remains available for other tables and preserves all source columns.
 
 ## Remaining
 
-- Publish the additional review findings to the static site when authorized. The current live version already accepts files without identity columns.
-- Hosted CRM execution, native event delivery, and Slack qualification remain outside this change.
+- Restart or rebuild the installed operator app to use the new mapper. No hosted app was deployed in this task.
+- Publishing the earlier static CSV review additions remains separate from this operator-app change.
 
 ## Review First
 
-1. `lib/browser-csv.ts` and `tests/browser-csv.test.ts`.
-2. `components/browser-csv-workspace.tsx` and [CSV guide](docs/browser-csv.md).
-3. `outputs/browser-csv/companies-no-identity.png` and `deals-no-identity.png`.
+1. `components/self-host-console.tsx` and `lib/csv-control-tower.ts`.
+2. `tests/csv-control-tower.test.ts` and `scripts/check-csv-mapping.mjs`.
+3. `outputs/csv-mapping/desktop-auto-mapping.png` and [self-hosting guide](docs/self-hosting.md).

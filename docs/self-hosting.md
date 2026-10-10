@@ -28,7 +28,18 @@ contains 72 rows with duplicates, malformed and Unicode emails, missing company
 and owner values, stage regressions, plus-addresses, inconsistent casing, and
 quoted punctuation. Only company metadata comes from the public SEC snapshot;
 all contact-level data is synthetic.
-Preview the first rows, map the source columns, and choose **Validate + load**.
+The mapper shows **your CSV column → Control Tower field**, with a sample value
+from your file. Common headers such as `Work Email`, `Company Name`, and
+`Business Phone` are matched automatically, including capitalization and separator
+variations. Equally plausible matches remain unmapped for review. Use **Auto-map
+headers** to restore the suggestions after editing them.
+
+Each CSV column has an editable destination. Choose **Do not import this column**
+to leave it out of the contact workspace; that choice survives saved presets.
+Moving a destination to another source column clears its previous assignment.
+Presets apply only to matching headers in the current file, and missing or
+conflicting mappings stay visible as unmapped. Review the samples, then choose
+**Validate + load**. This saves mapped records locally; it does not write to a CRM.
 Imports, mappings, repair history, connector receipts, and the latest twenty
 revisions persist in `.runtime/sqlite/gtm-control-tower.db`. The browser stores
 only an unguessable workspace key; SQLite remains the source of truth.

@@ -20,11 +20,16 @@ import type { MappingPreset } from '@/lib/workspace';
 import { importPomadeHandoff, MAX_POMADE_HANDOFF_BYTES, type PomadeHandoffImport } from '@/lib/pomade-handoff';
 import { PomadeSourceContext } from '@/components/pomade-source-context';
 
-const mappingOrder: CsvFieldKey[] = [
-  'rawEmail', 'fullName', 'firstName', 'lastName', 'company', 'phone', 'jobTitle', 'website', 'state',
-  'region', 'segment', 'lifecycleStage', 'expectedLifecycleStage', 'ownerId', 'contactId',
-  'normalizedEmail', 'canonicalContactId', 'recordStatus', 'lastAction', 'qualityFlags',
-];
+const mappingFields = Object.keys(csvFieldLabels) as CsvFieldKey[];
+
+// Empty strings survive saved presets and override automatic suggestions on import.
+function mappingForHeaders(mapping: CsvColumnMapping, headers: string[]): CsvColumnMapping {
+  const sources = Object.values(mapping).filter(Boolean);
+  return Object.fromEntries(mappingFields.map((field) => {
+    const source = mapping[field];
+    return [field, source && headers.includes(source) && sources.filter((value) => value === source).length === 1 ? source : ''];
+  }));
+}
 
 type Props = {
   catalog: ConnectorCatalog | null;
@@ -77,6 +82,7 @@ export function SelfHostConsole({
   const [rawName, setRawName] = useState('imported-contacts.csv');
   const [preview, setPreview] = useState<CsvPreview | null>(null);
   const [draftMapping, setDraftMapping] = useState<CsvColumnMapping>(mapping);
+  const [mappingNotice, setMappingNotice] = useState('');
   const [presetName, setPresetName] = useState('My CRM export');
   const [sourceSpreadsheet, setSourceSpreadsheet] = useState('');
   const [sourceSheet, setSourceSheet] = useState('Sheet1');
@@ -92,11 +98,13 @@ export function SelfHostConsole({
   const readyRows = useMemo(() => contacts.filter(isDestinationReadyContact), [contacts]);
   const heldRows = activeRows.length - readyRows.length;
   const currentPhase = lastReceipt?.phase ?? (contacts.length ? 'validate' : preview ? 'preview' : null);
+  const mappedColumns = preview?.headers.filter((header) => Object.values(draftMapping).includes(header)).length ?? 0;
 
   function clearPreview() {
     setRawCsv(null);
     setPreview(null);
     setDraftMapping({});
+    setMappingNotice('');
     setPomadePreview(null);
   }
 
@@ -138,13 +146,24 @@ export function SelfHostConsole({
       setRawCsv(csv);
       setRawName(fileName);
       setPreview(nextPreview);
-      setDraftMapping(nextPreview.suggestedMapping);
+      setDraftMapping(mappingForHeaders(nextPreview.suggestedMapping, nextPreview.headers));
       setStatus('ready');
       setMessage(`${nextPreview.sourceRows.toLocaleString()} rows ready to map.`);
     } catch (error) {
       setStatus('error');
       setMessage(error instanceof Error ? error.message : 'That table could not be previewed.');
     }
+  }
+
+  function mapColumn(header: string, field: CsvFieldKey | '') {
+    const previousSource = field ? draftMapping[field] : '';
+    setDraftMapping((current) => ({
+      ...Object.fromEntries(mappingFields.map((key) => [key, current[key] === header ? '' : current[key] ?? ''])),
+      ...(field ? { [field]: header } : {}),
+    }));
+    setMappingNotice(field
+      ? `${header} → ${csvFieldLabels[field]}.${previousSource && previousSource !== header ? ` ${previousSource} is now unmapped.` : ''}`
+      : `${header} will not be imported into this contact workspace.`);
   }
 
   async function readCsv(file: File) {
@@ -280,7 +299,7 @@ export function SelfHostConsole({
 
           {sourceType === 'csv' && (
             <div className="mt-4">
-              <input ref={fileInput} type="file" accept=".csv,text/csv" className="sr-only" onChange={(event) => { const file = event.currentTarget.files?.[0]; if (file) void readCsv(file); event.currentTarget.value = ''; }} />
+              <input ref={fileInput} type="file" accept=".csv,text/csv" aria-label="CSV file" className="sr-only" onChange={(event) => { const file = event.currentTarget.files?.[0]; if (file) void readCsv(file); event.currentTarget.value = ''; }} />
               <button onClick={() => fileInput.current?.click()} disabled={status === 'working'} className="w-full rounded-2xl border border-dashed border-[#83bcff]/30 bg-[#83bcff]/[0.05] px-5 py-6 text-sm font-semibold text-[#83bcff] hover:bg-[#83bcff]/10 disabled:opacity-40">Choose CSV to preview</button>
               <button onClick={() => void prepareCsv(messyLeadDemoCsv(), 'gtm-control-tower-messy-leads-64.csv')} disabled={status === 'working'} className="mt-2 w-full rounded-2xl border border-white/10 bg-white/[0.035] px-5 py-3 text-xs font-semibold text-[#a9bbb2] hover:bg-white/[0.06] disabled:opacity-40">Or load the bundled 64-row practice batch</button>
               <input ref={pomadeInput} type="file" accept=".json,application/json" aria-label="Pomade handoff file" className="sr-only" onChange={(event) => { const file = event.currentTarget.files?.[0]; if (file) void readPomadeHandoff(file); event.currentTarget.value = ''; }} />
@@ -320,12 +339,12 @@ export function SelfHostConsole({
           {message && <p aria-live="polite" className={`mt-3 text-xs leading-5 ${status === 'error' ? 'text-[#ff9d7f]' : 'text-[#8fa99d]'}`}>{message}</p>}
         </div>
 
-        <div className="rounded-[24px] border border-white/10 bg-[#07130f]/65 p-4 sm:p-5">
+        <div className="min-w-0 rounded-[24px] border border-white/10 bg-[#07130f]/65 p-4 sm:p-5">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <p className="font-mono text-[9px] uppercase tracking-wider text-[#cdfc54]">{pomadePreview ? 'Optional source handoff' : 'Visual mapping'}</p>
-              <h3 className="mt-1 text-lg font-semibold">{pomadePreview ? 'Review the imported proposals' : 'Match any headers to the clean model'}</h3>
-              <p className="mt-1 text-xs text-[#71877c]">{pomadePreview ? 'The complete file was validated locally. No CRM or research calls were made.' : 'Nothing writes until preview and validation succeed.'}</p>
+              <h3 className="mt-1 text-lg font-semibold">{pomadePreview ? 'Review the imported proposals' : 'Map your CSV columns'}</h3>
+              <p className="mt-1 text-xs leading-5 text-[#9cb0a7]">{pomadePreview ? 'The complete file was validated locally. No CRM or research calls were made.' : 'Your CSV headers are on the left. Choose the Control Tower field on the right. Common headers are matched automatically.'}</p>
             </div>
             {preview && <span className="rounded-full bg-white/[0.05] px-3 py-1 font-mono text-[9px] text-[#a9bbb2]">{preview.headers.length} columns · {preview.sourceRows} rows</span>}
           </div>
@@ -339,17 +358,35 @@ export function SelfHostConsole({
             <p className="text-[10px] leading-4 text-[#71877c]">Your previous workspace stays saved. Loading does not query a CRM or approve any proposal.{persistenceStatus !== 'saved' ? ' Saved workspace storage must be ready before loading.' : ''}</p>
           </div> : preview ? (
             <>
-              <div className="mt-4 grid max-h-[360px] gap-2 overflow-y-auto pr-1 sm:grid-cols-2">
-                {mappingOrder.map((field) => (
-                  <label key={field} className="grid gap-1 rounded-xl border border-white/[0.06] bg-white/[0.025] p-3 font-mono text-[8px] uppercase tracking-wider text-[#71877c]">
-                    {csvFieldLabels[field]}{field === 'rawEmail' || field === 'fullName' ? ' · identity' : ''}
-                    <select value={draftMapping[field] ?? ''} onChange={(event) => setDraftMapping((current) => ({ ...current, [field]: event.target.value || undefined }))} className="mt-1 rounded-lg border border-white/10 bg-[#0c1d17] px-2 py-2 text-xs normal-case tracking-normal text-[#dce9e2]">
-                      <option value="">Ignore</option>
-                      {preview.headers.map((header) => <option key={header} value={header}>{header}</option>)}
-                    </select>
-                  </label>
-                ))}
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+                <p className="text-xs text-[#a9bbb2]">{mappedColumns} of {preview.headers.length} columns matched · {preview.headers.length - mappedColumns} not imported</p>
+                <button type="button" onClick={() => { setDraftMapping(mappingForHeaders(preview.suggestedMapping, preview.headers)); setMappingNotice('Automatic header matches restored. Review them before loading.'); }} className="rounded-full border border-[#83bcff]/30 px-3 py-2 text-xs font-semibold text-[#83bcff]">Auto-map headers</button>
               </div>
+              <section aria-label="CSV column mapping" className="mt-3 max-h-[480px] space-y-2 overflow-y-auto pr-1">
+                {preview.headers.map((header, index) => {
+                  const field = mappingFields.find((key) => draftMapping[key] === header);
+                  const sample = preview.sampleRows.map((row) => row[header]).find((value) => value?.trim());
+                  return <div key={header} role="group" aria-label={`CSV column ${header}`} className="grid min-w-0 gap-3 rounded-xl border border-white/10 bg-white/[0.025] p-3 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] sm:items-center">
+                    <div className="min-w-0">
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-[#83bcff]">Your CSV column · {index + 1}</p>
+                      <p className="mt-1 break-words text-sm font-semibold text-[#e5f1eb]">{header}</p>
+                      <p className="mt-1 break-all text-[11px] leading-5 text-[#9cb0a7]" title={sample}>Example: {sample ? (sample.length > 100 ? `${sample.slice(0, 100)}…` : sample) : 'No non-empty sample'}</p>
+                    </div>
+                    <span aria-hidden="true" className="hidden text-lg text-[#83bcff] sm:block">→</span>
+                    <div className="min-w-0">
+                      <label className="grid gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-[#cdfc54]">Control Tower field
+                        <select aria-label={`Control Tower field for ${header}`} value={field ?? ''} onChange={(event) => mapColumn(header, event.target.value as CsvFieldKey | '')} className="min-w-0 w-full rounded-lg border border-white/15 bg-[#0c1d17] px-2 py-2.5 text-xs font-normal normal-case tracking-normal text-[#dce9e2]">
+                          <option value="">Do not import this column</option>
+                          {mappingFields.map((key) => <option key={key} value={key}>{csvFieldLabels[key]}</option>)}
+                        </select>
+                      </label>
+                      <p className={`mt-1.5 text-[10px] ${field ? 'text-[#a9bbb2]' : 'text-[#e6bd68]'}`}>{!field ? 'Not mapped' : preview.suggestedMapping[field] === header ? 'Auto-matched from header' : 'Manual match'}</p>
+                    </div>
+                  </div>;
+                })}
+              </section>
+              {mappingNotice && <p role="status" className="mt-3 text-xs leading-5 text-[#a9bbb2]">{mappingNotice}</p>}
+              <p className="mt-3 text-[11px] leading-5 text-[#9cb0a7]">Unmapped columns are not loaded into this contact workspace. Loading saves the mapped records here; it does not write to your CRM.</p>
               <div className="mt-4 flex flex-wrap items-end gap-2">
                 <label className="grid flex-1 gap-1 font-mono text-[8px] uppercase tracking-wider text-[#71877c]">
                   Mapping preset name
@@ -360,7 +397,7 @@ export function SelfHostConsole({
               </div>
               {presets.length > 0 && (
                 <div className="mt-3 flex flex-wrap gap-2">
-                  {presets.map((preset) => <button key={preset.id} onClick={() => setDraftMapping(preset.mapping)} className="rounded-full bg-white/[0.05] px-3 py-1.5 font-mono text-[9px] text-[#8fa99d]">Use {preset.name}</button>)}
+                  {presets.map((preset) => <button key={preset.id} onClick={() => { setDraftMapping(mappingForHeaders(preset.mapping, preview.headers)); setMappingNotice('Preset applied to matching headers. Missing or conflicting matches remain unmapped; review those columns.'); }} className="rounded-full bg-white/[0.05] px-3 py-1.5 font-mono text-[9px] text-[#8fa99d]">Use {preset.name}</button>)}
                 </div>
               )}
             </>

@@ -906,3 +906,14 @@ whole rows independently of email mapping. Never infer a duplicate person or
 remove a row from these hints. Email checks remain optional and their absence is
 shown as limited coverage, not a blocked file. Retain the separate contact
 importer's identity contract for connected CRM workflows.
+
+## October 10, 2026 — Make source and destination mapping explicit
+
+Render one mapping row per original CSV header, with a source sample and an
+explicit Control Tower destination. Suggest common headers deterministically;
+canonical field names take precedence and equally plausible aliases remain
+unmapped. Do not infer owner IDs from owner names or guess from cell contents.
+Keep explicit exclusions as empty strings so JSON persistence cannot silently
+restore an automatic suggestion. A source maps to one destination at a time;
+reassigning a destination clears its previous source. Apply presets only where
+their source headers exist without conflicting assignments in the current file.
