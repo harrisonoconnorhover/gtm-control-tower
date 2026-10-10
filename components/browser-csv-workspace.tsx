@@ -139,6 +139,7 @@ export function BrowserCsvWorkspace({ active = true }: { active?: boolean }) {
     setFilter('all');
     setSearch('');
     setPage(0);
+    setProposalPage(0);
     setRulesOpen(next.trimColumns.length === 0 && next.emailColumn === null);
     setError('');
     setNotice(`${next.rows.length.toLocaleString()} rows opened locally. Review the suggested changes below.`);
@@ -180,16 +181,18 @@ export function BrowserCsvWorkspace({ active = true }: { active?: boolean }) {
     if (!result || result.rowCount === 0) return;
     if (current !== document) commit(current, 'Saved row edits.');
     const pendingReview = browserCsvIssues(current).size;
+    const pendingFormatting = cleanupProposals(current).length;
+    const outputFilename = `${filename.replace(/\.csv$/iu, '') || 'contacts'}-cleaned.csv`;
     const blob = new Blob(['\uFEFF', result.csv], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const link = window.document.createElement('a');
     link.href = url;
-    link.download = `${filename.replace(/\.csv$/iu, '') || 'contacts'}-cleaned.csv`;
+    link.download = outputFilename;
     window.document.body.appendChild(link);
     link.click();
     link.remove();
     window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-    setNotice(`Download prepared: ${result.rowCount.toLocaleString()} ${result.rowCount === 1 ? 'row' : 'rows'}, all ${current.headers.length} original columns. ${pendingReview ? `${pendingReview} ${pendingReview === 1 ? 'row still has' : 'rows still have'} review notes.` : ''}`);
+    setNotice(`Download prepared: ${outputFilename}. Find it in your browser's Downloads. ${result.rowCount.toLocaleString()} ${result.rowCount === 1 ? 'row' : 'rows'}, all ${current.headers.length} original columns, ${pendingReview.toLocaleString()} ${pendingReview === 1 ? 'row' : 'rows'} with review notes.${pendingFormatting ? ` ${pendingFormatting.toLocaleString()} suggested formatting ${pendingFormatting === 1 ? 'change remains' : 'changes remain'} unapplied; the file contains your current values.` : ''}`);
   }
 
   return (
@@ -216,7 +219,7 @@ export function BrowserCsvWorkspace({ active = true }: { active?: boolean }) {
 
         <input ref={fileInput} type="file" accept=".csv,text/csv" aria-label="Choose a CSV file" className="sr-only" onChange={(event) => { const file = event.currentTarget.files?.[0]; if (file) void readFile(file); event.currentTarget.value = ''; }} />
         {error && <p role="alert" className="mb-5 rounded-xl border border-[#ffac8b]/30 bg-[#ffac8b]/10 p-4 text-sm text-[#ffd0ba]">{error}</p>}
-        <p role="status" aria-live="polite" className={notice ? 'mb-4 text-sm text-[#c4d7cb]' : 'sr-only'}>{notice}</p>
+        <p role="status" aria-live="polite" className={notice ? 'mb-4 break-words text-sm leading-6 text-[#c4d7cb]' : 'sr-only'}>{notice}</p>
 
         {!document ? (
           <div className="mb-12 grid overflow-hidden rounded-3xl border border-white/15 bg-[#0b1c16] lg:grid-cols-[1.25fr_0.75fr]">
@@ -250,6 +253,7 @@ export function BrowserCsvWorkspace({ active = true }: { active?: boolean }) {
                   <button className={primary} disabled={!download?.rowCount} onClick={saveDownload}>Download CSV</button>
                 </div>
               </div>
+              {proposals.length > 0 && <p className="mt-3 text-xs leading-5 text-[#f6c985]">{proposals.length.toLocaleString()} suggested formatting {proposals.length === 1 ? 'change has' : 'changes have'} not been applied. Download keeps your current values; apply formatting changes below to include them.</p>}
               <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
                 <Metric label="Source rows" value={document.rows.length} />
                 <Metric label="Rows changed" value={document.rows.filter(changed).length} />

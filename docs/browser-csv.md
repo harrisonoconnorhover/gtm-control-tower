@@ -21,7 +21,8 @@ and other tables open with every original column and row available.
    or show every column before deciding whether to exclude a row.
 4. Download the cleaned CSV. Every included row is exported, even if it still has
    a warning. Current row edits are included without a separate **Save row** click;
-   suggested formatting changes still need to be applied explicitly.
+   suggested formatting changes still need to be applied explicitly. For example,
+   `contacts.csv` becomes `contacts-cleaned.csv` in your browser's Downloads list.
 
 ## Editing and review
 

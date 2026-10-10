@@ -108,6 +108,43 @@ async function noPageOverflow(page) {
   assert(sizes.content <= sizes.viewport + 1, `The page overflows horizontally: ${JSON.stringify(sizes)}`);
 }
 
+async function downloadClarity(page, viewport) {
+  const source = 'ID,Name,Email\n00123, Ada ,Ada@EXAMPLE.COM\n00124,Bea,not-an-email';
+  await upload(page, 'unformatted.csv', source);
+  const overview = page.getByRole('region', { name: 'File overview', exact: true });
+  const warning = overview.getByText('2 suggested formatting changes have not been applied. Download keeps your current values; apply formatting changes below to include them.', { exact: true });
+  await warning.waitFor();
+  const warningBox = await warning.boundingBox();
+  const buttonBox = await overview.getByRole('button', { name: 'Download CSV', exact: true }).boundingBox();
+  assert(warningBox && buttonBox && warningBox.y >= buttonBox.y + buttonBox.height && warningBox.y - buttonBox.y - buttonBox.height <= 20,
+    'The unapplied-formatting warning should sit directly below the top download actions.');
+  const downloaded = await downloadCsv(page, `${viewport}-unformatted.csv`);
+  assert.equal(downloaded.name, 'unformatted-cleaned.csv');
+  assert.equal(downloaded.text, source.replaceAll('\n', '\r\n'), 'Download must not apply suggested formatting silently.');
+  const status = page.getByRole('status').filter({ hasText: 'Download prepared:' });
+  await status.filter({ hasText: "unformatted-cleaned.csv. Find it in your browser's Downloads. 2 rows, all 3 original columns, 1 row with review notes. 2 suggested formatting changes remain unapplied" }).waitFor();
+  await noPageOverflow(page);
+  await page.screenshot({ path: resolve(output, `${viewport}-download-notice.png`), fullPage: true });
+
+  await page.getByRole('button', { name: 'Review row 1', exact: true }).click();
+  await page.getByLabel('Name — row 1', { exact: true }).fill('Ada');
+  const withDraft = await downloadCsv(page, `${viewport}-download-with-draft.csv`);
+  assert.equal(withDraft.name, 'unformatted-cleaned.csv');
+  assert.equal(withDraft.text, source.replace(' Ada ', 'Ada').replaceAll('\n', '\r\n'));
+  await status.filter({ hasText: '1 suggested formatting change remains unapplied' }).waitFor();
+  assert(!(await status.innerText()).includes('2 suggested formatting changes'), 'Download status must count suggestions after including pending row edits.');
+  await noPageOverflow(page);
+}
+
+async function replacementPreview(page) {
+  const source = 'Name,Email\n' + Array.from({ length: 8 }, (_, index) => ` Person ${index + 1} ,person${index + 1}@EXAMPLE.COM`).join('\n');
+  await upload(page, 'first-preview.csv', source);
+  await page.getByRole('button', { name: 'More changes', exact: true }).click();
+  await page.getByText('Changes 6–10 of 16', { exact: true }).waitFor();
+  await upload(page, 'replacement-preview.csv', source);
+  await page.getByText('Changes 1–5 of 16', { exact: true }).waitFor();
+}
+
 async function withoutIdentity(page, kind, source, lastColumn) {
   await upload(page, `${kind}.csv`, source);
   assert.equal(await page.getByRole('alert').count(), 0);
@@ -250,6 +287,8 @@ try {
   await page.getByRole('alert').filter({ hasText: 'could not be read as UTF-8' }).waitFor();
   await upload(page, 'recovered.csv', 'SKU,Details\n00123,Still here');
   assert.equal(await page.getByRole('alert').count(), 0, 'A valid file should clear a previous parsing error.');
+  await replacementPreview(page);
+  await downloadClarity(page, 'desktop');
   await withoutIdentity(page, 'companies', 'Company,Domain,Notes\nAcme,acme.example,Keep this\nAcme,acme.example,Keep this\n,,', 'Notes');
   await draftLifecycle(desktop);
   await desktop.assertPrivate();
@@ -296,11 +335,13 @@ try {
   await mobile.page.getByRole('button', { name: 'Review row 3', exact: true }).click();
   assert.equal(await mobile.page.getByLabel('Record ID — row 3', { exact: true }).inputValue(), '00125', 'Reopening the download must remove the encoding marker from the first header.');
   assert.equal(await mobile.page.getByLabel('First name — row 3', { exact: true }).inputValue(), 'José');
+  await downloadClarity(mobile.page, 'mobile');
   await withoutIdentity(mobile.page, 'deals', 'Deal ID,Amount,Pipeline,Details\n00123,500,New,Keep this\n00123,500,New,Keep this\n,,,', 'Details');
   await mobile.assertPrivate();
   await mobile.context.close();
   outcomes.push('Mobile 390px: sample, cleanup, actual download and row editor; page width stays within viewport.');
   outcomes.push('Downloads: UTF-8 BOM bytes verified; accented names and exact CSV content preserved; reopening a downloaded sample retains the original first header.');
+  outcomes.push('Download clarity: desktop/mobile top warning, actual filename, browser Downloads guidance, row/column/review counts and pending formatting count include current drafts; replacement files restart formatting preview at change 1.');
   outcomes.push('No email/name: company and deal files open, empty/repeated rows appear in review, edits/exclusion/restore/Undo recalculate findings, and every source cell downloads; legacy #audit link works.');
   outcomes.push('Both sessions: no page errors, external requests, CSV API/processing requests or CSV browser storage; visiting the separate inbound lab permits only its existing empty GET to demo-intake and its own fictional practice storage.');
   console.log(JSON.stringify({ status: 'passed', outcomes, screenshots: output }, null, 2));
