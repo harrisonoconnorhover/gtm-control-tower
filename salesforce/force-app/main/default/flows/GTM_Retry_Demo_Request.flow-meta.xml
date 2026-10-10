@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Flow xmlns="http://soap.sforce.com/2006/04/metadata">
+    <actionCalls>
+        <name>Retry_Request</name><label>Retry saved request</label>
+        <locationX>176</locationX><locationY>398</locationY>
+        <actionName>GTMDemoIntake</actionName><actionType>apex</actionType>
+        <connector><targetReference>Result</targetReference></connector>
+        <faultConnector><targetReference>Retry_Error</targetReference></faultConnector>
+        <flowTransactionModel>CurrentTransaction</flowTransactionModel>
+        <inputParameters><name>recordId</name><value><elementReference>recordId</elementReference></value></inputParameters>
+        <storeOutputAutomatically>true</storeOutputAutomatically>
+    </actionCalls>
+    <apiVersion>67.0</apiVersion>
+    <description>Review and retry one saved demo request after correcting company data or ownership. Original form details and attribution are reused.</description>
+    <environments>Default</environments>
+    <interviewLabel>Retry demo request {!$Flow.CurrentDateTime}</interviewLabel>
+    <label>Retry Saved Demo Request</label>
+    <processType>Flow</processType>
+    <recordLookups>
+        <name>Get_Request</name><label>Read saved request</label>
+        <locationX>176</locationX><locationY>158</locationY>
+        <assignNullValuesIfNoRecordsFound>false</assignNullValuesIfNoRecordsFound>
+        <connector><targetReference>Review_Request</targetReference></connector>
+        <faultConnector><targetReference>Retry_Error</targetReference></faultConnector>
+        <filterLogic>and</filterLogic>
+        <filters><field>Id</field><operator>EqualTo</operator><value><elementReference>recordId</elementReference></value></filters>
+        <getFirstRecordOnly>true</getFirstRecordOnly><object>GTM_Demo_Request__c</object>
+        <storeOutputAutomatically>true</storeOutputAutomatically>
+    </recordLookups>
+    <runInMode>DefaultMode</runInMode>
+    <screens>
+        <name>Review_Request</name><label>Retry saved demo request</label>
+        <locationX>176</locationX><locationY>278</locationY>
+        <allowBack>false</allowBack><allowFinish>true</allowFinish><allowPause>false</allowPause>
+        <connector><targetReference>Retry_Request</targetReference></connector>
+        <fields>
+            <name>Context</name>
+            <fieldText>&lt;p&gt;&lt;strong&gt;{!Get_Request.First_Name__c} {!Get_Request.Last_Name__c}&lt;/strong&gt;&lt;br/&gt;{!Get_Request.Company__c}&lt;br/&gt;{!Get_Request.Email__c}&lt;/p&gt;&lt;p&gt;Status: {!Get_Request.Status__c}&lt;br/&gt;{!Get_Request.Reason__c}&lt;/p&gt;&lt;p&gt;Correct the company or owner in Salesforce first. Retry will use the saved form details and preserve this request ID. An already completed request keeps its existing task.&lt;/p&gt;</fieldText><fieldType>DisplayText</fieldType>
+        </fields>
+        <nextOrFinishButtonLabel>Retry saved request</nextOrFinishButtonLabel>
+        <showFooter>true</showFooter><showHeader>true</showHeader>
+    </screens>
+    <screens>
+        <name>Result</name><label>Retry result</label>
+        <locationX>176</locationX><locationY>518</locationY>
+        <allowBack>false</allowBack><allowFinish>true</allowFinish><allowPause>false</allowPause>
+        <fields>
+            <name>Outcome</name>
+            <fieldText>&lt;p&gt;&lt;strong&gt;{!Retry_Request.status}&lt;/strong&gt;&lt;/p&gt;&lt;p&gt;{!Retry_Request.message}&lt;/p&gt;&lt;p&gt;Task: {!Retry_Request.taskId}&lt;/p&gt;&lt;p&gt;Close this action and refresh the Demo Request to see the saved result.&lt;/p&gt;</fieldText><fieldType>DisplayText</fieldType>
+        </fields>
+        <showFooter>true</showFooter><showHeader>true</showHeader>
+    </screens>
+    <screens>
+        <name>Retry_Error</name><label>Retry unavailable</label>
+        <locationX>400</locationX><locationY>518</locationY>
+        <allowBack>false</allowBack><allowFinish>true</allowFinish><allowPause>false</allowPause>
+        <fields><name>Error</name><fieldText>&lt;p&gt;Salesforce could not run this action. Check that you can access the Demo Request and have the Demo Intake Integration permission set.&lt;/p&gt;&lt;p&gt;{!$Flow.FaultMessage}&lt;/p&gt;</fieldText><fieldType>DisplayText</fieldType></fields>
+        <showFooter>true</showFooter><showHeader>true</showHeader>
+    </screens>
+    <start><locationX>50</locationX><locationY>0</locationY><connector><targetReference>Get_Request</targetReference></connector></start>
+    <status>Active</status>
+    <variables><name>recordId</name><dataType>String</dataType><isCollection>false</isCollection><isInput>true</isInput><isOutput>false</isOutput></variables>
+</Flow>

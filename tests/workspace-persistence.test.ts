@@ -25,6 +25,7 @@ describe('workspace correction history', () => {
     expect(validateWorkspaceState(legacyState).correctionHistory).toEqual([]);
     expect(validateWorkspaceState(legacyState).crmUpdatePolicy).toEqual(defaultCrmUpdatePolicy());
     expect(validateWorkspaceState(legacyState).crmUpdatePolicy?.mode).toBe('fill-empty');
+    expect(validateWorkspaceState(legacyState).importRecordMode).toBe('create-and-update');
 
     const { createWorkspace, getWorkspace } = await import('../lib/workspace-store');
     const { getDatabase } = await import('../db');
@@ -36,6 +37,7 @@ describe('workspace correction history', () => {
     const loaded = await getWorkspace(workspace.id);
     expect(loaded?.state.correctionHistory).toEqual([]);
     expect(loaded?.state.crmUpdatePolicy).toEqual(defaultCrmUpdatePolicy());
+    expect(loaded?.state.importRecordMode).toBe('create-and-update');
   });
 
   it('saves and reloads correction evidence, then restores matching contacts and history on undo', async () => {
@@ -78,6 +80,30 @@ describe('workspace correction history', () => {
 describe('persisted import decisions and update policy', () => {
   const now = new Date('2026-09-27T22:00:00.000Z');
   const source = () => importContactsCsv('contact_id,full_name,email,company,owner_id\nKEEP,Nina Shah,nina@costco.example,Costco,owner-1\nSKIP,Nina Shah,nina@costco.example,Costco,owner-1').contacts;
+
+  it.each(['hubspot', 'salesforce'] as const)('saves and reloads the %s update-existing recipe and source digest', async (destinationType) => {
+    const { createWorkspace, saveWorkspace, getWorkspace } = await import('../lib/workspace-store');
+    const workspace = await createWorkspace('Safe event attendees');
+    const state = { ...emptyWorkspaceState(), contacts: source(), originalContacts: source(), destinationType,
+      importRecordMode: 'update-existing' as const, importRecipe: 'safe-update-contacts' as const, sourceFileHash: 'a'.repeat(64) };
+    const saved = await saveWorkspace(workspace.id, state);
+    expect((await getWorkspace(workspace.id))?.state).toEqual(saved.state);
+    expect(saved.state).toMatchObject({ importRecordMode: 'update-existing', importRecipe: 'safe-update-contacts', sourceFileHash: 'a'.repeat(64),
+      crmUpdatePolicy: defaultCrmUpdatePolicy() });
+  });
+
+  it('rejects incompatible recipe settings instead of silently coercing them', () => {
+    const safe = { ...emptyWorkspaceState(), destinationType: 'hubspot' as const,
+      importRecordMode: 'update-existing' as const, importRecipe: 'safe-update-contacts' as const };
+    for (const override of [
+      { importRecordMode: 'create-and-update' }, { destinationType: 'csv' },
+      { crmUpdatePolicy: { mode: 'replace', fields: [...defaultCrmUpdatePolicy().fields], clearBlanks: false } },
+      { crmUpdatePolicy: { mode: 'fill-empty', fields: ['phone'], clearBlanks: false } },
+    ]) expect(() => validateWorkspaceState({ ...safe, ...override })).toThrow(/Safe Import requires/);
+    expect(() => validateWorkspaceState({ ...safe, importRecipe: 'replace-with-ai' })).toThrow(/Unsupported import recipe/);
+    expect(() => validateWorkspaceState({ ...safe, sourceFileHash: 'not-a-digest' })).toThrow(/SHA-256/);
+    expect(() => validateWorkspaceState({ ...safe, importRecordMode: 'upsert' })).toThrow(/Invalid import record mode/);
+  });
 
   it('saves, reloads, restores, and undoes skip decisions and the selected CRM policy in SQLite', async () => {
     const { createWorkspace, saveWorkspace, getWorkspace, undoWorkspace } = await import('../lib/workspace-store');

@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hollis Consulting | Revenue operations &amp; CRM</title>
+  <meta name="description" content="Hollis Consulting helps growing teams improve lead handoffs, CRM data, sales workflows, and reporting.">
+  <meta name="theme-color" content="#171c22">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="/style.css">
+  <script src="/form.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="header wrap">
+  <a class="brand" href="/" aria-label="Hollis Consulting home">hollis<span>CONSULTING</span></a>
+  <nav aria-label="Main navigation"><a href="#services">What we do</a><a href="#approach">How we work</a><a class="button small" href="#demo">Request a demo</a></nav>
+</header>
+<main id="main">
+<section class="hero wrap" aria-labelledby="hero-title">
+  <div class="hero-copy">
+    <p class="kicker">Revenue operations &amp; CRM consulting</p>
+    <h1 id="hero-title">Make your sales<br>process easier<br>to run.</h1>
+    <p class="lead">We help growing teams fix lead handoffs, clean up CRM data, and connect the systems behind their sales process.</p>
+    <a class="button" href="#demo">Request a demo</a>
+  </div>
+  <figure class="hero-image"><img src="/assets/workflow-planning.jpg" alt="Sketching a workflow in a notebook at a desk" width="2400" height="1600" fetchpriority="high"></figure>
+</section>
+<section id="services" class="services light">
+ <div class="wrap services-grid">
+  <div class="section-intro"><h2>Where we can help.</h2><p>Start with the process that is costing your team time. We help define the change and carry it through to the tools people use every day.</p></div>
+  <div class="service-list">
+   <article><h3>Revenue operations</h3><p>Set clear rules for lead routing, account ownership, and sales handoffs. Give marketing and sales a shared view of what happens next.</p></article>
+   <article><h3>CRM and integrations</h3><p>Connect the tools your team relies on. Clean up duplicate records, map the right fields, and automate work that is still being copied between systems.</p></article>
+   <article><h3>Planning and reporting</h3><p>Define the measures that matter, build useful reports, and turn business priorities into a plan with clear owners and next steps.</p></article>
+  </div>
+ </div>
+</section>
+<section id="approach" class="approach">
+ <div class="wrap approach-grid">
+  <div class="section-intro"><h2>How we work.</h2><p>A focused engagement, with a clear scope and a handoff your team can own.</p></div>
+  <ol class="steps">
+   <li><h3>Review the current process</h3><p>Walk through the workflow with the people using it. Agree on the problem, the constraints, and what needs to improve.</p></li>
+   <li><h3>Build and test the changes</h3><p>Make the changes in manageable steps. Check them against real scenarios and review the results together.</p></li>
+   <li><h3>Hand it over to your team</h3><p>Document how the process works, who owns it, and how to spot a problem. Make sure your team can maintain it.</p></li>
+  </ol>
+ </div>
+</section>
+<section id="demo" class="demo wrap" aria-labelledby="demo-title">
+ <div class="demo-copy"><h2 id="demo-title">Discuss your<br>next project.</h2><p>Tell us a little about yourself. We'll follow up to talk through your current process and show you a relevant workflow.</p><p>Bring a specific problem or a process you'd like to improve.</p></div>
+ <form id="demo-form" action="/api/demo-request" method="post">
+  <h3>Request a demo</h3><p class="form-note">All fields are required except phone number.</p>
+  <div class="form-row"><div class="field"><label for="firstName">First Name</label><input id="firstName" name="firstName" autocomplete="given-name" maxlength="40" required></div><div class="field"><label for="lastName">Last Name</label><input id="lastName" name="lastName" autocomplete="family-name" maxlength="80" required></div></div>
+  <div class="field"><label for="email">Business Email</label><input id="email" name="email" type="email" autocomplete="email" maxlength="80" required></div>
+  <div class="form-row"><div class="field"><label for="phone">Phone Number <span class="optional">(optional)</span></label><input id="phone" name="phone" type="tel" autocomplete="tel" maxlength="40" placeholder="+1 (555) 123-4567"></div><div class="field"><label for="company">Company Name</label><input id="company" name="company" autocomplete="organization" maxlength="255" required></div></div>
+  <div class="trap" aria-hidden="true"><label for="website">Leave this field empty</label><input id="website" name="website" tabindex="-1" autocomplete="off"></div>
+  <p class="privacy-note">Hollis Consulting uses these details to respond to your request and discuss relevant services. See our <a href="/privacy">Privacy Notice</a> for how we handle your information.</p>
+  <button class="button" type="submit">Request a demo</button>
+  <p id="form-status" class="form-status" role="status" aria-live="polite"></p>
+  <noscript><p>Enable JavaScript to send this form securely.</p></noscript>
+ </form>
+</section>
+</main>
+<footer class="footer wrap"><a class="brand" href="/">hollis<span>CONSULTING</span></a><div><a href="/privacy">Privacy</a><span>© 2026 Hollis Consulting</span></div></footer>
+</body></html>

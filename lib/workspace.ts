@@ -1,7 +1,7 @@
 import type { CsvColumnMapping, CsvContactCorrection } from './csv-control-tower';
 import type { ConnectorId, ConnectorReceipt } from './connector-contract';
 import type { LiveContactState, RepairRun } from './live-control-tower';
-import { defaultCrmUpdatePolicy, normalizeCrmUpdatePolicy, type CrmUpdatePolicy } from './crm-workflow';
+import { defaultCrmUpdatePolicy, isSafeContactUpdatePolicy, normalizeCrmUpdatePolicy, normalizeImportRecordMode, type CrmUpdatePolicy, type ImportRecordMode, type ImportRecipe } from './crm-workflow';
 import { validImportMatchDecisions } from './import-match-decision';
 import { validPomadeOrigins } from './pomade-handoff';
 import { isImportExclusion } from './import-exclusions';
@@ -29,6 +29,9 @@ export type WorkspaceState = {
   destinationType: ConnectorId;
   sourceLabel?: string;
   crmUpdatePolicy?: CrmUpdatePolicy;
+  importRecordMode?: ImportRecordMode;
+  importRecipe?: ImportRecipe;
+  sourceFileHash?: string;
 };
 
 export type SavedWorkspace = {
@@ -53,6 +56,7 @@ export function emptyWorkspaceState(): WorkspaceState {
     sourceType: 'csv',
     destinationType: 'csv',
     crmUpdatePolicy: defaultCrmUpdatePolicy(),
+    importRecordMode: 'create-and-update',
   };
 }
 
@@ -79,6 +83,16 @@ export function validateWorkspaceState(value: unknown): WorkspaceState {
   }
   const sourceType = state.sourceType ?? 'csv';
   const destinationType = state.destinationType ?? 'csv';
+  const importRecordMode = normalizeImportRecordMode(state.importRecordMode);
+  const crmUpdatePolicy = normalizeCrmUpdatePolicy(state.crmUpdatePolicy);
+  if (state.importRecipe !== undefined && state.importRecipe !== 'safe-update-contacts') throw new Error('Unsupported import recipe.');
+  if (state.importRecipe === 'safe-update-contacts'
+    && (importRecordMode !== 'update-existing' || !isSafeContactUpdatePolicy(crmUpdatePolicy) || !['hubspot', 'salesforce'].includes(destinationType))) {
+    throw new Error('Safe Import requires HubSpot or Salesforce, update-existing mode, and the protected fill-empty policy with no blank clearing.');
+  }
+  if (state.sourceFileHash !== undefined && (typeof state.sourceFileHash !== 'string' || !/^[a-f0-9]{64}$/u.test(state.sourceFileHash))) {
+    throw new Error('Source file hash must be a SHA-256 digest.');
+  }
   const serialized = JSON.stringify(value);
   if (new TextEncoder().encode(serialized).byteLength > MAX_WORKSPACE_BYTES) {
     throw new Error('This workspace is too large to save. Export the repaired CSV and start a smaller workspace.');
@@ -94,6 +108,9 @@ export function validateWorkspaceState(value: unknown): WorkspaceState {
     sourceType,
     destinationType,
     sourceLabel: typeof state.sourceLabel === 'string' ? state.sourceLabel : undefined,
-    crmUpdatePolicy: normalizeCrmUpdatePolicy(state.crmUpdatePolicy),
+    crmUpdatePolicy,
+    importRecordMode,
+    ...(state.importRecipe ? { importRecipe: state.importRecipe } : {}),
+    ...(state.sourceFileHash ? { sourceFileHash: state.sourceFileHash } : {}),
   };
 }

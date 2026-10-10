@@ -1,15 +1,16 @@
 import { readHubSpotRecordById } from './crm-existing-hubspot';
-import { readSalesforceLeadById } from './crm-existing-salesforce';
+import { readSalesforceLeadById, readSalesforceRecordById } from './crm-existing-salesforce';
 import { nativeMatchTargetKey, type ConfirmedImportMatch } from './import-match-decision';
 
-export async function readConfirmedTarget(connectorId: 'hubspot' | 'salesforce', nativeId: string) {
+export async function readConfirmedTarget(connectorId: 'hubspot' | 'salesforce', nativeId: string, objectType: 'lead' | 'contact' = 'lead') {
   if (connectorId === 'hubspot') return readHubSpotRecordById(nativeId, connectionToken(connectorId));
   const origin = new URL(process.env.SALESFORCE_INSTANCE_URL || '');
   if (origin.protocol !== 'https:') throw new Error('Salesforce requires an HTTPS instance.');
   const version = process.env.SALESFORCE_API_VERSION ?? '67.0';
-  return readSalesforceLeadById(nativeId, `${origin.origin}/services/data/v${version}`, {
-    authorization: `Bearer ${connectionToken(connectorId)}`, accept: 'application/json',
-  });
+  const headers = { authorization: `Bearer ${connectionToken(connectorId)}`, accept: 'application/json' };
+  const apiRoot = `${origin.origin}/services/data/v${version}`;
+  return objectType === 'lead' ? readSalesforceLeadById(nativeId, apiRoot, headers)
+    : readSalesforceRecordById(nativeId, objectType, apiRoot, headers);
 }
 
 // Workspace JSON can be edited independently of the authenticated confirmation

@@ -19,8 +19,22 @@ services:
       SALESFORCE_ACCESS_TOKEN: ${SALESFORCE_ACCESS_TOKEN:-}
       SALESFORCE_API_VERSION: ${SALESFORCE_API_VERSION:-67.0}
       SALESFORCE_INSTANCE_URL: ${SALESFORCE_INSTANCE_URL:-}
+      CONTROL_TOWER_SLACK_WEBHOOK_URL: ${CONTROL_TOWER_SLACK_WEBHOOK_URL:-}
+      CONTROL_TOWER_APP_URL: ${CONTROL_TOWER_APP_URL:-}
     volumes:
       - ${CONTROL_TOWER_SQLITE_DIR:-./.runtime/sqlite}:/app/.runtime/sqlite
+
+  watchdog:
+    profiles: [watchdog]
+    build:
+      context: .
+    command: [node, /app/scripts/watchdog.mjs]
+    restart: unless-stopped
+    depends_on: [app]
+    environment:
+      CONTROL_TOWER_WATCHDOG_URL: http://app:3000
+      CONTROL_TOWER_SYNC_KEY: ${CONTROL_TOWER_SYNC_KEY:-}
+      CONTROL_TOWER_WATCHDOG_PROVIDERS: ${CONTROL_TOWER_WATCHDOG_PROVIDERS:-hubspot}
 
   n8n:
     image: n8nio/n8n@sha256:14c4285bc3034dc5b51034aea393711d27053588e460722bce523453a626f23c

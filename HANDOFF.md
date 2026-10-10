@@ -2,38 +2,38 @@
 
 ## Finished
 
-- Added optional Pomade JSON preview and import into a new saved workspace. Ordinary CSV create/update workflows remain independent.
-- Version 1 and legacy files retain updates-only scope; source status, original proposals and evidence survive corrections, local duplicate repair, reload, saved results, CSV exports and eligible rollback receipts.
-- Governed preview and fresh execution hold unmatched Pomade rows. Legacy sync routes reject their reserved IDs; source Review/error/stale rows use existing exclusion controls.
-- Added a fictional download and dated native qualification to the public walkthrough at `#pomade`.
+- Consolidated Safe Import, HubSpot/Salesforce Watchdog, the Operations Inbox, Slack notifications, inbound routing, duplicate audit and Salesforce/Hollis intake work for main.
+- Preserved both Git histories and all existing main functionality. Resolved 18 conflicts caused by mirrored commits using the verified newer source.
+- Added explicit TypeScript checking to CI, excluded generated outputs from lint, clarified historical evidence and surfaced Safe Import in the README.
+- Updated vulnerable dependencies and replaced two build tools' unpatched glob dependency with a small scoped, tested tinyglobby adapter. The existing audit gate remains intact.
 
 ## Try It
 
-1. Open the [optional handoff walkthrough](https://gtm-control-tower.pages.dev/enterprise-import-walkthrough#pomade) or [detailed guide](docs/pomade-handoff.md).
-2. In a persistent self-host at `/app/lab`, choose CSV file → Import Pomade handoff → inspect all proposals → Load in new saved workspace.
-3. Resolve holds, compare using a direct CRM connector, explicitly approve existing-record updates, then inspect `/runs` for source context, receipts, verification and rollback.
+1. Follow the [README](README.md): `docker compose up --build` starts the persistent SQLite application.
+2. Open `/app/work` for CSV requests and findings, `/app/lab` for saved Safe Import reviews, or `/app/watchdog` for provider monitoring and triage.
+3. Configure your own CRM connections and operator key. Follow [Slack setup](docs/slack-notifications.md) for the channel webhook and private app URL; run `npm run watchdog` for background checks and delivery.
 
 ## Checks
 
-- All 475 tests across 31 suites, TypeScript, ESLint, application/public builds, secret scan and diff checks passed.
-- Both-provider browser qualification passed with real local persistence and simulated CRM responses: ordinary CSV, preview without side effects, failed-save preservation, new workspace, reload, exclusions, malformed/oversized files, updates-only comparison, CSV context and disabled delegated sync. No CRM writes or live requests.
-- An actual file downloaded from Pomade passed browser preview/load/reload; its missing email remained held.
-- Native exporter/API qualification passed September 28, 2026, 16:53:37–16:53:55 UTC. Each development CRM updated and verified one fictional title; unmatched/Review rows held; zero creates/deletes. Rollback restored all nine retained fixtures' compared fields. See [dated summary](docs/evidence/pomade-handoff-native-2026-09-28.json).
+- Full suite: 650 tests across 52 files passed. TypeScript, lint, doctor, application/public builds, Compose validation and diff checks passed.
+- A separate clean `npm ci`, dependency resolution and real Next/Vite consumer tests passed. The dependency audit passes its high/critical threshold; production-only audit reports zero vulnerabilities.
+- Secret scanning passed before publication. GitHub CI additionally checks the credential-free Docker installation, SQLite restart persistence and undo; consult the pull request check for that run's result. The local Docker daemon was unavailable.
+- The public output remains static. No CRM writes, Slack messages, Salesforce metadata deployment or hosted operator deployment occurred during integration.
 
 ## Decisions
 
-- Keep the file handoff optional; no shared credentials, sessions, services or accounts.
-- Source status and citations are context, never accuracy, CRM identity or approval. Edited values retain explicitly historical evidence.
-- Initial handoffs update existing HubSpot Contacts and unconverted Salesforce Leads only. Ordinary CSV creates keep their existing controls.
+- Keep a normal merge with both histories; retain the unrelated author-rewrite backup separately. Every completed feature tip is included.
+- Use the existing self-hosted SQLite runtime. Merging source does not qualify the whole-file D1 executor.
+- The glob adapter supports the two existing build-tool consumers only; remove it when upstream dependencies replace their vulnerable chain. See [decisions](docs/decisions.md).
 
 ## Remaining
 
-- The public site is a static walkthrough; saving and CRM operations require a configured persistent self-host.
-- Legacy files lack source installation/time/status/evidence. Salesforce Contacts remain review-only; no automatic transfer or two-way sync.
-- Existing verification uses the current CRM connection and does not independently bind historical account identity.
+- Four moderate development-tool audit findings remain in Drizzle's nested esbuild chain; production dependencies are clear.
+- Slack requires local destination configuration. Native Salesforce automatic writes and hosted Safe Import execution remain unqualified.
+- Polling can miss intermediate CRM changes; team roles, Slack approvals and automatic OAuth refresh remain outside the completed slice.
 
 ## Review First
 
-- `lib/pomade-handoff.ts` and `app/api/control-tower/crm-writeback/route.ts`.
-- `components/self-host-console.tsx`, `components/pomade-source-context.tsx` and saved result exports.
-- `docs/pomade-handoff.md` and `scripts/check-pomade-handoff.mjs`.
+- [README](README.md), [Safe Import](docs/safe-import.md), and [Operations Inbox](docs/operations-inbox.md).
+- `.github/workflows/ci.yml` and the pull request's CI results, including credential-free Docker startup and persistence checks.
+- `vendor/fast-glob-compat`, its consumer tests, and the dependency lockfile.

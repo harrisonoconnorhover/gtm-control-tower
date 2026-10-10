@@ -2,6 +2,7 @@ FROM node:22.22.0-bookworm-slim AS build
 
 WORKDIR /app
 COPY package.json package-lock.json ./
+COPY vendor ./vendor
 RUN npm ci
 COPY . .
 RUN npm run build
@@ -23,5 +24,6 @@ COPY --from=build /app/node_modules/scheduler /app/node_modules/scheduler
 COPY --from=build /app/node_modules/acorn-loose /app/node_modules/acorn-loose
 COPY --from=build /app/node_modules/neo-async /app/node_modules/neo-async
 COPY --from=build /app/node_modules/webpack-sources /app/node_modules/webpack-sources
+COPY --from=build /app/scripts/watchdog.mjs /app/scripts/watchdog.mjs
 EXPOSE 3000
 CMD ["node", "server.js"]

@@ -22,6 +22,13 @@
       "when": 1788135197498,
       "tag": "0002_glamorous_the_leader",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1791326760270,
+      "tag": "0003_safe_import",
+      "breakpoints": true
     }
   ]
 }

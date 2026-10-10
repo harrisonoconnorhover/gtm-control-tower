@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildCrmWritePlan, combineCrmWritebackProgress, reopenCrmWritebackContact, defaultCrmUpdatePolicy, isCrmRollbackPlan, isCrmUpdatePolicy, isSuccessfulCrmWritebackRecord, normalizeCrmUpdatePolicy, planStillMatches, portableCrmFieldNames, rollbackFromPlan, rollbackRecordAlreadyRestored, rollbackRecordStillMatches, type CrmMatchDecision, type CrmUpdatePolicy, type CrmWritebackReceipt, type NativeCrmRecord, type PortableCrmContact } from '../lib/crm-workflow';
+import { buildCrmWritePlan, combineCrmWritebackProgress, reopenCrmWritebackContact, defaultCrmUpdatePolicy, isCrmRollbackPlan, isCrmUpdatePolicy, isSuccessfulCrmWritebackRecord, normalizeCrmUpdatePolicy, normalizeImportRecordMode, planStillMatches, portableCrmFieldNames, rollbackFromPlan, rollbackRecordAlreadyRestored, rollbackRecordStillMatches, type CrmCreateReviewResult, type CrmMatchDecision, type CrmUpdatePolicy, type CrmWritebackReceipt, type NativeCrmRecord, type PortableCrmContact } from '../lib/crm-workflow';
 import { sourceContactsToCsv } from '../lib/crm-source';
 import { importContactsCsv } from '../lib/csv-control-tower';
 
@@ -149,6 +149,83 @@ function native(nativeId: string, email: string, jobTitle: string | null): Nativ
   const local = email.split('@')[0];
   return { nativeId, objectType: 'lead', isConverted: false, email, fields: { firstName: `${local.charAt(0).toUpperCase()}${local.slice(1)}`, lastName: 'Person', company: 'Example', phone: null, jobTitle, website: null } };
 }
+
+describe('Safe Import update-existing contract', () => {
+  const build = (proposed: PortableCrmContact[], existing: Map<string, NativeCrmRecord[]>,
+    reviews?: Map<string, CrmCreateReviewResult>, decisions?: Map<string, CrmMatchDecision>) => buildCrmWritePlan(
+    'hubspot', 'attendees.csv', proposed, existing, new Date(), reviews, defaultCrmUpdatePolicy(), undefined, decisions, 'update-existing');
+
+  it('holds unmatched rows even after a clear create scan and retains approximate candidates', () => {
+    const reviews: CrmCreateReviewResult = { reason: 'No exact match; possible person requires review.',
+      review: { status: 'clear', scanId: 'scan', startedAt: new Date().toISOString(), ruleVersion: 'fixture', candidateCount: 1, warnings: [] },
+      possibleMatches: [{ nativeId: 'candidate', objectType: 'contact', email: 'different@example.com', fullName: 'One Person', score: 74, evidence: [] }] };
+    const plan = build([contacts[0]], new Map(), new Map([['one', reviews]]));
+    expect(plan).toMatchObject({ recordMode: 'update-existing', creates: 0, updates: 0, held: 1 });
+    expect(plan.records[0]).toMatchObject({ operation: 'hold', nativeId: null, changes: [], possibleMatches: reviews.possibleMatches });
+    expect(plan.records[0].reason).toContain('never creates');
+    expect(plan.records[0].fieldDecisions).toHaveLength(6);
+    expect(plan.records[0].fieldDecisions?.every((decision) => decision.action === 'review' && decision.proposedValue === null)).toBe(true);
+  });
+
+  it('shows fills, preserved differences, incoming blanks, and unchanged values from one evidence source', () => {
+    const current = native('crm-1', contacts[0].email, 'Head of Operations');
+    current.fields.website = 'example.com';
+    const plan = build([{ ...contacts[0], phone: '212-555-0104', jobTitle: 'Operations Director', website: null }], new Map([[contacts[0].email, [current]]]));
+    const row = plan.records[0];
+    expect(row.changes).toEqual([{ field: 'phone', before: null, after: '212-555-0104' }]);
+    expect(row.after).toEqual({ ...current.fields, phone: '212-555-0104' });
+    expect(row.fieldDecisions).toContainEqual({ field: 'phone', importedValue: '212-555-0104', currentValue: null,
+      proposedValue: '212-555-0104', action: 'fill', reasonCode: 'fill-empty-field' });
+    expect(row.fieldDecisions).toContainEqual({ field: 'jobTitle', importedValue: 'Operations Director', currentValue: 'Head of Operations',
+      proposedValue: 'Head of Operations', action: 'preserve', reasonCode: 'populated-crm-value-preserved' });
+    expect(row.fieldDecisions).toContainEqual({ field: 'website', importedValue: null, currentValue: 'example.com',
+      proposedValue: 'example.com', action: 'preserve', reasonCode: 'blank-import-preserved' });
+    expect(row.fieldDecisions).toContainEqual({ field: 'firstName', importedValue: 'One', currentValue: 'One',
+      proposedValue: 'One', action: 'unchanged', reasonCode: 'same-value' });
+    expect(row.changes.some((change) => String(change.field) === 'email')).toBe(false);
+  });
+
+  it('preserves suspicious existing values and rejects suspicious or invalid incoming fills', () => {
+    const current = native('crm-1', contacts[0].email, 'N/A');
+    const row = build([{ ...contacts[0], phone: 'not a phone', website: 'javascript:alert(1)', company: 'N/A' }],
+      new Map([[contacts[0].email, [current]]])).records[0];
+    expect(row.operation).toBe('unchanged');
+    expect(row.after.jobTitle).toBe('N/A');
+    expect(row.fieldDecisions?.find((decision) => decision.field === 'jobTitle')).toMatchObject({ action: 'review', reasonCode: 'suspicious-existing-value-preserved' });
+    expect(row.fieldDecisions?.find((decision) => decision.field === 'phone')).toMatchObject({ action: 'review', reasonCode: 'invalid-import-value', proposedValue: null });
+    expect(row.fieldDecisions?.find((decision) => decision.field === 'website')).toMatchObject({ action: 'review', reasonCode: 'invalid-import-value', proposedValue: null });
+  });
+
+  it('holds material identity contradictions despite exact email, and permits a fresh human-confirmed target', () => {
+    const current = native('crm-1', contacts[0].email, null);
+    const imported = { ...contacts[0], firstName: 'Maria', lastName: 'Alvarez', company: 'Different Inc', phone: '2125550104' };
+    const existing = new Map([[contacts[0].email, [current]]]);
+    const held = build([imported], existing);
+    expect(held.records[0]).toMatchObject({ operation: 'hold', changes: [], before: current.fields, after: current.fields });
+    expect(held.records[0].reason).toContain('both names');
+    const confirmed = build([imported], existing, undefined, new Map([['one', { nativeId: current.nativeId, email: current.email,
+      reason: 'Operator checked the same person with their event registration.', confirmedAt: new Date().toISOString() }]]));
+    expect(confirmed.records[0].operation).toBe('update');
+    expect(confirmed.records[0].changes).toEqual([{ field: 'phone', before: null, after: '2125550104' }, { field: 'jobTitle', before: null, after: 'RevOps' }]);
+    expect(planStillMatches(held, confirmed)).toBe(false);
+    expect(buildCrmWritePlan('hubspot', 'legacy.csv', [imported], existing).records[0].operation).toBe('update');
+  });
+
+  it('fingerprints the record mode and imported preserved differences, and keeps legacy create behavior', () => {
+    const current = native('crm-1', contacts[0].email, 'Existing title');
+    const existing = new Map([[contacts[0].email, [current]]]);
+    const plan = build([contacts[0]], existing);
+    const changedImport = build([{ ...contacts[0], jobTitle: 'Different imported title' }], existing);
+    expect(plan.records[0].changes).toEqual(changedImport.records[0].changes);
+    expect(planStillMatches(plan, changedImport)).toBe(false);
+    const legacy = buildCrmWritePlan('hubspot', 'attendees.csv', [contacts[0]], existing);
+    expect(legacy.recordMode).toBe('create-and-update');
+    expect(planStillMatches(plan, legacy)).toBe(false);
+    expect(buildCrmWritePlan('hubspot', 'legacy.csv', [contacts[1]], new Map()).creates).toBe(1);
+    expect(normalizeImportRecordMode()).toBe('create-and-update');
+    expect(() => normalizeImportRecordMode('upsert')).toThrow('Invalid import record mode');
+  });
+});
 
 describe('CRM import matching evidence', () => {
   it('retains confirmed-match intent in the fingerprint and supports different-email rollback without breaking historic receipts', () => {

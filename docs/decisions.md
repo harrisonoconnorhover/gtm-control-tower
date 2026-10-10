@@ -265,6 +265,131 @@ counts, reviewed plan, native receipt, failures, and eligible rollback. The UI
 can filter and export this evidence, while a completed rollback disables that
 plan's repeated rollback control.
 
+## Inbound practice shares the showroom, with simulated destinations
+
+The inbound lab uses a generic five-field demo request with WPForms-style payload
+keys and separate fictional enrichment. Product copy and documentation stay
+company-neutral. In practice mode, CRM behavior, ownership rules, and notifications
+are explicitly simulated. The same client component serves `/#inbound-lab` in the static
+showroom and `/app/inbound` in the self-hosted app. Browser storage keeps the
+practice session useful without credentials or new infrastructure.
+
+Normalized email provides person identity. Assignment consumes capacity once per
+person; tasks and notifications complete once per genuine submission. Technical
+retries reuse the original request. Existing owners take precedence over pool
+capacity. The lab retains attempt payload/context snapshots, including after
+correction. This is a synchronous practice model, not proof of provider semantics
+or a concurrent production queue. See `docs/inbound-routing-lab.md` for the
+schema, policies, limits, and walkthrough.
+
+## Salesforce owns demo activity and identity matching
+
+Connected intake sends one immutable request ID and form payload from the server
+to a Salesforce Apex REST service. The service creates a Demo Request record,
+searches both Contacts and unconverted Leads, preserves existing ownership, and
+creates a Task and owner notification. Each genuine submission gets fresh
+activity. Technical retries reuse the same request and task; changed payloads
+cannot reuse an old key.
+
+Apex is used here instead of a chain of Flow steps because the person lookup,
+creation, and task write need a transaction and an email-specific row lock.
+A unique identity row serializes requests with different IDs for the same email.
+A first-insert collision rolls back and returns a retryable response. This
+prevents competing submissions through this intake from both creating a Lead;
+Salesforce duplicate rules still govern writes from other integrations.
+
+Existing queue or inactive ownership is held for review. New Leads initially
+belong to the connected integration user; this pilot does not silently apply the
+practice rep pools to Salesforce. Production operator access uses the existing
+Control Tower key boundary. Salesforce credentials remain server-side. Public
+static hosting continues to provide practice mode only.
+
+## Hollis adds a public Account-and-Contact intake
+
+Hollis Consulting is a distinct public Worker on the owner's Cloudflare account.
+It shares Control Tower's submission contract and Salesforce transaction, rather
+than exposing the operator app. The existing operator defaults and receipt hashes
+stay compatible; a server-selected `createContact` mode adds Account/Contact
+creation and native Lead conversion for Hollis.
+
+Existing contact identity wins; new company matching requires agreement between
+company name and business email domain. Conflicts are held. New Account websites,
+company sizes, regions, and tiers are left unset because the form supplies no
+verified evidence for them. New Accounts belong to the integration user; existing
+owners are preserved. A domain lock prevents two simultaneous people from
+creating two company records through this intake.
+
+Long-lived authorization stays in Cloudflare secrets with automatic access-token
+renewal. Only public assets and a bounded anonymous submission endpoint are
+published. The 5-per-minute IP limit and same-origin checks address this form's
+spam and cross-site submission exposure without adding a new database or operator
+login to the marketing site. Details are in `docs/hollis-consulting.md`.
+
+## Hollis design uses specific copy and restrained decoration
+
+The September 10 revision replaces the generated staircase metaphor with real
+workflow-planning photography. Headlines now name the service and practical
+work. We removed the floating image caption, promotional eyebrows, repeated
+slogans, decorative arrows, exaggerated corner radii, and the duplicate service
+strip. Process steps use an ordered list, secondary text is larger, and section
+spacing is tighter. The charcoal/cyan palette and familiar demo form remain.
+
+This is a limited application of recurring comments in
+[r/web_design](https://www.reddit.com/r/web_design/comments/1uzascg/every_vibecoded_websites_looks_the_same/)
+and [r/UX_Design](https://www.reddit.com/r/UX_Design/comments/1v3tghy/what_gives_away_a_website_as_fully_vibecoded/),
+not a rule that any one color, font, or layout proves AI authorship. Neither
+Salesforce behavior nor the public submission contract changes in this revision.
+
+## Public demo follow-up uses the current Account owner
+
+For public Account/Contact intake, an exact existing Contact keeps its identity,
+ownership, and first-touch fields while the current Account owner receives the
+new follow-up task. This resolves partial territory handoffs without rewriting
+CRM history. A queue-owned marketing Lead may convert into an unambiguously
+matched Account using its active owner. An unknown company with no active Lead
+owner waits for trusted CRM enrichment, then reuses the held request and task.
+Private Lead-only intake retains its previous ownership behavior.
+
+A single exact normalized company-name and domain match can distinguish business
+units sharing a corporate domain. Partial evidence, multiple exact matches, and
+truncated searches remain held. Each request stores a readable routing decision.
+The form contract stays unchanged; existing CRM ownership supplies context.
+
+The public Worker retries network failures and 502/503/504 once using the same
+payload and request ID. It does not retry conflicts or throttling, and does not
+claim durable delivery during a long outage. Repeatable fictional fixtures and
+the boundaries of the marketing/enrichment simulation are documented in
+`docs/hollis-routing-scenarios.md`.
+
+## Recover saved inquiries where operators already work
+
+A native Salesforce Screen Flow and request-page action retry one saved inquiry
+after a trusted CRM correction. The action uses the existing permission and
+transactional intake service; it reconstructs the original mode from its payload
+fingerprint so historical Lead-only requests remain compatible. Original form
+fields and attribution stay unchanged. A Needs attention view and task hyperlink
+make unresolved work accessible without adding a private console to the public site.
+
+Response-body failures belong inside the Worker's recovery attempt because a
+successful HTTP header does not prove a complete receipt. One shared 40-second
+deadline bounds authentication and delivery within the unchanged form timeout.
+The local interruption drill uses real Salesforce writes with stable IDs and
+explicitly labels its simulated transport/authentication boundary.
+
+## Sister projects expose concrete work and current availability
+
+On September 24, 2026, the public page gained Hot Potato and Pomade cards after
+Salesforce proof, with matching footer links. They link to the actual public
+application repositories. Hot Potato's marketing claims need correction before
+that site becomes the primary destination; Pomade's hosted access remains private.
+The cards imply neither shared accounts nor a runtime integration.
+
+The narrow Pages release was built from previously deployed `d7e63a6` plus
+`797ec39`, and that patch was also applied to the current development checkout as
+`62b4028`. This avoids publishing unrelated inbound-routing work with a portfolio
+link change. The evidence and next improvements are in
+`docs/portfolio-credibility-review.md`.
+
 ## September 27, 2026 — Reject ambiguous CSV identities and invalidate failed previews
 
 Each imported source record must have a unique final contact ID, including IDs generated for blank inputs. Repairs index records by ID; silently accepting repeats could merge an unrelated person. Reject the batch with both CSV row numbers instead of renaming or dropping records. Preview and direct import share the existing normalized-header collision check.
@@ -498,7 +623,6 @@ ownership before writes and compare the nine records' observed fields afterward.
 Publish dated results with identifiers redacted; preserve earlier evidence and
 keep native coverage separate from simulated failure and mobile checks.
 
-
 ## September 28, 2026 — Confirm an existing person without replacing their email
 
 Resolve a held import row only through an explicit candidate choice and saved
@@ -515,7 +639,6 @@ identity. Credential rotation requires confirmation again. Store the decision in
 workspace revisions, not source CSV round-trips. Check competing decisions and
 known target-email rows across the entire included import, not only the current
 batch. This does not provide cross-workspace locks or atomic CRM writes.
-
 
 ## September 28, 2026 — Keep HubSpot email aliases in collision checks
 
@@ -582,3 +705,120 @@ Retain origins through correction, reload, local merge, and batch evidence while
 labeling source evidence historical when values change. Missing legacy metadata
 remains unknown. Local and hosted Pomade stay independent; this adds no research
 execution, automatic CRM write, shared database, or two-way synchronization.
+
+## October 6, 2026 — Safe Import is a saved deterministic contact recipe
+
+Extend the governed planner with saved record mode and six field decisions rather
+than duplicating import/matching logic. Legacy CSV defaults to create-and-update;
+Safe Import forces HubSpot Contacts, update-existing, and the six-field fill-empty
+policy. Keep the stricter Pomade source boundary and existing Salesforce Lead
+workflow. Approximate identities remain suggestions; suspicious populated values
+are preserved. Material contradictory names plus conflicting company/phone hold
+exact-email identity until human confirmation.
+
+Assemble all batch comparisons into one immutable whole-file review before any
+write. Account for locally skipped, merged, invalid, unmatched, and unread rows;
+unresolved CRM reads block approval. Bind the plan to uploaded-text SHA-256,
+source/mapping/policy/identity evidence, workspace revision, and HubSpot's verified
+portal ID. Recheck the whole comparison on approval and saved source/native values
+immediately before each native-ID PATCH. No atomic external-writer guarantee is
+claimed.
+
+Persist one unique execution per review and progress before requests. Uncertain
+responses require read-only reconciliation, never automatic resend; readback
+cannot establish acceptance of a lost response. Verify accepted writes separately.
+Preserve per-record evidence in database rows and chunk large reviews. Keep the
+assistant replaceable and model-free by default; intent proposals require explicit
+adoption and explanations use the same recorded decisions. This slice adds no
+model provider, public deployment, native CRM qualification, background monitoring,
+or automatic rollback.
+
+## October 6, 2026 — Keep qualification boundaries explicit
+
+Qualify native Safe Import using existing marked development contacts, an
+isolated SQLite workspace, two phone fills, and separately reviewed restoration.
+Preserve the original raw cleanup report when HubSpot represents a cleared null
+phone as an empty string; a separate read-only reconciliation applies the existing
+portable blank semantics and compares every other requested property exactly.
+
+Test D1 through production stores in actual local workerd and a temporary cloud
+database with a local remote-binding runner. Use a fictional CRM adapter for D1
+tests and separate real SQL/storage evidence from injected invocation limits.
+The measured 99-update execution exceeds the documented single-invocation budget;
+cloud storage passing does not qualify hosted execution. Keep deployment and PR
+publication pending while that release blocker remains.
+
+## October 10, 2026 — Add a bounded HubSpot watchdog to the self-host
+
+Use deterministic connected-contact checks and a durable human triage queue.
+Monitoring polls provider changes after an initial baseline, with saved cursors
+and a separate HTTP runner so closing the browser does not stop checks. Default
+to five minutes; support an hourly cadence. Keep automatic repairs off until the
+operator enables the specific company/job-title whitespace policy. Ambiguous
+identity, owner, and lifecycle issues require a person; reports retain evidence.
+
+Use the existing SQLite adapter and operator key, with state scoped to HubSpot's
+verified portal ID. Keep this slice out of D1 because its execution budget has
+not been qualified. Bound pages and repairs, persist write attempts before send,
+and never automatically replay an uncertain write. This adds no AI provider,
+outbound Slack messages, public deployment, or new routing-policy assumptions.
+
+## October 10, 2026 — Salesforce operations and a shared inbox
+
+Extend the existing account-bound review/executor and Watchdog engines. Safe Import
+checks both Salesforce objects and permits uniquely matched unconverted Leads or
+Contacts; Contact company/website stay outside scope because they belong to Account.
+Use Organization.Id as identity, object-qualified native IDs, and disable Lead
+assignment rules on PATCH. Do not infer an order for customized Lead statuses or
+copy HubSpot lifecycle/owner rules into Salesforce.
+
+Keep Watchdog settings and findings separate by provider, org and object. Poll
+Salesforce SystemModstamp windows with stable ID continuation, and preserve
+existing HubSpot storage. Only Lead Company/Title and Contact Title whitespace
+repairs qualify for the explicit opt-in; no ownership/status/Account mutation.
+
+Add a small SQLite import task above existing workspaces and immutable reviews.
+Commit upload/workspace together, deduplicate by provider and source hash, and
+derive task status from actual review/execution evidence. Compose Watchdog findings
+into the same Inbox without duplicating their storage or approval logic. No model,
+Slack or role system is required for this operator vertical slice. Hosted bounded
+Safe Import execution remains a separate unresolved release requirement.
+
+## October 10, 2026 — Slack notifications for saved operations
+
+Use a server-configured incoming webhook for one selected operations channel,
+with the existing HTTP runner draining a small SQLite event queue. Send summaries
+and private review links for HubSpot and Salesforce; keep contact/source values,
+notes and credentials out of messages. Approval stays in Control Tower.
+
+Deduplicate stable operation events and claim one digest before sending. Honor
+Slack rate limits; hold uncertain deliveries instead of risking duplicate posts.
+Keep network delivery outside CRM execution. Post-save event enqueue is best
+effort, with a documented process-crash gap; a notification never becomes the
+authority for whether an import or repair succeeded. No SDK, extra service,
+OAuth installation flow, channel reader or inbound Slack bot is added.
+
+## October 10, 2026 — Consolidate completed work into main
+
+Merge the existing main and development histories without rewriting either.
+The last mirror commit (`f9d6a79`) contains all main (`d804d9b`) functionality;
+its only existing-file differences add inbound routing and related documentation.
+Resolve mirrored-history conflicts with the tested newer operations source
+(`82035d2`), retaining Safe Import, Watchdog, Salesforce, Inbox and Slack work.
+Keep the unrelated pre-public-author-rewrite backup outside this merge.
+
+Make TypeScript checking explicit in CI and exclude ignored generated runtime
+outputs from lint. Validate the combined source and credential-free Docker
+startup before advancing main. This consolidates source; it does not qualify
+the whole-file D1 executor, deploy Salesforce metadata, enable automatic repairs
+or configure a live Slack destination.
+
+The integration audit found newly published advisories in the existing lockfile.
+Update Next.js to the patched 16.3.8 release and Cloudflare tooling to compatible
+patched versions. The remaining high-severity [braces advisory](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm)
+has no published fix. Replace its two build-tool dependency paths with a scoped
+`fast-glob` adapter backed by `tinyglobby`, preserving only the synchronous APIs
+actually consumed by Next's ESLint plugin and Vite's dynamic-import plugin.
+Test those real consumers and retain the existing full dependency audit gate.
+Remove the adapter when upstream consumers no longer require the vulnerable
+chain. This dependency adjustment does not change CRM matching or execution.

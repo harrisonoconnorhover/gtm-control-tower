@@ -22,10 +22,13 @@
     "start": "vinext start",
     "preview:public": "vite --config vite.public.config.ts --host 127.0.0.1",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern dist-public --ignore-pattern .next",
+    "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:operator-key": "node scripts/check-operator-key.mjs",
     "setup": "node scripts/setup.mjs",
     "doctor": "node scripts/doctor.mjs",
+    "watchdog": "node --env-file-if-exists=.env --env-file-if-exists=.env.local scripts/watchdog.mjs",
+    "test:watchdog-ui": "node scripts/check-watchdog.mjs",
     "db:generate": "drizzle-kit generate",
     "db:migrate:local": "wrangler d1 migrations apply DB --local --config wrangler.local.jsonc --persist-to .wrangler/state",
     "check:secrets": "node scripts/check-secrets.mjs",
@@ -43,18 +46,21 @@
     "test:import-controls": "node scripts/check-import-controls.mjs",
     "test:confirmed-matches": "node scripts/check-import-match-decision.mjs",
     "test:run-verification": "node scripts/check-run-verification.mjs",
-    "test:pomade-handoff": "node scripts/check-pomade-handoff.mjs"
+    "test:pomade-handoff": "node scripts/check-pomade-handoff.mjs",
+    "test:safe-import": "node scripts/check-safe-import.mjs",
+    "test:operations-inbox-ui": "node scripts/check-operations-inbox.mjs",
+    "test:slack-ui": "node scripts/check-slack-notifications.mjs"
   },
   "dependencies": {
     "better-sqlite3": "^12.11.1",
     "drizzle-orm": "^0.45.2",
-    "next": "16.3.3",
+    "next": "16.3.8",
     "react": "19.2.8",
     "react-dom": "19.2.8"
   },
   "devDependencies": {
-    "@cloudflare/vite-plugin": "1.54.7",
-    "@cloudflare/workers-types": "5.20260910.1",
+    "@cloudflare/vite-plugin": "1.63.1",
+    "@cloudflare/workers-types": "5.20261006.1",
     "@openai/sites-vite-plugin": "^0.1.0 || ^0.2.0",
     "@tailwindcss/postcss": "4.2.1",
     "@types/better-sqlite3": "^7.6.13",
@@ -73,7 +79,16 @@
     "vinext": "1.0.0-beta.8",
     "vite": "8.2.2",
     "vitest": "4.1.11",
-    "wrangler": "4.131.0"
+    "wrangler": "4.149.0",
+    "fast-glob": "file:./vendor/fast-glob-compat"
   },
-  "type": "module"
+  "type": "module",
+  "overrides": {
+    "@next/eslint-plugin-next": {
+      "fast-glob": "$fast-glob"
+    },
+    "vite-plugin-dynamic-import": {
+      "fast-glob": "$fast-glob"
+    }
+  }
 }
