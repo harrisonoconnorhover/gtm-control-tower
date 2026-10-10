@@ -197,6 +197,44 @@ describe('CRM incident evidence and correlation',()=>{
     for(let i=0;i<110;i++)await observe(scope,contact('one',i,{jobtitle:`Value ${i}`}),'changes',i);
     const db=await incidentDatabase();expect(await db.prepare('SELECT COUNT(*) AS count FROM crm_observations WHERE account_id=?').bind(scope).first()).toEqual({count:100});
   });
+
+  it('refreshes native read coverage without inventing field changes or letting cached and older reads clear gaps',async()=>{
+    const scope='coverage-refresh';const record=contact('one');
+    await observe(scope,record,'baseline');
+    await recordMonitorCoverage(scope,{status:'healthy',phase:'changes',scanned:1,observedAt:at(0)});
+    await observe(scope,{...record,coverage:['Native relationship read unavailable.']},'changes',1);
+    await recordMonitorCoverage(scope,{status:'healthy',phase:'changes',scanned:1,observedAt:at(1)});
+    expect(await getIncidentCoverage(scope)).toMatchObject({status:'degraded',lastSuccessAt:at(0)});
+    await ingestObservation(scope,record,{phase:'changes',observedAt:at(2),cached:true});
+    expect(await observe(scope,contact('one',-1),'changes',2)).toMatchObject({reason:'out_of_order'});
+    await recordMonitorCoverage(scope,{status:'healthy',phase:'changes',scanned:1,observedAt:at(2)});
+    expect((await getIncidentCoverage(scope)).status).toBe('degraded');
+    expect(await observe(scope,record,'changes',3)).toMatchObject({reason:'duplicate',changedFields:0});
+    await recordMonitorCoverage(scope,{status:'healthy',phase:'changes',scanned:1,observedAt:at(3)});
+    expect(await getIncidentCoverage(scope)).toMatchObject({status:'healthy',lastSuccessAt:at(3),error:null});
+    expect((await listIncidents(scope)).some(item=>item.kind==='coverage'&&item.status==='open')).toBe(true);
+    const db=await incidentDatabase();
+    expect(await db.prepare('SELECT COUNT(*) AS count FROM crm_observations WHERE account_id=?').bind(scope).first()).toEqual({count:1});
+  });
+
+  it('restores a temporarily unreadable field when the successful native payload was already observed at the same timestamp',async()=>{
+    const scope='coverage-field-recovery';
+    const complete:MonitorContact={provider:'hubspot',objectType:'Deal',id:'one',updatedAt:at(0),properties:{amount:'10',company_ids:'[]'}};
+    const incomplete={...complete,properties:{amount:'10'},coverage:['company_ids: native association read unavailable.']};
+    await observe(scope,complete,'baseline');
+    await observe(scope,incomplete,'changes',1);
+    await recordMonitorCoverage(scope,{status:'healthy',phase:'changes',scanned:1,observedAt:at(1)});
+    expect((await getIncidentCoverage(scope)).status).toBe('degraded');
+    await observe(scope,complete,'changes',2);
+    await ingestObservation(scope,incomplete,{phase:'changes',observedAt:at(3),cached:true});
+    await recordMonitorCoverage(scope,{status:'healthy',phase:'changes',scanned:1,observedAt:at(3)});
+    expect((await getIncidentCoverage(scope)).status).toBe('healthy');
+    const db=await incidentDatabase();
+    const saved=await db.prepare('SELECT payload_json FROM crm_observed_records WHERE account_id=? AND record_key=?').bind(scope,'Deal:one').first<{payload_json:string}>();
+    expect(JSON.parse(saved!.payload_json)).toEqual(complete);
+    expect(await db.prepare('SELECT COUNT(*) AS count FROM crm_observations WHERE account_id=?').bind(scope).first()).toEqual({count:2});
+    expect(await db.prepare("SELECT COUNT(*) AS count FROM crm_observations WHERE account_id=? AND changes_json!='[]'").bind(scope).first()).toEqual({count:0});
+  });
 });
 
 describe('repair limits integrated with the real monitor executor',()=>{
@@ -247,6 +285,29 @@ describe('repair limits integrated with the real monitor executor',()=>{
     expect((await tickMonitor(scope,'fixture',{force:true,source})).phase).toBe('changes');
     expect((await getIncidentCoverage(scope)).status).toBe('healthy');
     expect(cursors).toEqual([null,null,'companies']);
+  });
+
+  it('keeps saved Deal read gaps degraded across healthy Contact pages until the Deal is read successfully',async()=>{
+    const scope='record-coverage-pages';let recovered=false;
+    const deal:MonitorContact={provider:'hubspot',objectType:'Deal',id:'one',updatedAt:at(0),properties:{amount:'10'}};
+    const person=contact('person');
+    const source:MonitorSource={
+      list:async(after)=>after?{contacts:[person],after:null}:{contacts:[{...deal,coverage:['company_ids: native association read unavailable.']}],after:'contacts'},
+      changes:async()=>({contacts:recovered?[deal]:[person],after:null,total:1}),
+      read:async()=>deal,patch:async()=>{throw new Error('No writes expected');},
+    };
+    await configureMonitor(scope,{enabled:true,automaticRepairs:false,intervalSeconds:300,defaultAssignee:'Operations'});
+    await tickMonitor(scope,'fixture',{force:true,source});
+    expect((await getIncidentCoverage(scope)).status).toBe('degraded');
+    await tickMonitor(scope,'fixture',{force:true,source});
+    expect(await getIncidentCoverage(scope)).toMatchObject({status:'degraded',phase:'changes'});
+    const unchanged=await tickMonitor(scope,'fixture',{force:true,source});
+    expect((await getIncidentCoverage(scope)).error).toContain('Deal: 1');
+    expect(Date.parse(unchanged.nextCheckAt!)-Date.now()).toBeGreaterThan(240_000);
+    recovered=true;
+    await tickMonitor(scope,'fixture',{force:true,source});
+    expect((await getIncidentCoverage(scope)).status).toBe('healthy');
+    expect((await listIncidents(scope)).some(item=>item.kind==='coverage'&&item.status==='open')).toBe(true);
   });
 
   it('checks unchanged routing deadlines and keeps held native events visible as degraded coverage',async()=>{

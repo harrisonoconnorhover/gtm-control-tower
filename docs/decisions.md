@@ -848,3 +848,38 @@ Expand reads to companies/accounts and deals/opportunities while keeping their m
 Replace whole-file Safe Import execution with at most ten records per invocation and a between-record time budget. Claim pending rows atomically under a fenced lease; never replay sending/unknown rows. Continue only within the original account/workspace/review scope and approval expiry. Local D1 fixture measurements qualify the bounded storage path against a simulated 1,000-call budget; they do not qualify hosted CRM execution or a 50-call plan.
 
 Generate a reproducible fictional dataset rather than reuse unlabelled real CRM exports. Independent scenario labels cover 600 contacts, 350 companies and 400 deals per provider, plus 200 Salesforce leads. Stress the production worker and SQLite path with controlled timing, losses, permission failures and concurrent workers. Report clean controls, missed labels and false positives as fixture results, not general-world accuracy.
+
+## October 10, 2026 — Qualify native behavior without rewriting the evidence
+
+Load the same seed-42 world into explicitly pinned development accounts, retaining
+native IDs and ownership markers in ignored manifests. Preserve the source
+fixture and record provider rejections, storage normalization and legal mappings
+separately. Repeated synthetic names must not require disabling Salesforce
+duplicate rules; reserved HubSpot email domains use `.example.com` because its
+native validator rejects `.example`. Unknown native creates remain held for
+reconciliation, while explicit rate-limit rejections permit paced retry.
+
+Run production polling and execution against a new SQLite database with a
+manifest boundary around reads and writes. This qualifies the marked cohort,
+not the entire account population. Use real indexing delays and native readback;
+do not inject fictional timestamps or call a rejected value a detected anomaly.
+Keep ordinary whitespace normalization distinct from three supplemental Unicode
+boundary-space probes. Exercise approved phone fills separately from automatic
+trims, preserving protected fields and deliberate human-review cases.
+
+Retain the marked test records and private reports for inspection. Disable each
+qualification monitor on exit; do not start background runners, deliver Slack,
+call paid models, publish the app or imply native event-subscription qualification.
+
+Native coverage is a statement about current saved observations, not just the
+latest page or historical incident status. Keep unresolved record read gaps visible
+until a successful reread replaces them, including recovery at an unchanged native
+timestamp. HubSpot's precisely scoped `NO_ASSOCIATIONS_FOUND` response represents
+an observed empty relationship; unrelated batch errors remain unknown.
+
+Account automations can create records beyond an explicit import manifest. The
+351 source-confirmed HubSpot companies created during qualification are retained
+and reported as separate manual findings induced by mismatched setup suffixes.
+Future HubSpot seeds map both email and company domains to `.example.com`, while
+preserving deliberately inconsistent fixture domains. The fixture guard does not acquire
+repair authority over them merely because their domains match synthetic contacts.

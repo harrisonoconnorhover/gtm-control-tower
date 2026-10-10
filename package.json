@@ -52,7 +52,8 @@
     "test:slack-ui": "node scripts/check-slack-notifications.mjs",
     "generate:messy-crm": "node scripts/generate-messy-crm.mjs",
     "test:incidents-ui": "node scripts/check-incidents.mjs",
-    "qualify:incidents": "node scripts/qualify-incident-stress.mjs"
+    "qualify:incidents": "node scripts/qualify-incident-stress.mjs",
+    "qualify:incidents:native": "node --env-file-if-exists=.env.local scripts/qualify-incidents-native.mjs"
   },
   "dependencies": {
     "better-sqlite3": "^12.11.1",
