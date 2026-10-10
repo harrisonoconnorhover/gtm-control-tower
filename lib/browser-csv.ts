@@ -121,17 +121,33 @@ export function toggleBrowserRow(document: BrowserCsv, rowId: number): BrowserCs
   };
 }
 
-/** Repeated addresses are review hints, never instructions to merge people. */
+/** Empty rows and repeated values are review hints, never instructions to remove rows. */
 export function browserCsvIssues(document: BrowserCsv): Map<number, string[]> {
   const issues = new Map<number, string[]>();
+  const addIssue = (id: number, issue: string) => issues.set(id, [...(issues.get(id) ?? []), issue]);
+  const activeRows = document.rows.filter((row) => !row.excluded);
+  const repeatedRows = new Map<string, number[]>();
+  for (const row of activeRows) {
+    if (row.values.every((value) => !value.trim())) {
+      addIssue(row.id, 'Empty row: review before excluding');
+      continue;
+    }
+    const key = JSON.stringify(row.values);
+    const group = repeatedRows.get(key) ?? [];
+    group.push(row.id);
+    repeatedRows.set(key, group);
+  }
+  for (const group of repeatedRows.values()) {
+    if (group.length < 2) continue;
+    for (const id of group) addIssue(id, 'Repeated row: all column values match; review before excluding');
+  }
   if (document.emailColumn === null) return issues;
   const groups = new Map<string, number[]>();
-  for (const row of document.rows) {
-    if (row.excluded) continue;
+  for (const row of activeRows) {
     const raw = row.values[document.emailColumn] ?? '';
     const email = normalizedEmail(raw);
-    if (!raw.trim()) issues.set(row.id, ['Missing email']);
-    else if (!email) issues.set(row.id, ['Check email format']);
+    if (!raw.trim()) addIssue(row.id, 'Missing email');
+    else if (!email) addIssue(row.id, 'Check email format');
     else {
       const group = groups.get(email) ?? [];
       group.push(row.id);
@@ -140,7 +156,7 @@ export function browserCsvIssues(document: BrowserCsv): Map<number, string[]> {
   }
   for (const group of groups.values()) {
     if (group.length < 2) continue;
-    for (const id of group) issues.set(id, ['Repeated email: review these rows before removing any']);
+    for (const id of group) addIssue(id, 'Repeated email: review these rows before removing any');
   }
   return issues;
 }
