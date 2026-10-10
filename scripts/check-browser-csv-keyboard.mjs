@@ -205,7 +205,18 @@ try {
     page.on('dialog', (dialog) => dialog.accept());
     page.setDefaultTimeout(15_000);
     await page.goto(new URL('/#clean-csv', base).href);
-    await page.getByLabel('Choose a CSV file', { exact: true }).setInputFiles({ name: 'keyboard-rows.csv', mimeType: 'text/csv', buffer: Buffer.from(csv) });
+    for (const [button, filename] of [['Choose CSV file', 'keyboard-picker.csv'], ['Open another CSV', 'keyboard-rows.csv']]) {
+      const picker = page.getByRole('button', { name: button, exact: true });
+      await picker.waitFor();
+      await page.getByRole('link', { name: /Back to overview/ }).focus();
+      await page.keyboard.press('Tab');
+      await expectFocus(page, picker, 'Tab should reach the visible picker button without stopping on the hidden file input.');
+      const choosing = page.waitForEvent('filechooser');
+      await page.keyboard.press('Enter');
+      await (await choosing).setFiles({ name: filename, mimeType: 'text/csv', buffer: Buffer.from(csv) });
+      await page.getByRole('heading', { name: filename, exact: true }).waitFor();
+    }
+    checks.push(`${width}px: initial and loaded Tab sequences skip the hidden file input; Enter on each visible picker button opens the file chooser and loads the chosen file.`);
     const reviewFirst = page.getByRole('button', { name: 'Review row 1', exact: true });
     const rowsHeading = page.getByRole('heading', { name: 'Your rows', exact: true });
 

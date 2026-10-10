@@ -33,6 +33,8 @@ row to its last saved values.
 
 **Undo** first discards any unsaved edits in the open row. After that, it can undo
 the last ten saved actions, including formatting, column choices, and exclusions.
+When one of these actions also saves pending edits, Undo reverses the action first
+and the saved edits on the next step.
 Opening another CSV starts a new history. Excluded rows remain available in the
 **Excluded** view and can be restored; no rows are merged or removed automatically.
 

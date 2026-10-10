@@ -67,8 +67,12 @@ export function BrowserCsvWorkspace({ active = true }: { active?: boolean }) {
     document.emailColumn ?? (document.headers.length > 2 ? 2 : 0),
   ])) : [];
 
-  function commit(next: BrowserCsv, message: string) {
-    if (document) setHistory((previous) => [...previous.slice(-9), document]);
+  function commit(next: BrowserCsv, message: string, beforeAction = document) {
+    if (document) {
+      // Independent actions keep an auto-saved row edit as its own Undo step.
+      const snapshots = beforeAction && beforeAction !== document ? [document, beforeAction] : [document];
+      setHistory((previous) => [...previous, ...snapshots].slice(-10));
+    }
     setDocument(next);
     setDraftValues(null);
     setProposalPage(0);
@@ -93,7 +97,7 @@ export function BrowserCsvWorkspace({ active = true }: { active?: boolean }) {
     const current = withRowEdits(document);
     const trimColumns = current.headers.map((_, column) => column).filter((column) =>
       column === current.emailColumn ? current.trimColumns.includes(column) : selectAll);
-    commit({ ...current, trimColumns }, 'Formatting preview updated.');
+    commit({ ...current, trimColumns }, 'Formatting preview updated.', current);
   }
 
   function selectRow(id: number | null) {
@@ -227,7 +231,7 @@ export function BrowserCsvWorkspace({ active = true }: { active?: boolean }) {
           </ol>
         </div>
 
-        <input ref={fileInput} type="file" accept=".csv,text/csv" aria-label="Choose a CSV file" className="sr-only" onChange={(event) => { const file = event.currentTarget.files?.[0]; if (file) void readFile(file); event.currentTarget.value = ''; }} />
+        <input ref={fileInput} type="file" accept=".csv,text/csv" aria-label="Choose a CSV file" tabIndex={-1} className="sr-only" onChange={(event) => { const file = event.currentTarget.files?.[0]; if (file) void readFile(file); event.currentTarget.value = ''; }} />
         {error && <p role="alert" className="mb-5 rounded-xl border border-[#ffac8b]/30 bg-[#ffac8b]/10 p-4 text-sm text-[#ffd0ba]">{error}</p>}
         <p role="status" aria-live="polite" className={notice ? 'mb-4 break-words text-sm leading-6 text-[#c4d7cb]' : 'sr-only'}>{notice}</p>
 
@@ -278,7 +282,7 @@ export function BrowserCsvWorkspace({ active = true }: { active?: boolean }) {
             <section aria-label="Suggested cleanup" className="my-5 overflow-hidden rounded-2xl border border-[#83bcff]/25 bg-[#83bcff]/[0.04]">
               <div className="flex flex-wrap items-center justify-between gap-4 p-5">
                 <div><h2 className="text-lg font-semibold">{proposals.length ? `${proposals.length.toLocaleString()} formatting changes to review` : document.trimColumns.length === 0 && document.emailColumn === null ? 'Choose which columns to clean' : 'No formatting changes to apply'}</h2><p className="mt-1 max-w-2xl text-xs leading-5 text-[#a2b8ab]">Trim selected text columns and standardize email domains. Names, owners, stages, and duplicate decisions stay yours.</p></div>
-                <button disabled={!proposals.length} className={secondary} onClick={() => { const current = withRowEdits(document); const count = cleanupProposals(current).length; commit(applyBrowserCleanup(current), `Applied ${count.toLocaleString()} formatting changes. Review notes have been updated.`); }}>Apply formatting changes</button>
+                <button disabled={!proposals.length} className={secondary} onClick={() => { const current = withRowEdits(document); const count = cleanupProposals(current).length; if (!count) { saveRow(); return; } commit(applyBrowserCleanup(current), `Applied ${count.toLocaleString()} formatting changes. Review notes have been updated.`, current); }}>Apply formatting changes</button>
               </div>
               {proposals.length > 0 && <details className="border-t border-white/10 p-5" open>
                 <summary className="cursor-pointer text-sm font-medium text-[#b9d8ff]">Preview before applying</summary>
@@ -294,7 +298,7 @@ export function BrowserCsvWorkspace({ active = true }: { active?: boolean }) {
                 <summary className="cursor-pointer text-sm text-[#b9d8ff]">Choose columns & formatting rules</summary>
                 <div className="mt-4 grid gap-5 sm:grid-cols-[minmax(180px,0.7fr)_1.3fr]">
                   <label className="text-xs text-[#c4d7cb]">Email column
-                    <select aria-label="Email column" className={`${inputClass} mt-2`} value={document.emailColumn ?? ''} onChange={(event) => commit({ ...withRowEdits(document), emailColumn: event.target.value === '' ? null : Number(event.target.value) }, 'Email checks updated.')}>
+                    <select aria-label="Email column" className={`${inputClass} mt-2`} value={document.emailColumn ?? ''} onChange={(event) => { const current = withRowEdits(document); commit({ ...current, emailColumn: event.target.value === '' ? null : Number(event.target.value) }, 'Email checks updated.', current); }}>
                       <option value="">No email checks</option>{document.headers.map((_, column) => <option key={column} value={column}>{browserCsvColumnLabel(document.headers, column)}</option>)}
                     </select>
                     <span className="mt-2 block leading-5 text-[#a2b8ab]">Checks formatting and repeated addresses, not whether a mailbox exists. Applying email formatting trims outer spaces and standardizes domains; the part before @ stays unchanged.</span>
@@ -308,7 +312,7 @@ export function BrowserCsvWorkspace({ active = true }: { active?: boolean }) {
                         <button className={secondary} disabled={optionalTrimCount === 0} onClick={() => selectTrimColumns(false)}>{document.emailColumn === null ? 'Clear all' : 'Clear other columns'}</button>
                       </div>
                     </div>
-                    <div className="mt-3 grid max-h-48 gap-3 overflow-auto sm:grid-cols-2">{document.headers.map((_, column) => <label key={column} className="flex items-start gap-2 text-xs text-[#a2b8ab]"><input type="checkbox" className="mt-0.5 accent-[#d8ff67]" checked={column === document.emailColumn || document.trimColumns.includes(column)} disabled={column === document.emailColumn} onChange={(event) => commit({ ...withRowEdits(document), trimColumns: event.target.checked ? [...document.trimColumns, column] : document.trimColumns.filter((item) => item !== column) }, 'Formatting preview updated.')} /><span className="break-all">{browserCsvColumnLabel(document.headers, column)}{column === document.emailColumn && <span className="mt-1 block text-[11px]">Included in email formatting</span>}</span></label>)}</div>
+                    <div className="mt-3 grid max-h-48 gap-3 overflow-auto sm:grid-cols-2">{document.headers.map((_, column) => <label key={column} className="flex items-start gap-2 text-xs text-[#a2b8ab]"><input type="checkbox" className="mt-0.5 accent-[#d8ff67]" checked={column === document.emailColumn || document.trimColumns.includes(column)} disabled={column === document.emailColumn} onChange={(event) => { const current = withRowEdits(document); commit({ ...current, trimColumns: event.target.checked ? [...current.trimColumns, column] : current.trimColumns.filter((item) => item !== column) }, 'Formatting preview updated.', current); }} /><span className="break-all">{browserCsvColumnLabel(document.headers, column)}{column === document.emailColumn && <span className="mt-1 block text-[11px]">Included in email formatting</span>}</span></label>)}</div>
                   </fieldset>
                 </div>
               </details>
@@ -325,9 +329,9 @@ export function BrowserCsvWorkspace({ active = true }: { active?: boolean }) {
                 {!rows.length && <p className="p-8 text-center text-sm text-[#a2b8ab]">No rows match this view.</p>}
                 <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/10 px-4 py-3 text-xs text-[#a2b8ab]"><span>{rows.length ? `${currentPage * 20 + 1}–${Math.min((currentPage + 1) * 20, rows.length)} of ${rows.length.toLocaleString()}` : '0 rows'}</span><div className="flex gap-2"><button className={secondary} disabled={currentPage === 0} onClick={() => changePage(currentPage - 1)}>Previous</button><button className={secondary} disabled={(currentPage + 1) * 20 >= rows.length} onClick={() => changePage(currentPage + 1)}>Next</button></div></div>
               </div>
-              {selected && <RowEditor row={selected} draft={draftValues ?? selected.values} onDraftChange={setDraftValues} headers={document.headers} rowSearch={search} issues={issues.get(selected.id) ?? []} onClose={closeRow} onToggle={() => commit(toggleBrowserRow(withRowEdits(document), selected.id), selected.excluded ? `Row ${selected.id + 1} restored to the download.` : `Row ${selected.id + 1} excluded. You can restore it anytime.`)} onSave={saveRow} onDiscard={() => { setDraftValues(null); setNotice('Discarded the current row edits.'); }} viewIndex={selectedViewIndex} viewCount={rows.length} onPrevious={selectedViewIndex > 0 ? () => selectRow(rows[selectedViewIndex - 1].id) : undefined} onNext={selectedViewIndex >= 0 && selectedViewIndex + 1 < rows.length ? () => selectRow(rows[selectedViewIndex + 1].id) : undefined}>
+              {selected && <RowEditor row={selected} draft={draftValues ?? selected.values} onDraftChange={setDraftValues} headers={document.headers} rowSearch={search} issues={issues.get(selected.id) ?? []} onClose={closeRow} onToggle={() => { const current = withRowEdits(document); commit(toggleBrowserRow(current, selected.id), selected.excluded ? `Row ${selected.id + 1} restored to the download.` : `Row ${selected.id + 1} excluded. You can restore it anytime.`, current); }} onSave={saveRow} onDiscard={() => { setDraftValues(null); setNotice('Discarded the current row edits.'); }} viewIndex={selectedViewIndex} viewCount={rows.length} onPrevious={selectedViewIndex > 0 ? () => selectRow(rows[selectedViewIndex - 1].id) : undefined} onNext={selectedViewIndex >= 0 && selectedViewIndex + 1 < rows.length ? () => selectRow(rows[selectedViewIndex + 1].id) : undefined}>
                 {draftDirty && <p className="mt-4 text-xs leading-5 text-[#b9d8ff]">Save row to refresh review notes and related-row comparisons.</p>}
-                <div hidden={draftDirty} className="mt-4"><BrowserCsvRelatedRows key={selected.id} document={document} selectedRowId={selected.id} groups={groups} onSelectRow={selectRow} onExcludeRow={(id) => commit(toggleBrowserRow(withRowEdits(document), id), `Row ${id + 1} excluded. Use Undo or the Excluded view to restore it.`)} /></div>
+                <div hidden={draftDirty} className="mt-4"><BrowserCsvRelatedRows key={selected.id} document={document} selectedRowId={selected.id} groups={groups} onSelectRow={selectRow} onExcludeRow={(id) => { const current = withRowEdits(document); commit(toggleBrowserRow(current, id), `Row ${id + 1} excluded. Use Undo or the Excluded view to restore it.`, current); }} /></div>
               </RowEditor>}
             </section>
 

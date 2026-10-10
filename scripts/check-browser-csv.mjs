@@ -200,6 +200,9 @@ async function draftLifecycle(session) {
   assert.equal((await downloadCsv(page, 'draft-without-save.csv')).text,
     'ID,Name,Email\r\n00123,Typed before download,ada@example.com\r\n00124,Other,blair@example.com',
     'Download must include pending row edits without a separate Save click.');
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  assert.equal(await page.getByLabel('Name — row 1', { exact: true }).inputValue(), 'Original', 'Download must save a pending edit as exactly one Undo step.');
+  assert(await page.getByRole('button', { name: 'Undo', exact: true }).isDisabled());
   await page.getByLabel('Name — row 1', { exact: true }).fill('Kept on switch');
   await page.getByRole('button', { name: 'Review row 2', exact: true }).click();
   await page.getByRole('cell', { name: 'Kept on switch', exact: true }).waitFor();
@@ -225,6 +228,32 @@ async function draftLifecycle(session) {
   assert.equal((await downloadCsv(page, 'draft-actions.csv')).text,
     'ID,Name,Email,Alternate email,Notes\r\n00123,Ada,Ada@example.com,Alternate@EXAMPLE.COM,Before excluding\r\n00124,Blair,Blair@example.com,Other@example.com,untouched',
     'Formatting, mapping and exclusion must retain manual edits.');
+
+  for (const action of ['exclusion', 'formatting']) {
+    const source = 'Name,Email,Notes\n Ada ,Ada@EXAMPLE.COM,Initial note\nBlair,blair@example.com,Other note';
+    await upload(page, `draft-undo-${action}.csv`, source);
+    await page.getByRole('button', { name: 'Review row 1', exact: true }).click();
+    const note = page.getByLabel('Notes — row 1', { exact: true });
+    await note.fill(`Correction before ${action}`);
+    await page.getByRole('button', { name: action === 'exclusion' ? 'Exclude row' : 'Apply formatting changes', exact: true }).click();
+    await page.getByRole('button', { name: 'Undo', exact: true }).click();
+    assert.equal(await note.inputValue(), `Correction before ${action}`, `Undo ${action} must retain the preceding auto-saved correction.`);
+    assert.equal(await page.getByLabel('Name — row 1', { exact: true }).inputValue(), ' Ada ');
+    assert.equal((await downloadCsv(page, `draft-retained-after-undo-${action}.csv`)).text,
+      source.replace('Initial note', `Correction before ${action}`).replaceAll('\n', '\r\n'),
+      `Undo ${action} must download both original rows with the manual correction.`);
+    await page.getByRole('button', { name: 'Undo', exact: true }).click();
+    assert.equal(await note.inputValue(), 'Initial note', 'The next Undo must reverse the manual correction.');
+    assert(await page.getByRole('button', { name: 'Undo', exact: true }).isDisabled(), 'The action and edit must create exactly two Undo steps.');
+  }
+
+  await upload(page, 'draft-fixed-formatting.csv', 'Name,Email\n Ada ,ada@example.com');
+  await page.getByRole('button', { name: 'Review row 1', exact: true }).click();
+  await page.getByLabel('Name — row 1', { exact: true }).fill('Ada');
+  await page.getByRole('button', { name: 'Apply formatting changes', exact: true }).click();
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  assert.equal(await page.getByLabel('Name — row 1', { exact: true }).inputValue(), ' Ada ', 'A draft that already fixes every suggestion must not create an empty formatting Undo step.');
+  assert(await page.getByRole('button', { name: 'Undo', exact: true }).isDisabled());
 
   await upload(page, 'draft-undo.csv', 'Name,Email\nOriginal,ada@example.com');
   await page.getByRole('button', { name: 'Review row 1', exact: true }).click();
@@ -323,7 +352,7 @@ try {
   await desktop.assertPrivate();
   await desktop.context.close();
   outcomes.push('Desktop: upload, preview, cleanup, manual correction, exclusion/restore, Undo, column mapping, exact download bytes, malformed/invalid UTF-8 file recovery and refresh reset.');
-  outcomes.push('Drafts: download/switch/Close/formatting/mapping/exclusion keep edits; Undo separates pending and saved work; overview/inbound navigation retains the working CSV.');
+  outcomes.push('Drafts: download/switch/Close/formatting/mapping/exclusion keep edits; Undo separates auto-saved corrections from exclusion/formatting and keeps Save/Download as single edit steps; overview/inbound navigation retains the working CSV.');
 
   const mobile = await workspace({ width: 390, height: 844 }, '#audit');
   await noPageOverflow(mobile.page);
