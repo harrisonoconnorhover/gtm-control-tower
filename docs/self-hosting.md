@@ -1,16 +1,22 @@
 # Self-hosting
 
-GTM Control Tower works at three levels. Start with CSV-only mode, then add only
-the connectors you actually use.
+To upload, clean, and download a CSV, start with the
+**[browser CSV cleaner](https://gtm-control-tower.pages.dev/#clean-csv)**. It needs
+no installation or account; see the [browser guide](browser-csv.md).
+
+Self-host when you need saved workspaces or CRM connections. Start with the app,
+then add only the connectors you use.
 
 ## 1. CSV + SQLite dashboard
 
-Requirements: Docker.
+Requirements: **Docker installed and running**. On macOS or Windows, open Docker
+Desktop and wait until its engine is ready. An error mentioning `docker.sock`
+or an unavailable Docker API usually means the engine has not started.
 
 ```bash
 git clone https://github.com/harrisonoconnorhover/gtm-control-tower.git
 cd gtm-control-tower
-docker compose up --build
+docker compose up --build app
 ```
 
 Open `http://localhost:3000/app/lab`, choose **CSV file**, and load the bundled
@@ -29,8 +35,8 @@ only an unguessable workspace key; SQLite remains the source of truth.
 Open `/runs` to inspect or export durable connector evidence and to restore
 eligible updated CRM fields from their pre-write backup.
 
-Plain `docker compose up` also starts n8n at `http://localhost:5678` so it is
-ready when you add Google Sheets. Use `docker compose up app` for the app alone.
+To add the optional n8n service for Google Sheets, run
+`docker compose up --build app n8n`. It opens at `http://localhost:5678`.
 Set `CONTROL_TOWER_PORT=3100` before the command if port 3000 is occupied.
 Set `N8N_PORT=5680` if port 5678 is occupied. Compose-generated container names
 and optional runtime-directory variables allow independent checkouts to run
@@ -172,10 +178,11 @@ contain no credential IDs.
 
 ## Production notes
 
-The default public experience is a credential-free static demonstration. It can
-audit a visitor-selected CSV inside the browser, but it cannot open `/app`, call
-the whole-account scanner, persist decisions, or reach CRM credentials. Those
-operator features exist only in the self-hosted application.
+The default public experience is a static browser CSV cleaner and demonstration.
+It can preview and apply CSV edits and download included rows without uploading
+source data. Its edits last only for the current tab session. It cannot open
+`/app`, call the whole-account scanner, persist decisions, or reach CRM
+credentials. Those operator features exist only in the self-hosted application.
 
 Private CRM routes return a configuration error until server-side credentials
 are present. In production, account scans and CRM writes also require

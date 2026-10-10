@@ -883,3 +883,17 @@ and reported as separate manual findings induced by mismatched setup suffixes.
 Future HubSpot seeds map both email and company domains to `.example.com`, while
 preserving deliberately inconsistent fixture domains. The fixture guard does not acquire
 repair authority over them merely because their domains match synthetic contacts.
+
+## October 10, 2026 — Make browser CSV cleanup useful without installation
+
+Put upload, explicit change review, cell editing, and CSV download in the static
+site. Keep the file in tab memory with no source-data upload, browser persistence,
+or operator API. Retain the existing audit anchor and preserve headers, custom
+columns, and row order; omit rows only after an explicit exclusion. Bound files
+to 10 MB and 10,000 data rows for a usable browser session.
+
+Use conservative formatting rules separately from the synthetic demo's routing,
+lifecycle, and merge policies. Preserve email local parts and only normalize
+their domains; missing, malformed, and repeated addresses remain review warnings.
+Include unresolved rows in downloads, with counted apostrophe protection for
+formula-like cells. Keep saved reviews and CRM operations in the self-hosted app.

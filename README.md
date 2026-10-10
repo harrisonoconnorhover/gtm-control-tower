@@ -3,33 +3,36 @@
 [![CI](https://github.com/harrisonoconnorhover/gtm-control-tower/actions/workflows/ci.yml/badge.svg)](https://github.com/harrisonoconnorhover/gtm-control-tower/actions/workflows/ci.yml)
 [![MIT License](https://img.shields.io/badge/license-MIT-174b45.svg)](LICENSE)
 
+**[Clean a CSV in your browser](https://gtm-control-tower.pages.dev/#clean-csv)** ·
 **[Try the synthetic cleanup](https://gtm-control-tower.pages.dev/#decisions)** ·
-**[Audit a CSV privately](https://gtm-control-tower.pages.dev/#audit)** ·
 **[Follow a real CRM import](https://gtm-control-tower.pages.dev/enterprise-import-walkthrough.html)** ·
 **[Self-host the operator workspace](#quick-start-one-command-no-accounts-required)**
 
-A self-hosted revenue-systems lab that turns deliberately messy CRM data into
-governed records, explainable routing, trusted funnel metrics, and receipted
-repairs.
+A browser CSV cleaner and self-hosted revenue-systems lab. Start by uploading,
+reviewing, and downloading a CSV without installing anything or creating an
+account. The operator workspace adds saved reviews, explainable routing,
+trusted funnel metrics, and receipted CRM repairs.
 
-It works immediately with a CSV. Teams can then add HubSpot, Salesforce, n8n,
-BigQuery, and dbt without putting credentials or organization-specific IDs in
-the repository.
+Teams can add HubSpot, Salesforce, n8n, BigQuery, and dbt without putting
+credentials or organization-specific IDs in the repository.
 
 ## Review the work in two minutes
 
-1. Run the browser cleanup and open [the record decisions](https://gtm-control-tower.pages.dev/#decisions). Inspect a duplicate pair, an owner change, and a held record. The original values, applied rules, remaining issues, and downloadable decisions come from the same local run.
-2. Inspect the shared [CSV importer and repairs](lib/csv-control-tower.ts) and [their regression tests](tests/csv-control-tower.test.ts). Exact email matching preserves corporate plus tags; internationalized domains use IDNA; malformed row widths are rejected before readiness is calculated.
+1. Open [Clean a CSV](https://gtm-control-tower.pages.dev/#clean-csv), load the sample or choose your file, preview and apply selected changes, then download the result. Headers and custom columns stay intact; repeated or malformed emails remain for your review. See the [browser CSV guide](docs/browser-csv.md).
+2. Inspect the [browser CSV transformations and export](lib/browser-csv.ts) and [their regression tests](tests/browser-csv.test.ts). Email cleanup preserves local-part case, plus tags, and dots; internationalized domains use IDNA. Row exclusions are explicit.
 3. In the self-hosted `/app/lab`, follow the [three-row held-record review](docs/held-record-review.md): correct an email, inspect a new duplicate hold, resolve it, and leave a partially corrected row held.
 4. Inspect the [possible CRM match walkthrough](docs/approximate-import-matches.md): choose imported fields, compare a dated snapshot, and examine ranked suggestions and conflicts. The scores are review signals, not identity probabilities or permission to sync.
 5. For the separate Salesforce development work, read the [approval, stale-write, and partial-success test contract](docs/salesforce-apex-routing.md). Its dated native results are historical evidence, separate from the browser demonstration and the current CI run.
 
-These are independent development workflows using fictional records. The public cleanup runs locally in the browser. The [enterprise import walkthrough](https://gtm-control-tower.pages.dev/enterprise-import-walkthrough.html) shows a separate, verified HubSpot/Salesforce development run: review seven attendees, manually exclude two unresolved identities, write five approved rows, repeat without new writes, and restore the two updates. Inspect the [native results and limitations](docs/enterprise-import-native-check.md) or [download the case files](docs/enterprise-import-fixtures.md). Connected operations require your own configured operator workspace.
+The bundled examples use fictional records. Your uploaded CSV stays in your browser tab. The separate [synthetic cleanup](https://gtm-control-tower.pages.dev/#decisions) demonstrates owner, lifecycle, and merge policies with inspectable record decisions. Those policies are not applied to your uploaded file. The [enterprise import walkthrough](https://gtm-control-tower.pages.dev/enterprise-import-walkthrough.html) shows a separate, verified HubSpot/Salesforce development run: review seven attendees, manually exclude two unresolved identities, write five approved rows, repeat without new writes, and restore the two updates. Inspect the [native results and limitations](docs/enterprise-import-native-check.md) or [download the case files](docs/enterprise-import-fixtures.md). Connected operations require your own configured operator workspace.
 
 That original run used advisory approximate review. A later [native follow-up](docs/enterprise-import-native-check.md#follow-up-control-tower-holds-possible-duplicates) verified the new governed create guard: Priya and sparse Jordan were held in both CRMs, with zero creates or updates and unchanged native records.
 
 ## What it does
 
+- Cleans a CSV entirely in the browser: preview conservative formatting changes,
+  edit individual cells, review email warnings, explicitly exclude or restore
+  rows, undo edits, and download all included rows with the original columns.
 - Prepares a saved [Safe Import review](docs/safe-import.md) for existing HubSpot
   Contacts and Salesforce Leads/Contacts, with exact field decisions, identity
   holds, account-bound approval, durable execution and native readback. Unmatched
@@ -110,9 +113,6 @@ That original run used advisory approximate review. A later [native follow-up](d
   static dashboard.
 - Builds the public proof as a static site while keeping the operator workspace
   and self-host diagnostics in the same repository.
-- Audits common CRM contact exports entirely in the visitor's browser and
-  downloads an aggregate Markdown readiness report without transmitting or
-  storing source rows.
 
 ## Salesforce-native proof: Agentforce, Flow, and advanced Apex
 
@@ -154,21 +154,31 @@ then inspect the
 and [`GTM_Approve_Lead_Routing`](salesforce/force-app/main/default/flows/GTM_Approve_Lead_Routing.flow-meta.xml)
 source.
 
-## Public demonstration
+<a id="public-demonstration"></a>
 
-The Cloudflare Pages site is a static, browser-only showroom. Visitors can run
-the deterministic 64-row cleanup or audit a local CSV without transmitting the
-file; the audit produces aggregate counts and a downloadable Markdown report.
-The cleanup's expandable record decisions and JSON download retain original
-inputs, final values, applied rules, and remaining hold reasons.
-The site does not store workspaces, run connectors, or expose the operator
-application. It also summarizes the dated 72-row development-system run and
-links to its historical notes; that summary is not a native receipt export.
-The working product remains
-the Docker self-host below.
+## Clean a CSV in your browser
 
-The public site cannot open `/app`, read a CRM, save a review decision, or call
-an operator API. Those capabilities exist only in the self-hosted application.
+Open **[Clean a CSV](https://gtm-control-tower.pages.dev/#clean-csv)**. No install,
+account, or CRM connection is required. Choose a CSV up to 10 MB and 10,000 data
+rows, select the email and whitespace-cleanup columns, then preview changes
+before applying them. You can also edit cells, exclude or restore rows, and
+undo your last edit. Download the cleaned CSV when you are ready.
+
+The file and edits stay in tab memory: there is no source-data upload, browser
+storage, or operator API call. Refreshing or leaving loses the session, so
+download before you close it. Original headers, column order, custom columns,
+and row order remain; only explicitly excluded rows are omitted. Unresolved
+email warnings do not prevent download or remove rows automatically.
+
+Formula-like cells are prefixed with an apostrophe on export, with a count shown
+before download. Spreadsheet programs may still change types such as leading-zero
+IDs when opening CSVs. See the [browser CSV guide](docs/browser-csv.md) for the
+exact cleanup rules and export limits. Existing `#audit` links open this workflow.
+
+The static site also retains the separate deterministic 64-row synthetic cleanup
+and its record decisions, plus the dated development-system walkthrough. It does
+not save workspaces, read a CRM, or expose the operator application. Use the
+self-hosted workspace below for those capabilities.
 
 ## Safe Import: Update existing contacts
 
@@ -180,15 +190,18 @@ never create contacts. Approval is bound to the saved review and actual CRM
 account, with durable execution and automatic readback. No AI model is required.
 See the [workflow, recovery, and verification guide](docs/safe-import.md).
 
-## Quick start: one command, no accounts required
+<a id="quick-start-one-command-no-accounts-required"></a>
 
-Requires Docker. This starts the application and a local n8n Community Edition
-instance; neither needs a paid account.
+## Self-host the full operator workspace
+
+Requires **Docker installed and running**. On macOS or Windows, open Docker
+Desktop and wait until its engine is ready before running these commands. This
+starts the app with a saved local workspace; no CRM account is required.
 
 ```bash
 git clone https://github.com/harrisonoconnorhover/gtm-control-tower.git
 cd gtm-control-tower
-docker compose up --build
+docker compose up --build app
 ```
 
 Open [http://localhost:3000/app/lab](http://localhost:3000/app/lab), choose **CSV
@@ -201,11 +214,11 @@ company, ticker, exchange, and CIK fields come from the SEC's
 while every person, email, phone number, and website is synthetic and uses a
 reserved example domain.
 The workspace survives browser and container restarts in
-`.runtime/sqlite/gtm-control-tower.db`. n8n is available at
-[http://localhost:5678](http://localhost:5678). Run `docker compose up app` if
-you do not want n8n. Connector checks live at `/setup`; durable field diffs,
-provider receipts, failures, evidence export, and eligible rollbacks live at
-`/runs`.
+`.runtime/sqlite/gtm-control-tower.db`. To add the optional n8n Community Edition
+service, run `docker compose up --build app n8n`; n8n opens at
+[http://localhost:5678](http://localhost:5678). Connector checks live at `/setup`;
+durable field diffs, provider receipts, failures, evidence export, and eligible
+rollbacks live at `/runs`.
 
 After configuring a direct HubSpot or Salesforce connector, open
 [http://localhost:3000/app](http://localhost:3000/app) for the whole-account
