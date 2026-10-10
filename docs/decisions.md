@@ -748,7 +748,7 @@ The measured 99-update execution exceeds the documented single-invocation budget
 cloud storage passing does not qualify hosted execution. Keep deployment and PR
 publication pending while that release blocker remains.
 
-## October 10, 2026 — Add a bounded HubSpot watchdog to the self-host
+## October 10, 2026 — Add a bounded HubSpot monitor to the self-host
 
 Use deterministic connected-contact checks and a durable human triage queue.
 Monitoring polls provider changes after an initial baseline, with saved cursors
@@ -765,21 +765,21 @@ outbound Slack messages, public deployment, or new routing-policy assumptions.
 
 ## October 10, 2026 — Salesforce operations and a shared inbox
 
-Extend the existing account-bound review/executor and Watchdog engines. Safe Import
+Extend the existing account-bound review/executor and Monitor engines. Safe Import
 checks both Salesforce objects and permits uniquely matched unconverted Leads or
 Contacts; Contact company/website stay outside scope because they belong to Account.
 Use Organization.Id as identity, object-qualified native IDs, and disable Lead
 assignment rules on PATCH. Do not infer an order for customized Lead statuses or
 copy HubSpot lifecycle/owner rules into Salesforce.
 
-Keep Watchdog settings and findings separate by provider, org and object. Poll
+Keep Monitor settings and findings separate by provider, org and object. Poll
 Salesforce SystemModstamp windows with stable ID continuation, and preserve
 existing HubSpot storage. Only Lead Company/Title and Contact Title whitespace
 repairs qualify for the explicit opt-in; no ownership/status/Account mutation.
 
 Add a small SQLite import task above existing workspaces and immutable reviews.
 Commit upload/workspace together, deduplicate by provider and source hash, and
-derive task status from actual review/execution evidence. Compose Watchdog findings
+derive task status from actual review/execution evidence. Compose Monitor findings
 into the same Inbox without duplicating their storage or approval logic. No model,
 Slack or role system is required for this operator vertical slice. Hosted bounded
 Safe Import execution remains a separate unresolved release requirement.
@@ -804,7 +804,7 @@ Merge the existing main and development histories without rewriting either.
 The last mirror commit (`f9d6a79`) contains all main (`d804d9b`) functionality;
 its only existing-file differences add inbound routing and related documentation.
 Resolve mirrored-history conflicts with the tested newer operations source
-(`82035d2`), retaining Safe Import, Watchdog, Salesforce, Inbox and Slack work.
+(`82035d2`), retaining Safe Import, Monitor, Salesforce, Inbox and Slack work.
 Keep the unrelated pre-public-author-rewrite backup outside this merge.
 
 Make TypeScript checking explicit in CI and exclude ignored generated runtime
@@ -822,3 +822,19 @@ actually consumed by Next's ESLint plugin and Vite's dynamic-import plugin.
 Test those real consumers and retain the existing full dependency audit gate.
 Remove the adapter when upstream consumers no longer require the vulnerable
 chain. This dependency adjustment does not change CRM matching or execution.
+
+## October 10, 2026 — Use CRM Monitor as the feature name
+
+Use CRM Monitor in the interface, messages and guides, with `monitor` for source
+files, routes, commands, environment settings and storage. Retire the earlier
+feature label instead of treating an interview participant's terminology as our
+product name. The public routes are `/app/monitor` and
+`/api/control-tower/monitor`; the runner command and Compose profile are `monitor`.
+
+Rename existing SQLite tables in place so account settings, findings, scan
+cursors and uncertain repair holds survive upgrades. Update queued generated
+Slack messages without resetting event identity or delivery state. Keep retired
+storage identifiers only in the upgrade helper and its regression fixtures;
+they are compatibility data, not active product names. Stop the prior runner,
+update deployment settings and bookmarks, then restart the app and runner as
+described in the monitor guide. Historical Git commits remain intact.

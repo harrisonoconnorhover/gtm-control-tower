@@ -34,11 +34,11 @@ That original run used advisory approximate review. A later [native follow-up](d
   Contacts and Salesforce Leads/Contacts, with exact field decisions, identity
   holds, account-bound approval, durable execution and native readback. Unmatched
   rows never create records; populated CRM values are preserved.
-- Provides a connected [CRM Watchdog](docs/watchdog.md) at `/app/watchdog` for
+- Provides a connected [CRM Monitor](docs/monitor.md) at `/app/monitor` for
   HubSpot Contacts and Salesforce Leads/Contacts: recurring checks, a durable human triage queue, downloadable reports,
   and optional verified company/job-title whitespace repairs. A separate runner
   continues with the browser closed. Requires the self-hosted SQLite app.
-- Combines incoming CSV lists and Watchdog findings in the [Operations Inbox](docs/operations-inbox.md)
+- Combines incoming CSV lists and CRM Monitor findings in the [Operations Inbox](docs/operations-inbox.md)
   at `/app/work`, with saved ownership, exact-review links, and verified outcomes.
 - Sends optional [Slack notifications](docs/slack-notifications.md) for findings,
   repairs, import reviews/results and follow-up changes across both CRMs. The

@@ -10,7 +10,7 @@ process.env.CONTROL_TOWER_SQLITE_PATH = join(directory, 'slack.db');
 const webhook = 'https://hooks.slack.com/services/T_FIXTURE/B_FIXTURE/fixture-secret';
 const initialTime = new Date('2026-10-10T12:00:00.000Z');
 const event = (key: string, provider: SlackNotificationEvent['provider'] = 'hubspot'): SlackNotificationEvent => ({
-  key, provider, title: 'Watchdog needs attention', summary: '3 findings require review.', path: `/app/watchdog?provider=${provider}&finding=fixture`,
+  key, provider, title: 'Monitor needs attention', summary: '3 findings require review.', path: `/app/monitor?provider=${provider}&finding=fixture`,
 });
 
 beforeEach(async () => {
@@ -74,7 +74,7 @@ describe('durable Slack incoming-webhook notifications', () => {
     expect(body).toMatchObject({ unfurl_links: false, unfurl_media: false });
     expect(body.text).toContain('1 HubSpot · 1 Salesforce · 1 Control Tower');
     expect(body.blocks[2].text).toEqual({ type: 'plain_text', text: 'HubSpot · <!channel> *untrusted*\n<@U123> & text', emoji: false });
-    expect(body.blocks[3].elements[0].text).toBe('<https://tower.example.test/app/watchdog?provider=hubspot&amp;finding=fixture|Open in Control Tower>');
+    expect(body.blocks[3].elements[0].text).toBe('<https://tower.example.test/app/monitor?provider=hubspot&amp;finding=fixture|Open in Control Tower>');
     await enqueueSlackNotification(hostile);
     vi.setSystemTime(new Date(initialTime.getTime() + 2000));
     await deliverSlackNotifications();

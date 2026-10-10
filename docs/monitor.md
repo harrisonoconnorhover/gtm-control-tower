@@ -1,7 +1,8 @@
-# CRM Watchdog
+# CRM Monitor
 
-The self-hosted `/app/watchdog` watches connected HubSpot Contacts and Salesforce Leads/Contacts, saves findings,
-and gives a person a queue to work through. It reads actual provider records; no
+CRM Monitor at `/app/monitor` watches connected HubSpot Contacts and Salesforce
+Leads/Contacts, saves findings, and gives a person a queue to work through.
+It reads actual provider records; no
 sample data is substituted when a connection fails. A separate runner keeps
 checks going with the browser closed. This feature currently requires local
 SQLite; the hosted D1 runtime and static public showroom cannot run it.
@@ -12,24 +13,38 @@ SQLite; the hosted D1 runtime and static public showroom cannot run it.
    `SALESFORCE_ACCESS_TOKEN` and `SALESFORCE_API_VERSION` for Salesforce. Read
    permission must cover the relevant objects/fields and native account identity. Set `CONTROL_TOWER_SYNC_KEY` for the
    operator interface; it is required in production. Start the app normally.
-2. Open `/app/watchdog`, select the CRM, enter the operator key if configured, verify the account,
+2. Open `/app/monitor`, select the CRM, enter the operator key if configured, verify the account,
    choose an interval and default assignee, and enable monitoring. Automatic
    repairs are off by default. **Run check now** processes one bounded page.
-3. In a second terminal, run `npm run watchdog`. The runner reads `.env` and
-   `.env.local`; `CONTROL_TOWER_WATCHDOG_URL` defaults to `http://127.0.0.1:3000`.
-   For Docker, set `CONTROL_TOWER_WATCHDOG_PROVIDERS=salesforce` or
+3. In a second terminal, run `npm run monitor`. The runner reads `.env` and
+   `.env.local`; `CONTROL_TOWER_MONITOR_URL` defaults to `http://127.0.0.1:3000`.
+   For Docker, set `CONTROL_TOWER_MONITOR_PROVIDERS=salesforce` or
    `hubspot,salesforce` in its environment (the Compose default is HubSpot), then
-   use `docker compose --profile watchdog up --build app watchdog`. If settings
+   use `docker compose --profile monitor up --build app monitor`. If settings
    are in `.env.local`, include `--env-file .env.local` before `--profile`.
    The optional Compose service restarts with the application. Stop a terminal
    runner with Ctrl+C; pause checks in the UI without discarding history.
 
-`npm run watchdog -- --once` requests a single due check, suitable for an existing
+`npm run monitor -- --once` requests a single due check, suitable for an existing
 scheduler. A configured interval alone does not start a process. The page shows
 last check time, rather than claiming that a background runner is healthy.
 The Node runner infers providers from configured local credentials, or accepts
-`CONTROL_TOWER_WATCHDOG_PROVIDERS`. Each provider has independent scheduling and
+`CONTROL_TOWER_MONITOR_PROVIDERS`. Each provider has independent scheduling and
 failure handling. Settings and automatic-repair opt-in are separate per account.
+
+## Upgrade an existing installation
+
+1. Stop the previous monitoring runner before upgrading the application. Keep
+   the existing SQLite database and Docker data volume.
+2. Update deployment settings and scheduled commands to `npm run monitor`, or
+   the Compose `monitor` profile and service. Use `CONTROL_TOWER_MONITOR_URL`
+   for the app address and `CONTROL_TOWER_MONITOR_PROVIDERS` for provider selection.
+   Update bookmarks to `/app/monitor` and API clients to
+   `/api/control-tower/monitor`. Previous public names are not retained as aliases.
+3. Restart the app, then restart the runner. Existing SQLite settings, findings,
+   scan progress, reports and repair holds are preserved automatically. Verify
+   the account and saved settings on the CRM Monitor page; do not reset data
+   or re-enable held repairs as part of this rename.
 
 ## What is checked
 
@@ -105,30 +120,32 @@ until that completes. See HubSpot's
 ## Verify locally
 
 ```bash
-npx vitest run tests/watchdog*.test.ts
-node --check scripts/watchdog.mjs
-docker compose --profile watchdog config --quiet
+npx vitest run tests/monitor*.test.ts
+node --check scripts/monitor.mjs
+docker compose --profile monitor config --quiet
 ```
 
 With an isolated app listening on `http://127.0.0.1:3087`, run
-`npm run test:watchdog-ui` for the desktop/mobile browser check. It intercepts
+`npm run test:monitor-ui` for the desktop/mobile browser check. It intercepts
 every API request with fictional findings and exercises settings, review,
 downloads, refresh, and connection errors without contacting either CRM.
 
-`node --env-file=.env.local scripts/check-watchdog-native.mjs --run` is an
+`node --env-file=.env.local scripts/check-monitor-native.mjs --run` is an
 optional **read-only** native check. It uses a disposable local database, disables
 repairs, and blocks every native mutation. Its private results stay under ignored
-`outputs/watchdog-native-*`. Passing that probe verifies reads and detection;
+`outputs/monitor-native-*`. Passing that probe verifies reads and detection;
 automatic repairs are separately tested with a fictional provider and must not
 be described as live-write qualification.
 
-`node --env-file=.env.local scripts/check-salesforce-watchdog-native.mjs --run`
+`node --env-file=.env.local scripts/check-salesforce-monitor-native.mjs --run`
 runs the analogous Salesforce GET-only qualification. `--cached-cli` can use the
 existing authenticated CLI org in probe memory without changing environment files.
 An expired application token requires `npm run configure:salesforce` and an app/runner
 restart; automatic session refresh is not implemented.
 
-October 10 native read-only checks scanned 139 Salesforce Leads/Contacts with four
-findings and 31 HubSpot Contacts with two findings. Salesforce direct Lead/Contact
-reads and incremental queries also passed. Both checks made zero native writes.
-Automatic writes remain qualified through fictional provider tests only.
+Previous native read-only checks on October 10, 2026 scanned 139 Salesforce
+Leads/Contacts with four findings and 31 HubSpot Contacts with two findings.
+Salesforce direct Lead/Contact reads and incremental queries also passed. Both
+checks made zero native writes. These are dated results from before the naming
+change, not newly run proof for this rename. Automatic writes remain qualified
+through fictional provider tests only.

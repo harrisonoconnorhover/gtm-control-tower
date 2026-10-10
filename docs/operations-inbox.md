@@ -16,20 +16,20 @@ target that workspace and saved review directly. Assignees and notes persist on
 the task. When configured, [Slack notifications](slack-notifications.md) link to
 new work and changed follow-up decisions. See [Safe Import](safe-import.md).
 
-The queue combines the latest 50 Inbox uploads with up to 100 saved Watchdog
+The queue combines the latest 50 Inbox uploads with up to 100 saved CRM Monitor
 findings for each connected provider. Existing CSV-lab workspaces are not backfilled
-into this upload queue. Findings reuse Watchdog's durable account/object/rule
+into this upload queue. Findings reuse CRM Monitor's durable account/object/rule
 identity and triage screens; no parallel finding or approval system is created.
 Each provider's connection error is shown independently. The page refreshes every
 30 seconds; refreshing reads saved findings and verifies account identity, not a
-new scan. See [Watchdog](watchdog.md) for the separate polling runner.
+new scan. See [CRM Monitor](monitor.md) for the separate polling runner.
 
 Counts and states come from saved reviews and executions. Expired or changed
 reviews need refresh; held, unmatched and unread identities remain follow-up work.
 A completed execution is only displayed as completed if its proposed updates
 were accepted and verified and there are no unresolved rows. Lost responses or
 unavailable readback show **Verify outcome**, with no retry action in the Inbox.
-Import approval stays per review. Watchdog's narrowly defined repairs use the
+Import approval stays per review. CRM Monitor's narrowly defined repairs use the
 separate saved per-account opt-in.
 
 This version uses the existing shared operator key. Its optional Slack card shows

@@ -1,17 +1,17 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { hubspotWatchdogSource } from '../lib/watchdog-hubspot';
+import { hubspotMonitorSource } from '../lib/monitor-hubspot';
 
 afterEach(() => vi.unstubAllGlobals());
 const native = (id: string) => ({ id, updatedAt: '2026-10-01T12:00:00.000Z', properties: { email: 'test@example.com' }, archived: false });
 
-describe('HubSpot watchdog native adapter', () => {
+describe('HubSpot monitor native adapter', () => {
   it('uses native list cursors then immutable-ID keyset change paging that repairs cannot shift', async () => {
     const fetcher = vi.fn()
       .mockResolvedValueOnce(Response.json({ results: [native('10')], paging: { next: { after: 'native-cursor' } } }))
       .mockResolvedValueOnce(Response.json({ total: 3, results: [native('100'), native('101')], paging: { next: { after: '2' } } }))
       .mockResolvedValueOnce(Response.json({ total: 1, results: [native('102')] }));
     vi.stubGlobal('fetch', fetcher);
-    const source = hubspotWatchdogSource('fixture-token');
+    const source = hubspotMonitorSource('fixture-token');
     expect((await source.list('previous-native-cursor')).after).toBe('native-cursor');
     const from = '2026-10-01T00:00:00.000Z';
     const through = '2026-10-02T00:00:00.000Z';
@@ -30,13 +30,13 @@ describe('HubSpot watchdog native adapter', () => {
 
   it.each([{ results: [], paging: null }, { results: [], paging: { next: {} } }, { results: [], paging: { next: { after: '' } } }, { results: [], paging: { next: { after: '50' } } }, { results: Array.from({ length: 51 }, () => native('1')) }])('rejects malformed or oversized pages: %j', async (payload) => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json(payload)));
-    await expect(hubspotWatchdogSource('fixture').list(null)).rejects.toThrow();
+    await expect(hubspotMonitorSource('fixture').list(null)).rejects.toThrow();
   });
 
   it('forbids protected properties and empty values at the write boundary', async () => {
     const fetcher = vi.fn().mockResolvedValue(Response.json({}));
     vi.stubGlobal('fetch', fetcher);
-    const source = hubspotWatchdogSource('fixture');
+    const source = hubspotMonitorSource('fixture');
     await expect(source.patch('1', { email: 'other@example.com' })).rejects.toThrow('limited');
     await expect(source.patch('1', { company: '' })).rejects.toThrow('limited');
     expect(fetcher).not.toHaveBeenCalled();

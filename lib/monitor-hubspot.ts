@@ -1,22 +1,22 @@
-import type { WatchdogContact, WatchdogObjectType, WatchdogProvider } from './watchdog-types';
+import type { MonitorContact, MonitorObjectType, MonitorProvider } from './monitor-types';
 
-export const WATCHDOG_PROPERTIES = [
+export const MONITOR_PROPERTIES = [
   'email', 'firstname', 'lastname', 'company', 'jobtitle',
   'hubspot_owner_id', 'lifecyclestage', 'lastmodifieddate',
 ] as const;
 
-export type WatchdogPage = { contacts: WatchdogContact[]; after: string | null; total?: number };
-export type WatchdogSource = {
-  provider?: WatchdogProvider;
+export type MonitorPage = { contacts: MonitorContact[]; after: string | null; total?: number };
+export type MonitorSource = {
+  provider?: MonitorProvider;
   accountId?: string;
-  list: (after: string | null) => Promise<WatchdogPage>;
-  changes: (from: string, through: string, after: string | null) => Promise<WatchdogPage>;
-  read: (id: string, objectType?: WatchdogObjectType) => Promise<WatchdogContact>;
-  patch: (id: string, properties: Record<string, string>, objectType?: WatchdogObjectType) => Promise<void>;
+  list: (after: string | null) => Promise<MonitorPage>;
+  changes: (from: string, through: string, after: string | null) => Promise<MonitorPage>;
+  read: (id: string, objectType?: MonitorObjectType) => Promise<MonitorContact>;
+  patch: (id: string, properties: Record<string, string>, objectType?: MonitorObjectType) => Promise<void>;
 };
 
 /** Only this narrow adapter can write. It never creates, merges, or deletes records. */
-export function hubspotWatchdogSource(token: string): WatchdogSource {
+export function hubspotMonitorSource(token: string): MonitorSource {
   if (!token.trim()) throw new Error('A HubSpot access token is required.');
   async function request(path: string, init: RequestInit = {}): Promise<unknown> {
     const response = await fetch(`https://api.hubapi.com${path}`, {
@@ -26,13 +26,13 @@ export function hubspotWatchdogSource(token: string): WatchdogSource {
       signal: AbortSignal.timeout(10_000),
     });
     // Provider response bodies can contain contact data; reports use bounded status text.
-    if (!response.ok) throw new Error(`HubSpot watchdog request failed (HTTP ${response.status}).`);
+    if (!response.ok) throw new Error(`HubSpot monitor request failed (HTTP ${response.status}).`);
     return response.status === 204 ? null : response.json();
   }
   return {
     provider: 'hubspot',
     async list(after) {
-      const query = new URLSearchParams({ limit: '50', archived: 'false', properties: WATCHDOG_PROPERTIES.join(',') });
+      const query = new URLSearchParams({ limit: '50', archived: 'false', properties: MONITOR_PROPERTIES.join(',') });
       if (after) query.set('after', after);
       return parsePage(await request(`/crm/v3/objects/contacts?${query}`));
     },
@@ -40,7 +40,7 @@ export function hubspotWatchdogSource(token: string): WatchdogSource {
       const page = parsePage(await request('/crm/v3/objects/contacts/search', {
         method: 'POST',
         body: JSON.stringify({
-          limit: 50, properties: WATCHDOG_PROPERTIES,
+          limit: 50, properties: MONITOR_PROPERTIES,
           sorts: [{ propertyName: 'hs_object_id', direction: 'ASCENDING' }],
           filterGroups: [{ filters: [
             { propertyName: 'lastmodifieddate', operator: 'GTE', value: String(Date.parse(from)) },
@@ -54,12 +54,12 @@ export function hubspotWatchdogSource(token: string): WatchdogSource {
       return { ...page, after: page.after === null ? null : page.contacts.at(-1)?.id ?? null };
     },
     async read(id) {
-      return parseContact(await request(`/crm/v3/objects/contacts/${encodeURIComponent(id)}?properties=${WATCHDOG_PROPERTIES.join(',')}`));
+      return parseContact(await request(`/crm/v3/objects/contacts/${encodeURIComponent(id)}?properties=${MONITOR_PROPERTIES.join(',')}`));
     },
     async patch(id, properties) {
       const entries = Object.entries(properties);
       if (!entries.length || entries.some(([key, value]) => !['company', 'jobtitle'].includes(key) || !value || value !== value.trim())) {
-        throw new Error('Watchdog repairs are limited to nonempty, trimmed company and job title values.');
+        throw new Error('Monitor repairs are limited to nonempty, trimmed company and job title values.');
       }
       await request(`/crm/v3/objects/contacts/${encodeURIComponent(id)}`, {
         method: 'PATCH', body: JSON.stringify({ properties }),
@@ -68,27 +68,27 @@ export function hubspotWatchdogSource(token: string): WatchdogSource {
   };
 }
 
-function parsePage(value: unknown): WatchdogPage {
-  if (!isRecord(value) || !Array.isArray(value.results) || value.results.length > 50) throw new Error('HubSpot returned an invalid watchdog page.');
-  if (value.paging !== undefined && !isRecord(value.paging)) throw new Error('HubSpot returned invalid watchdog paging.');
+function parsePage(value: unknown): MonitorPage {
+  if (!isRecord(value) || !Array.isArray(value.results) || value.results.length > 50) throw new Error('HubSpot returned an invalid monitor page.');
+  if (value.paging !== undefined && !isRecord(value.paging)) throw new Error('HubSpot returned invalid monitor paging.');
   const paging = isRecord(value.paging) ? value.paging : null;
-  if (paging?.next !== undefined && !isRecord(paging.next)) throw new Error('HubSpot returned invalid watchdog paging.');
+  if (paging?.next !== undefined && !isRecord(paging.next)) throw new Error('HubSpot returned invalid monitor paging.');
   const next = paging && isRecord(paging.next) ? paging.next : null;
   const after = next?.after;
-  if (next && (!['string', 'number'].includes(typeof after) || !String(after).trim())) throw new Error('HubSpot returned an invalid watchdog cursor.');
+  if (next && (!['string', 'number'].includes(typeof after) || !String(after).trim())) throw new Error('HubSpot returned an invalid monitor cursor.');
   if (next && value.results.length === 0) throw new Error('HubSpot returned a continuation cursor without any contacts.');
   const total = value.total;
-  if (total !== undefined && (typeof total !== 'number' || !Number.isSafeInteger(total) || total < 0)) throw new Error('HubSpot returned an invalid watchdog result count.');
+  if (total !== undefined && (typeof total !== 'number' || !Number.isSafeInteger(total) || total < 0)) throw new Error('HubSpot returned an invalid monitor result count.');
   return { contacts: value.results.map(parseContact), after: after === undefined ? null : String(after), ...(typeof total === 'number' ? { total } : {}) };
 }
 
-function parseContact(value: unknown): WatchdogContact {
+function parseContact(value: unknown): MonitorContact {
   if (!isRecord(value) || typeof value.id !== 'string' || !value.id || !isRecord(value.properties)
     || typeof value.updatedAt !== 'string' || !Number.isFinite(Date.parse(value.updatedAt)) || value.archived === true) {
-    throw new Error('HubSpot returned an invalid or archived watchdog contact.');
+    throw new Error('HubSpot returned an invalid or archived monitor contact.');
   }
   const properties: Record<string, string> = {};
-  for (const key of WATCHDOG_PROPERTIES) {
+  for (const key of MONITOR_PROPERTIES) {
     const field = value.properties[key];
     if (field !== null && field !== undefined && typeof field !== 'string') throw new Error('HubSpot returned an invalid contact property.');
     properties[key] = typeof field === 'string' ? field : '';

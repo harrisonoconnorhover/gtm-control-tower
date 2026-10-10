@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 const connection = vi.hoisted(() => vi.fn());
-vi.mock('@/lib/watchdog-connection', () => ({ getConnectedWatchdogOverview: connection }));
+vi.mock('@/lib/monitor-connection', () => ({ getConnectedMonitorOverview: connection }));
 import { assignImportWork, importWorkStatus, listOperationsInbox, receiveImport } from '@/lib/operations-inbox';
 import { getWorkspace, saveWorkspace } from '@/lib/workspace-store';
 import { defaultCrmUpdatePolicy } from '@/lib/crm-workflow';
@@ -53,7 +53,7 @@ describe('durable operations inbox', () => {
     });
     const inbox = await listOperationsInbox();
     expect(inbox.items.find((row) => row.id === item.id)).toMatchObject({ status: 'ready', assignee: 'Harrison', note: 'Check source', counts: { held: 4 }, href: `/app/lab?workspaceId=${item.workspaceId}&reviewId=${saved.id}` });
-    expect(inbox.items.find((row) => row.kind === 'finding')).toMatchObject({ provider: 'salesforce', status: 'reconcile', href: '/app/watchdog?provider=salesforce&finding=issue' });
+    expect(inbox.items.find((row) => row.kind === 'finding')).toMatchObject({ provider: 'salesforce', status: 'reconcile', href: '/app/monitor?provider=salesforce&finding=issue' });
     expect(inbox.connections[0].error).toBe('HubSpot unavailable');
   });
 

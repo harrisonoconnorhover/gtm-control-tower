@@ -4,23 +4,23 @@ import { defaultCrmUpdatePolicy } from './crm-workflow';
 import { emptyWorkspaceState, validateWorkspaceState } from './workspace';
 import { getLatestSafeImportReview, getSafeImportExecution } from './safe-import-store';
 import type { SafeImportExecution, SafeImportReview } from './safe-import';
-import { getConnectedWatchdogOverview } from './watchdog-connection';
-import type { WatchdogProvider } from './watchdog-types';
+import { getConnectedMonitorOverview } from './monitor-connection';
+import type { MonitorProvider } from './monitor-types';
 import { notifyAssignment, notifyImportReceived } from './operation-notifications';
 
 export type WorkStatus = 'received' | 'needs_review' | 'ready' | 'executing' | 'completed' | 'reconcile';
 export type OperationsItem = {
-  id: string; kind: 'import' | 'finding'; provider: WatchdogProvider; title: string; source: string;
+  id: string; kind: 'import' | 'finding'; provider: MonitorProvider; title: string; source: string;
   status: WorkStatus; summary: string; assignee: string; note: string; updatedAt: string; href: string;
   accountId?: string; counts?: SafeImportReview['counts'];
 };
 export type OperationsInbox = {
   items: OperationsItem[];
-  connections: { provider: WatchdogProvider; accountId?: string; error?: string }[];
+  connections: { provider: MonitorProvider; accountId?: string; error?: string }[];
   coverage: string;
 };
 type WorkRow = {
-  id: string; workspace_id: string; provider: WatchdogProvider; source_name: string;
+  id: string; workspace_id: string; provider: MonitorProvider; source_name: string;
   assignee: string; note: string; created_at: string; updated_at: string;
 };
 
@@ -37,7 +37,7 @@ async function inboxDatabase() {
 }
 
 /** Identical uploads return the same task. Workspace and task are committed together. */
-export async function receiveImport(input: { provider: WatchdogProvider; fileName: string; csv: string }): Promise<{ id: string; workspaceId: string }> {
+export async function receiveImport(input: { provider: MonitorProvider; fileName: string; csv: string }): Promise<{ id: string; workspaceId: string }> {
   if (!['hubspot', 'salesforce'].includes(input.provider)) throw new Error('Choose HubSpot or Salesforce.');
   if (typeof input.csv !== 'string' || new TextEncoder().encode(input.csv).length > 4 * 1024 * 1024) throw new Error('Upload a CSV smaller than 4 MB.');
   if (typeof input.fileName !== 'string' || !input.fileName.trim() || input.fileName.length > 180) throw new Error('A filename of at most 180 characters is required.');
@@ -120,26 +120,26 @@ export async function listOperationsInbox(): Promise<OperationsInbox> {
   }));
   const connections = await Promise.all((['hubspot', 'salesforce'] as const).map(async (provider) => {
     try {
-      const overview = await getConnectedWatchdogOverview(provider);
+      const overview = await getConnectedMonitorOverview(provider);
       for (const finding of overview.findings) items.push({ id: `${provider}:${finding.id}`, kind: 'finding', provider,
         title: finding.summary, source: `${finding.objectType} · ${finding.contactLabel}`, accountId: overview.accountId,
         status: finding.status === 'unknown' ? 'reconcile' : ['fixed', 'resolved'].includes(finding.status) ? 'completed' : 'needs_review',
         summary: finding.detail, assignee: finding.assignee, note: finding.note, updatedAt: finding.lastSeenAt,
-        href: `/app/watchdog?provider=${provider}&finding=${encodeURIComponent(finding.id)}` });
+        href: `/app/monitor?provider=${provider}&finding=${encodeURIComponent(finding.id)}` });
       return { provider, accountId: overview.accountId };
     } catch (error) {
       return { provider, error: error instanceof Error ? error.message : 'Connection unavailable.' };
     }
   }));
   items.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
-  return { items, connections, coverage: 'Latest 50 inbox uploads and up to 100 saved Watchdog findings per connected CRM. Reading this inbox does not run a scan or change CRM records.' };
+  return { items, connections, coverage: 'Latest 50 inbox uploads and up to 100 saved Monitor findings per connected CRM. Reading this inbox does not run a scan or change CRM records.' };
 }
 
 export async function assignImportWork(id: string, assignee: string, note: string): Promise<void> {
   if (typeof id !== 'string' || typeof assignee !== 'string' || typeof note !== 'string' || assignee.length > 120 || note.length > 2_000) throw new Error('Enter an assignee under 120 characters and a note under 2,000 characters.');
   const db = await inboxDatabase();
   const row = await db.prepare('UPDATE work_items SET assignee = ?, note = ?, updated_at = ? WHERE id = ? AND (assignee != ? OR note != ?) RETURNING workspace_id, provider')
-    .bind(assignee.trim(), note.trim(), new Date().toISOString(), id, assignee.trim(), note.trim()).first<{ workspace_id: string; provider: WatchdogProvider }>();
+    .bind(assignee.trim(), note.trim(), new Date().toISOString(), id, assignee.trim(), note.trim()).first<{ workspace_id: string; provider: MonitorProvider }>();
   if (!row) {
     if (await db.prepare('SELECT id FROM work_items WHERE id = ?').bind(id).first()) return;
     throw new Error('Work item not found.');

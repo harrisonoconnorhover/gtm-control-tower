@@ -1,4 +1,5 @@
 import { getDatabase, type DatabaseAdapter } from '@/db';
+import { migrateMonitorStorage } from './monitor-migration';
 
 export type SlackNotificationEvent = {
   key: string;
@@ -60,7 +61,7 @@ function configuration(): Configuration {
 async function database(): Promise<DatabaseAdapter> {
   const db = await getDatabase();
   if (db.kind !== 'sqlite') throw new Error('Slack notifications currently require the self-hosted SQLite runtime.');
-  schemaPromise ??= db.batch([
+  schemaPromise ??= migrateMonitorStorage(db).then(() => db.batch([
     db.prepare(`CREATE TABLE IF NOT EXISTS slack_notification_events (
       event_key TEXT PRIMARY KEY, provider TEXT NOT NULL, title TEXT NOT NULL, summary TEXT NOT NULL,
       path TEXT NOT NULL, state TEXT NOT NULL DEFAULT 'pending', delivery_id TEXT,
@@ -75,7 +76,7 @@ async function database(): Promise<DatabaseAdapter> {
       id INTEGER PRIMARY KEY CHECK (id = 1), lease_id TEXT, lease_expires_at TEXT, next_attempt_at TEXT
     )`),
     db.prepare('INSERT INTO slack_notification_control (id) VALUES (1) ON CONFLICT(id) DO NOTHING'),
-  ]).then(() => undefined).catch((error) => { schemaPromise = null; throw error; });
+  ])).then(() => undefined).catch((error) => { schemaPromise = null; throw error; });
   await schemaPromise;
   return db;
 }

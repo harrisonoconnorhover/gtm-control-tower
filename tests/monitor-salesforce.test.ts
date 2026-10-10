@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { salesforceWatchdogSource } from '../lib/watchdog-salesforce';
+import { salesforceMonitorSource } from '../lib/monitor-salesforce';
 
 const root = 'https://fixture.my.salesforce.com/services/data/v67.0';
 const org = '00D000000000001';
@@ -11,10 +11,10 @@ const native = (type: 'Lead' | 'Contact', number = 1, properties: Record<string,
   ...properties,
 });
 const result = (records: unknown[]) => Response.json({ records, done: true, totalSize: records.length });
-const source = () => salesforceWatchdogSource(root, { authorization: 'Bearer fixture-token' }, org);
+const source = () => salesforceMonitorSource(root, { authorization: 'Bearer fixture-token' }, org);
 afterEach(() => vi.unstubAllGlobals());
 
-describe('Salesforce Watchdog native adapter', () => {
+describe('Salesforce Monitor native adapter', () => {
   it('pages both object types using stable IDs and a frozen SystemModstamp window', async () => {
     const fetcher = vi.fn()
       .mockResolvedValueOnce(result(Array.from({ length: 50 }, (_, i) => native('Lead', i + 1))))

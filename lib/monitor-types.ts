@@ -1,36 +1,36 @@
-export type WatchdogProvider = 'hubspot' | 'salesforce';
-export type WatchdogObjectType = 'Lead' | 'Contact';
+export type MonitorProvider = 'hubspot' | 'salesforce';
+export type MonitorObjectType = 'Lead' | 'Contact';
 
-export type WatchdogRule = 'email_missing' | 'email_invalid' | 'owner_missing' | 'lifecycle_regression' | 'text_whitespace';
-export type WatchdogStatus = 'open' | 'in_progress' | 'resolved' | 'fixed' | 'unknown';
+export type MonitorRule = 'email_missing' | 'email_invalid' | 'owner_missing' | 'lifecycle_regression' | 'text_whitespace';
+export type MonitorStatus = 'open' | 'in_progress' | 'resolved' | 'fixed' | 'unknown';
 
-export type WatchdogConfig = {
+export type MonitorConfig = {
   enabled: boolean;
   automaticRepairs: boolean;
   intervalSeconds: number;
   defaultAssignee: string;
 };
 
-export type WatchdogContact = {
-  provider?: WatchdogProvider;
-  objectType?: WatchdogObjectType;
+export type MonitorContact = {
+  provider?: MonitorProvider;
+  objectType?: MonitorObjectType;
   id: string;
   updatedAt: string;
   properties: Record<string, string>;
 };
 
-export type WatchdogFinding = {
-  provider: WatchdogProvider;
-  objectType: WatchdogObjectType;
+export type MonitorFinding = {
+  provider: MonitorProvider;
+  objectType: MonitorObjectType;
   id: string;
   accountId: string;
   contactId: string;
   contactLabel: string;
-  rule: WatchdogRule;
+  rule: MonitorRule;
   severity: 'warning' | 'critical';
   summary: string;
   detail: string;
-  status: WatchdogStatus;
+  status: MonitorStatus;
   assignee: string;
   note: string;
   firstSeenAt: string;
@@ -42,7 +42,7 @@ export type WatchdogFinding = {
   repairError: string | null;
 };
 
-export type WatchdogRun = {
+export type MonitorRun = {
   id: string;
   accountId: string;
   startedAt: string;
@@ -56,23 +56,23 @@ export type WatchdogRun = {
   phase: 'baseline' | 'changes';
 };
 
-export type WatchdogOverview = {
-  provider: WatchdogProvider;
-  objectTypes: WatchdogObjectType[];
+export type MonitorOverview = {
+  provider: MonitorProvider;
+  objectTypes: MonitorObjectType[];
   instanceUrl?: string;
   accountId: string;
-  config: WatchdogConfig;
+  config: MonitorConfig;
   phase: 'baseline' | 'changes';
   lastCheckedAt: string | null;
   watermark: string | null;
   nextCheckAt: string | null;
-  findings: WatchdogFinding[];
-  runs: WatchdogRun[];
+  findings: MonitorFinding[];
+  runs: MonitorRun[];
   totals: { open: number; inProgress: number; fixed: number; resolved: number; unknown: number };
   coverageNote: string;
 };
 
-export const WATCHDOG_DEFAULT_CONFIG: WatchdogConfig = {
+export const MONITOR_DEFAULT_CONFIG: MonitorConfig = {
   enabled: false,
   automaticRepairs: false,
   intervalSeconds: 300,
@@ -80,16 +80,16 @@ export const WATCHDOG_DEFAULT_CONFIG: WatchdogConfig = {
 };
 
 /** Existing HubSpot keys stay intact; Salesforce is namespaced by provider, org, and object. */
-export function watchdogAccountScope(provider: WatchdogProvider, accountId: string): string {
+export function monitorAccountScope(provider: MonitorProvider, accountId: string): string {
   return provider === 'salesforce' ? `salesforce_${accountId}` : accountId;
 }
 
-export function watchdogAccountIdentity(scope: string): { provider: WatchdogProvider; accountId: string } {
+export function monitorAccountIdentity(scope: string): { provider: MonitorProvider; accountId: string } {
   return scope.startsWith('salesforce_')
     ? { provider: 'salesforce', accountId: scope.slice('salesforce_'.length) }
     : { provider: 'hubspot', accountId: scope };
 }
 
-export function watchdogRecordKey(contact: Pick<WatchdogContact, 'id' | 'provider' | 'objectType'>): string {
+export function monitorRecordKey(contact: Pick<MonitorContact, 'id' | 'provider' | 'objectType'>): string {
   return contact.provider === 'salesforce' ? `${contact.objectType}:${contact.id}` : contact.id;
 }
