@@ -2,38 +2,38 @@
 
 ## Finished
 
-- Consolidated Safe Import, HubSpot/Salesforce Watchdog, the Operations Inbox, Slack notifications, inbound routing, duplicate audit and Salesforce/Hollis intake work for main.
-- Preserved both Git histories and all existing main functionality. Resolved 18 conflicts caused by mirrored commits using the verified newer source.
-- Added explicit TypeScript checking to CI, excluded generated outputs from lint, clarified historical evidence and surfaced Safe Import in the README.
-- Updated vulnerable dependencies and replaced two build tools' unpatched glob dependency with a small scoped, tested tinyglobby adapter. The existing audit gate remains intact.
+- Renamed the feature to **CRM Monitor** across HubSpot and Salesforce screens, the Operations Inbox, Slack notifications, routes, commands, configuration, source files and guides.
+- Added an automatic SQLite upgrade that preserves account settings, scan cursors, findings, repair history and uncertain repair holds.
+- Updated queued Slack links and generated titles without changing notification identity or delivery state. Previously delivered messages remain historical records.
+- Retained the Safe Import and other completed feature work already integrated into main.
 
 ## Try It
 
-1. Follow the [README](README.md): `docker compose up --build` starts the persistent SQLite application.
-2. Open `/app/work` for CSV requests and findings, `/app/lab` for saved Safe Import reviews, or `/app/watchdog` for provider monitoring and triage.
-3. Configure your own CRM connections and operator key. Follow [Slack setup](docs/slack-notifications.md) for the channel webhook and private app URL; run `npm run watchdog` for background checks and delivery.
+1. Existing installations: stop the previous runner, retain the SQLite directory, and follow the configuration update in [CRM Monitor](docs/monitor.md) before restarting.
+2. Run `docker compose up --build`, then open `/app/monitor` or `/app/work`.
+3. For background checks, use `npm run monitor` or the Compose `monitor` profile. Configure your own CRM connections and [Slack destination](docs/slack-notifications.md).
 
 ## Checks
 
-- Full suite: 650 tests across 52 files passed. TypeScript, lint, doctor, application/public builds, Compose validation and diff checks passed.
-- A separate clean `npm ci`, dependency resolution and real Next/Vite consumer tests passed. The dependency audit passes its high/critical threshold; production-only audit reports zero vulnerabilities.
-- Secret scanning passed before publication. GitHub CI additionally checks the credential-free Docker installation, SQLite restart persistence and undo; consult the pull request check for that run's result. The local Docker daemon was unavailable.
-- The public output remains static. No CRM writes, Slack messages, Salesforce metadata deployment or hosted operator deployment occurred during integration.
+- 655 tests across 53 files passed, including five upgrade tests covering saved history, unknown repair holds, queued Slack messages, partial schemas and transactional rollback.
+- Full TypeScript, lint, application/public builds, Compose configuration, runner help and diff checks passed.
+- Mocked Monitor and Inbox browser checks passed on desktop/mobile, including both CRM providers and report downloads; zero external requests. Monitor desktop and Salesforce mobile were visually inspected.
+- Secret scanning passed before publication. The pull request CI also checks the credential-free Docker installation and SQLite restart persistence.
+- No CRM writes, Slack messages, native provider probes or application deployment occurred.
 
 ## Decisions
 
-- Keep a normal merge with both histories; retain the unrelated author-rewrite backup separately. Every completed feature tip is included.
-- Use the existing self-hosted SQLite runtime. Merging source does not qualify the whole-file D1 executor.
-- The glob adapter supports the two existing build-tool consumers only; remove it when upstream dependencies replace their vulnerable chain. See [decisions](docs/decisions.md).
+- Use CRM Monitor as the product name and `monitor` for technical identifiers.
+- Keep retired storage identifiers only in the upgrade helper and regression fixtures so existing installations can migrate safely; preserve Git history.
+- Update runner configuration and bookmarks during the upgrade; retired routes and commands are not aliases.
 
 ## Remaining
 
-- Four moderate development-tool audit findings remain in Drizzle's nested esbuild chain; production dependencies are clear.
-- Slack requires local destination configuration. Native Salesforce automatic writes and hosted Safe Import execution remain unqualified.
-- Polling can miss intermediate CRM changes; team roles, Slack approvals and automatic OAuth refresh remain outside the completed slice.
+- Slack needs a configured webhook and private app URL. Native Salesforce automatic writes and hosted Safe Import execution remain unqualified.
+- Four moderate development-tool dependency findings remain from the prior integration; production dependencies are clear at that integration's audit.
 
 ## Review First
 
-- [README](README.md), [Safe Import](docs/safe-import.md), and [Operations Inbox](docs/operations-inbox.md).
-- `.github/workflows/ci.yml` and the pull request's CI results, including credential-free Docker startup and persistence checks.
-- `vendor/fast-glob-compat`, its consumer tests, and the dependency lockfile.
+- [Upgrade instructions](docs/monitor.md) and `.env.example`.
+- `lib/monitor-migration.ts` and `tests/monitor-migration.test.ts`.
+- The pull request's CI result and `/app/monitor`.

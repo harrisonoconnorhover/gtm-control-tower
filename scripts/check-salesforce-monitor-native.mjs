@@ -8,7 +8,7 @@ import { build } from 'esbuild';
 // Read-only qualification uses an isolated database and never enables automatic repairs.
 // --cached-cli reads the existing authorized CLI session into this process only; it does not write .env.local.
 if (!process.argv.includes('--run')) {
-  console.log('Read-only Salesforce check: node --env-file=.env.local scripts/check-salesforce-watchdog-native.mjs --run [--cached-cli]');
+  console.log('Read-only Salesforce check: node --env-file=.env.local scripts/check-salesforce-monitor-native.mjs --run [--cached-cli]');
   process.exit(0);
 }
 if (process.argv.includes('--cached-cli')) {
@@ -32,12 +32,12 @@ const instance = new URL(process.env.SALESFORCE_INSTANCE_URL);
 assert.equal(instance.protocol, 'https:');
 const root = resolve(import.meta.dirname, '..');
 mkdirSync(resolve(root, 'outputs'), { recursive: true });
-const output = mkdtempSync(resolve(root, 'outputs/salesforce-watchdog-native-'));
-process.env.CONTROL_TOWER_SQLITE_PATH = resolve(output, 'watchdog.db');
+const output = mkdtempSync(resolve(root, 'outputs/salesforce-monitor-native-'));
+process.env.CONTROL_TOWER_SQLITE_PATH = resolve(output, 'monitor.db');
 process.env.CONTROL_TOWER_PERSISTENCE_ENABLED = 'true';
 const bundle = resolve(output, 'probe.mjs');
 await build({ stdin: {
-  contents: `export * from './lib/watchdog'; export * from './lib/watchdog-types'; export * from './lib/watchdog-connection';`,
+  contents: `export * from './lib/monitor'; export * from './lib/monitor-types'; export * from './lib/monitor-connection';`,
   resolveDir: root, loader: 'ts',
 }, bundle: true, platform: 'node', format: 'esm', packages: 'external', outfile: bundle });
 const originalFetch = globalThis.fetch;
@@ -51,8 +51,8 @@ globalThis.fetch = async (input, init) => {
   return originalFetch(input, { ...init, redirect: 'error' });
 };
 try {
-  const watchdogModule = await import(pathToFileURL(bundle).href);
-  const connection = await watchdogModule.getWatchdogConnection('salesforce');
+  const monitorModule = await import(pathToFileURL(bundle).href);
+  const connection = await monitorModule.getMonitorConnection('salesforce');
   const sampledObjects = new Set();
   const source = { ...connection.source, list: async (after) => {
     const page = await connection.source.list(after);
@@ -65,13 +65,13 @@ try {
     }
     return page;
   } };
-  const initial = await watchdogModule.getWatchdogOverview(connection.scope);
-  await watchdogModule.configureWatchdog(connection.scope, { ...initial.config, enabled: true, automaticRepairs: false });
+  const initial = await monitorModule.getMonitorOverview(connection.scope);
+  await monitorModule.configureMonitor(connection.scope, { ...initial.config, enabled: true, automaticRepairs: false });
   let view;
   let pages = 0;
   let recordsScanned = 0;
   do {
-    view = await watchdogModule.tickWatchdog(connection.scope, '', { force: true, source });
+    view = await monitorModule.tickMonitor(connection.scope, '', { force: true, source });
     pages++;
     assert.notEqual(view.runs[0]?.status, 'failed', view.runs[0]?.error || 'Native baseline failed.');
     recordsScanned += view.runs[0]?.scanned ?? 0;

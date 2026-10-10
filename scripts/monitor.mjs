@@ -2,21 +2,21 @@ import { setTimeout as delay } from 'node:timers/promises';
 
 // Runs independently of browser tabs. Each connected provider has its own durable cadence and claims.
 if (process.argv.includes('--help')) {
-  console.log('Usage: npm run watchdog [-- --once]\nSet CONTROL_TOWER_WATCHDOG_URL (default http://127.0.0.1:3000), CONTROL_TOWER_SYNC_KEY, and optionally CONTROL_TOWER_WATCHDOG_PROVIDERS=hubspot,salesforce. Otherwise providers are selected from local connection env, falling back to HubSpot. Enable each provider in /app/watchdog first.');
+  console.log('Usage: npm run monitor [-- --once]\nSet CONTROL_TOWER_MONITOR_URL (default http://127.0.0.1:3000), CONTROL_TOWER_SYNC_KEY, and optionally CONTROL_TOWER_MONITOR_PROVIDERS=hubspot,salesforce. Otherwise providers are selected from local connection env, falling back to HubSpot. Enable each provider in /app/monitor first.');
   process.exit(0);
 }
-const base = new URL(process.env.CONTROL_TOWER_WATCHDOG_URL || 'http://127.0.0.1:3000');
+const base = new URL(process.env.CONTROL_TOWER_MONITOR_URL || 'http://127.0.0.1:3000');
 if (!['http:', 'https:'].includes(base.protocol) || base.username || base.password || base.search || base.hash) {
-  throw new Error('CONTROL_TOWER_WATCHDOG_URL must be an HTTP(S) app URL without credentials, query, or fragment.');
+  throw new Error('CONTROL_TOWER_MONITOR_URL must be an HTTP(S) app URL without credentials, query, or fragment.');
 }
-const configuredProviders = process.env.CONTROL_TOWER_WATCHDOG_PROVIDERS?.split(',').map((value) => value.trim());
+const configuredProviders = process.env.CONTROL_TOWER_MONITOR_PROVIDERS?.split(',').map((value) => value.trim());
 const inferredProviders = [process.env.HUBSPOT_ACCESS_TOKEN ? 'hubspot' : null,
   process.env.SALESFORCE_INSTANCE_URL && process.env.SALESFORCE_ACCESS_TOKEN ? 'salesforce' : null].filter(Boolean);
 const providers = [...new Set(configuredProviders ?? (inferredProviders.length ? inferredProviders : ['hubspot']))];
 if (!providers.length || providers.some((provider) => !['hubspot', 'salesforce'].includes(provider))) {
-  throw new Error('CONTROL_TOWER_WATCHDOG_PROVIDERS must contain hubspot and/or salesforce.');
+  throw new Error('CONTROL_TOWER_MONITOR_PROVIDERS must contain hubspot and/or salesforce.');
 }
-const endpoint = new URL('/api/control-tower/watchdog', base);
+const endpoint = new URL('/api/control-tower/monitor', base);
 const notificationEndpoint = new URL('/api/control-tower/notifications/slack', base);
 const once = process.argv.includes('--once');
 const sleepController = new AbortController();
@@ -40,8 +40,8 @@ async function poll(provider) {
       body: JSON.stringify({ action: 'tick', ...(provider === 'salesforce' ? { provider } : {}) }),
     });
     const payload = await response.json();
-    if (!response.ok || !payload.watchdog) throw new Error(payload.error || `Watchdog returned HTTP ${response.status}.`);
-    const { config, nextCheckAt, runs, totals } = payload.watchdog;
+    if (!response.ok || !payload.monitor) throw new Error(payload.error || `Monitor returned HTTP ${response.status}.`);
+    const { config, nextCheckAt, runs, totals } = payload.monitor;
     const latest = runs[0];
     if (latest && latest.id !== state.lastRunId) {
       state.lastRunId = latest.id;
@@ -57,17 +57,17 @@ async function poll(provider) {
       waitMs = config.enabled ? Math.min(60_000, Math.max(2_000,
         nextCheckAt ? Date.parse(nextCheckAt) - Date.now() : 2_000)) : 30_000;
     }
-    const message = `${provider}: ${config.enabled ? 'Monitoring enabled. Reports and triage: /app/watchdog.' : 'Monitoring paused. Enable it in /app/watchdog.'}`;
+    const message = `${provider}: ${config.enabled ? 'Monitoring enabled. Reports and triage: /app/monitor.' : 'Monitoring paused. Enable it in /app/monitor.'}`;
     if (message !== state.lastMessage) { console.log(message); state.lastMessage = message; }
   } catch (error) {
-    console.error(JSON.stringify({ at: new Date().toISOString(), provider, error: error instanceof Error ? error.message : 'Watchdog request failed.' }));
+    console.error(JSON.stringify({ at: new Date().toISOString(), provider, error: error instanceof Error ? error.message : 'Monitor request failed.' }));
     waitMs = Math.min(300_000, 30_000 * (2 ** Math.min(state.failures++, 4)));
     if (once) process.exitCode = 1;
   }
   state.nextPollAt = Date.now() + waitMs;
 }
 
-console.log(`Watchdog runner connected to ${base.origin} for ${providers.join(', ')}; Ctrl+C stops this runner.`);
+console.log(`Monitor runner connected to ${base.origin} for ${providers.join(', ')}; Ctrl+C stops this runner.`);
 while (!stopping) {
   // An unavailable provider cannot prevent the other provider's tick from being dispatched.
   await Promise.all(providers.map(poll));

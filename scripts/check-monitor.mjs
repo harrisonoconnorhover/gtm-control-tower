@@ -3,18 +3,18 @@ import { existsSync, mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { chromium } from 'playwright-core';
 
-// UI-only qualification: all Watchdog reads, decisions, and repairs below are
-// fictional route fixtures. No request reaches a CRM or the real Watchdog API.
+// UI-only qualification: all Monitor reads, decisions, and repairs below are
+// fictional route fixtures. No request reaches a CRM or the real Monitor API.
 const base = new URL(process.env.CONTROL_TOWER_BROWSER_BASE_URL || 'http://127.0.0.1:3087');
 assert(['localhost', '127.0.0.1', '[::1]'].includes(base.hostname), 'Use a disposable local server.');
 const executablePath = process.env.CHROMIUM_PATH || (process.platform === 'darwin'
   ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' : '/usr/bin/chromium');
 assert(existsSync(executablePath), 'Set CHROMIUM_PATH to Chrome or Chromium.');
-const output = resolve('.runtime/watchdog-ui');
+const output = resolve('.runtime/monitor-ui');
 mkdirSync(output, { recursive: true });
 const at = '2026-10-10T14:00:00.000Z';
 const accountId = '900000001';
-const fixtureKey = 'fictional-watchdog-ui-key';
+const fixtureKey = 'fictional-monitor-ui-key';
 const common = { provider: 'hubspot', objectType: 'Contact', accountId, severity: 'warning', status: 'open', assignee: 'RevOps', note: '', firstSeenAt: at, lastSeenAt: at, resolvedAt: null, occurrences: 1, repairError: null };
 let overview = {
   provider: 'hubspot', objectTypes: ['Contact'], accountId,
@@ -57,7 +57,7 @@ await context.route('**/*', async (route) => {
   if (url.origin !== base.origin) { externalRequests++; errors.push(`Blocked external request: ${url.origin}`); return route.abort(); }
   if (!url.pathname.startsWith('/api/')) return route.continue();
   try {
-    assert.equal(url.pathname, '/api/control-tower/watchdog', 'Only the mocked Watchdog endpoint is allowed.');
+    assert.equal(url.pathname, '/api/control-tower/monitor', 'Only the mocked Monitor endpoint is allowed.');
     assert.equal(request.headers()['x-control-tower-key'], fixtureKey, 'The operator key must be sent in a header.');
     assert(!url.search.includes(fixtureKey), 'Keys must not appear in URLs.');
     const provider = url.searchParams.get('provider') ?? 'hubspot';
@@ -65,7 +65,7 @@ await context.route('**/*', async (route) => {
     if (request.method() === 'GET') {
       getCount++;
       if (mode === 'unconfigured') return route.fulfill({ status: 503, json: { error: 'Fictional HubSpot setup is incomplete.' } });
-      return route.fulfill({ json: { watchdog: activeOverview } });
+      return route.fulfill({ json: { monitor: activeOverview } });
     }
     assert.equal(request.method(), 'POST');
     const body = request.postDataJSON(); requests.push(body);
@@ -92,12 +92,12 @@ await context.route('**/*', async (route) => {
       assert(activeOverview.config.enabled, 'Manual checks require saved enabled monitoring.');
       activeOverview.runs.unshift({ ...activeOverview.runs[0], id: 'fixture-manual-run', opened: 0, fixed: 0 });
     }
-    return route.fulfill({ json: { watchdog: activeOverview } });
+    return route.fulfill({ json: { monitor: activeOverview } });
   } catch (error) { errors.push(error.message); return route.fulfill({ status: 400, json: { error: error.message } }); }
 });
 
 function endpointResponse(method) {
-  return page.waitForResponse((response) => new URL(response.url()).pathname === '/api/control-tower/watchdog' && response.request().method() === method);
+  return page.waitForResponse((response) => new URL(response.url()).pathname === '/api/control-tower/monitor' && response.request().method() === method);
 }
 
 async function downloadText(buttonName) {
@@ -113,7 +113,7 @@ async function checkWidth(label) {
 }
 
 try {
-  await page.goto(new URL('/app/watchdog', base).href);
+  await page.goto(new URL('/app/monitor', base).href);
   await page.getByRole('heading', { name: 'Monitoring paused', exact: true }).waitFor({ timeout: 45_000 });
   assert.equal(requests.length, 0, 'Opening the page must not mutate monitoring or contacts.');
   assert(await page.getByRole('button', { name: 'Run check now', exact: true }).isDisabled());
@@ -224,7 +224,7 @@ try {
   await checkWidth('Salesforce mobile');
   await page.screenshot({ path: resolve(output, 'salesforce-mobile.png'), fullPage: true });
   const writesBeforeSalesforceReload = requests.length;
-  await page.goto(new URL('/app/watchdog?provider=salesforce&finding=salesforce-contact', base).href);
+  await page.goto(new URL('/app/monitor?provider=salesforce&finding=salesforce-contact', base).href);
   await page.getByRole('heading', { name: 'Salesforce Contact', exact: true }).waitFor();
   assert.equal(await page.getByRole('combobox', { name: 'CRM to monitor', exact: true }).inputValue(), 'salesforce');
   assert.equal(requests.length, writesBeforeSalesforceReload, 'A Salesforce inbox deep link must not trigger a write.');

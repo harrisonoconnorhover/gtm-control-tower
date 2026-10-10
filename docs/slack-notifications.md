@@ -22,10 +22,10 @@ and CRM changes still happen in Control Tower; there are no Slack approval butto
 3. Restart the app. Open `/app/work`, enter the operator key, and use **Send test
    message** on the Slack card. It shows whether that specific test was accepted,
    queued, rejected or unconfirmed. Looking at the page does not send a message.
-4. Run `npm run watchdog` to keep delivery going while the browser is closed. The
-   existing runner drains notifications after its CRM checks and wakes at least
+4. Run `npm run monitor` to keep delivery going while the browser is closed. The
+   CRM Monitor runner drains notifications after its CRM checks and wakes at least
    every 30 seconds between checks. A slow CRM check can delay that cycle.
-   For Docker use the `watchdog` Compose profile; it sends only the operator key
+   For Docker use the `monitor` Compose profile; it sends only the operator key
    to the app, and the Slack secret remains on the app service.
 
 To pause Slack, remove `CONTROL_TOWER_SLACK_WEBHOOK_URL` and restart the app.
@@ -37,7 +37,7 @@ changes the destination for subsequent delivery, including pending notices.
 
 | Trigger | Notification |
 | --- | --- |
-| New or reopened Watchdog finding | Rule and object type, with a finding link |
+| New or reopened CRM Monitor finding | Rule and object type, with a finding link |
 | Issue no longer present | Resolution notice |
 | Whitespace repair finished | Verified repair or uncertain outcome requiring review |
 | Monitoring page fails | Failure notice; identical failures stay quiet until a successful page |
@@ -79,7 +79,7 @@ truth. This feature currently requires the self-hosted SQLite runtime.
 ## Verification
 
 ```bash
-npx vitest run tests/slack-notifications.test.ts tests/slack-notification-route.test.ts tests/operation-notifications.test.ts tests/watchdog-runner.test.ts
+npx vitest run tests/slack-notifications.test.ts tests/slack-notification-route.test.ts tests/operation-notifications.test.ts tests/monitor-runner.test.ts
 CONTROL_TOWER_BROWSER_BASE_URL=http://127.0.0.1:3197 npm run test:slack-ui
 ```
 

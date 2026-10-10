@@ -2,14 +2,14 @@ import { afterAll, describe, expect, it, vi } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { configureWatchdog, tickWatchdog, triageWatchdogFinding } from '@/lib/watchdog';
+import { configureMonitor, tickMonitor, triageMonitorFinding } from '@/lib/monitor';
 import { receiveImport, assignImportWork } from '@/lib/operations-inbox';
 import { notifyImportExecution } from '@/lib/operation-notifications';
 import { saveSafeImportReview } from '@/lib/safe-import-store';
 import { defaultCrmUpdatePolicy } from '@/lib/crm-workflow';
 import { safeImportCounts, type SafeImportExecution, type SafeImportReview } from '@/lib/safe-import';
-import type { WatchdogContact } from '@/lib/watchdog-types';
-import type { WatchdogSource } from '@/lib/watchdog-hubspot';
+import type { MonitorContact } from '@/lib/monitor-types';
+import type { MonitorSource } from '@/lib/monitor-hubspot';
 import { getDatabase } from '@/db';
 
 const directory = mkdtempSync(join(tmpdir(), 'gtm-operation-notifications-'));
@@ -23,19 +23,19 @@ async function events(prefix: string) { return (await (await getDatabase()).prep
 
 describe('saved operations produce Slack events', () => {
   it('notifies new findings and verified repairs once, with no alerts for unchanged scans', async () => {
-    const contact: WatchdogContact = { id: '101', updatedAt: '2026-10-01T12:00:00.000Z', properties: { email: 'private@example.com', firstname: 'Private Person', company: ' Private company ', jobtitle: 'Engineer', lifecyclestage: 'lead', hubspot_owner_id: '42' } };
-    const source: WatchdogSource = {
+    const contact: MonitorContact = { id: '101', updatedAt: '2026-10-01T12:00:00.000Z', properties: { email: 'private@example.com', firstname: 'Private Person', company: ' Private company ', jobtitle: 'Engineer', lifecyclestage: 'lead', hubspot_owner_id: '42' } };
+    const source: MonitorSource = {
       list: async () => ({ contacts: [structuredClone(contact)], after: null }),
       changes: async () => ({ contacts: [structuredClone(contact)], after: null, total: 1 }),
       read: async () => structuredClone(contact),
       patch: async (_id, properties) => { Object.assign(contact.properties, properties); contact.updatedAt = '2026-10-01T12:01:00.000Z'; },
     };
-    await configureWatchdog('notif-hs', { enabled: true, automaticRepairs: true, intervalSeconds: 300, defaultAssignee: 'Private teammate' });
-    const result = await tickWatchdog('notif-hs', 'unused', { force: true, source });
+    await configureMonitor('notif-hs', { enabled: true, automaticRepairs: true, intervalSeconds: 300, defaultAssignee: 'Private teammate' });
+    const result = await tickMonitor('notif-hs', 'unused', { force: true, source });
     expect(result.totals.fixed).toBe(1);
     expect(await events('finding:hubspot:notif-hs:')).toHaveLength(1);
     expect(await events('repair:notif-hs:')).toHaveLength(1);
-    await tickWatchdog('notif-hs', 'unused', { force: true, source });
+    await tickMonitor('notif-hs', 'unused', { force: true, source });
     expect(await events('finding:hubspot:notif-hs:')).toHaveLength(1); expect(await events('repair:notif-hs:')).toHaveLength(1);
     const serialized = JSON.stringify(await events(''));
     expect(serialized).not.toMatch(/private@example|Private Person|Private company|Private teammate/);
@@ -43,25 +43,25 @@ describe('saved operations produce Slack events', () => {
   });
 
   it('sends Salesforce human-triage and uncertain repair notices without duplicate form-save alerts', async () => {
-    const contact: WatchdogContact = { provider: 'salesforce', objectType: 'Contact', id: '003000000000001', updatedAt: '2026-10-01T12:00:00.000Z', properties: { email: 'private@example.com', jobtitle: ' Engineer ' } };
-    const source: WatchdogSource = { provider: 'salesforce', accountId: '00D000000000001', list: async () => ({ contacts: [contact], after: null }), changes: async () => ({ contacts: [contact], after: null }), read: async () => contact, patch: async () => { throw new Error('lost response'); } };
+    const contact: MonitorContact = { provider: 'salesforce', objectType: 'Contact', id: '003000000000001', updatedAt: '2026-10-01T12:00:00.000Z', properties: { email: 'private@example.com', jobtitle: ' Engineer ' } };
+    const source: MonitorSource = { provider: 'salesforce', accountId: '00D000000000001', list: async () => ({ contacts: [contact], after: null }), changes: async () => ({ contacts: [contact], after: null }), read: async () => contact, patch: async () => { throw new Error('lost response'); } };
     const scope = 'salesforce_00D000000000001';
-    await configureWatchdog(scope, { enabled: true, automaticRepairs: true, intervalSeconds: 300, defaultAssignee: 'RevOps' });
-    const report = await tickWatchdog(scope, '', { force: true, source });
-    expect(await events(`repair:${scope}:`)).toEqual([expect.objectContaining({ provider: 'salesforce', title: 'Watchdog repair needs verification' })]);
-    await tickWatchdog(scope, '', { force: true, source }); expect(await events(`repair:${scope}:`)).toHaveLength(1);
+    await configureMonitor(scope, { enabled: true, automaticRepairs: true, intervalSeconds: 300, defaultAssignee: 'RevOps' });
+    const report = await tickMonitor(scope, '', { force: true, source });
+    expect(await events(`repair:${scope}:`)).toEqual([expect.objectContaining({ provider: 'salesforce', title: 'CRM Monitor repair needs verification' })]);
+    await tickMonitor(scope, '', { force: true, source }); expect(await events(`repair:${scope}:`)).toHaveLength(1);
     const input = { id: report.findings[0].id, status: 'in_progress' as const, assignee: 'Harrison', note: 'Private customer notes' };
-    await Promise.all([triageWatchdogFinding(scope, input), triageWatchdogFinding(scope, input)]);
+    await Promise.all([triageMonitorFinding(scope, input), triageMonitorFinding(scope, input)]);
     expect(await events('assignment:')).toHaveLength(1);
   });
 
   it('deduplicates an outage until a successful scan, then alerts on a new outage', async () => {
-    const source: WatchdogSource = { list: async () => { throw new Error('API unavailable'); }, changes: async () => { throw new Error('API unavailable'); }, read: async () => { throw new Error('unused'); }, patch: async () => undefined };
-    await configureWatchdog('failure-hs', { enabled: true, automaticRepairs: false, intervalSeconds: 300, defaultAssignee: 'RevOps' });
-    await tickWatchdog('failure-hs', '', { source, force: true }); await tickWatchdog('failure-hs', '', { source, force: true });
+    const source: MonitorSource = { list: async () => { throw new Error('API unavailable'); }, changes: async () => { throw new Error('API unavailable'); }, read: async () => { throw new Error('unused'); }, patch: async () => undefined };
+    await configureMonitor('failure-hs', { enabled: true, automaticRepairs: false, intervalSeconds: 300, defaultAssignee: 'RevOps' });
+    await tickMonitor('failure-hs', '', { source, force: true }); await tickMonitor('failure-hs', '', { source, force: true });
     expect(await events('scan:failure-hs:')).toHaveLength(1);
     source.list = async () => ({ contacts: [], after: null });
-    await tickWatchdog('failure-hs', '', { source, force: true }); await tickWatchdog('failure-hs', '', { source, force: true });
+    await tickMonitor('failure-hs', '', { source, force: true }); await tickMonitor('failure-hs', '', { source, force: true });
     expect(await events('scan:failure-hs:')).toHaveLength(2);
   });
 

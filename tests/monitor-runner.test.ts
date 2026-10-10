@@ -3,7 +3,7 @@ import { createServer } from 'node:http';
 import { once } from 'node:events';
 import { describe, expect, it } from 'vitest';
 
-describe('unattended watchdog runner', () => {
+describe('unattended monitor runner', () => {
   it.each(['completed', 'failed'] as const)('reports a %s tick and sends only operator credentials', async (status) => {
     const requests: { key?: string; body: string; authorization?: string }[] = [];
     let notificationRequests = 0;
@@ -20,7 +20,7 @@ describe('unattended watchdog runner', () => {
       }
       requests.push({ key: request.headers['x-control-tower-key'] as string, body, authorization: request.headers.authorization });
       response.writeHead(200, { 'content-type': 'application/json' });
-      response.end(JSON.stringify({ watchdog: {
+      response.end(JSON.stringify({ monitor: {
         config: { enabled: true }, nextCheckAt: new Date(Date.now() + 300_000).toISOString(),
         runs: [{ id: 'fixture-run', status, scanned: 5, opened: 1, fixed: 0, error: status === 'failed' ? 'Fixture provider unavailable' : null }],
         totals: { open: 1, inProgress: 0, unknown: 0 },
@@ -31,8 +31,8 @@ describe('unattended watchdog runner', () => {
     try {
       const address = server.address();
       if (!address || typeof address === 'string') throw new Error('Missing fixture server port.');
-      const child = spawn(process.execPath, ['scripts/watchdog.mjs', '--once'], {
-        cwd: process.cwd(), env: { ...process.env, CONTROL_TOWER_WATCHDOG_URL: `http://127.0.0.1:${address.port}`,
+      const child = spawn(process.execPath, ['scripts/monitor.mjs', '--once'], {
+        cwd: process.cwd(), env: { ...process.env, CONTROL_TOWER_MONITOR_URL: `http://127.0.0.1:${address.port}`,
           CONTROL_TOWER_SYNC_KEY: 'fixture-operator-key', HUBSPOT_ACCESS_TOKEN: 'must-not-be-sent' },
       });
       let output = '';
@@ -67,7 +67,7 @@ it('continues Salesforce when HubSpot fails and never forwards CRM credentials',
     const provider = JSON.parse(body).provider ?? 'hubspot';
     requests.push({ provider, key: request.headers['x-control-tower-key'] as string | undefined, authorization: request.headers.authorization });
     response.writeHead(provider === 'hubspot' ? 503 : 200, { 'content-type': 'application/json' });
-    response.end(JSON.stringify(provider === 'hubspot' ? { error: 'Fixture HubSpot unavailable' } : { watchdog: {
+    response.end(JSON.stringify(provider === 'hubspot' ? { error: 'Fixture HubSpot unavailable' } : { monitor: {
       config: { enabled: true }, nextCheckAt: null, runs: [{ id: 'salesforce-fixture-run', status: 'completed', scanned: 2, opened: 1, fixed: 0 }],
       totals: { open: 1, inProgress: 0, unknown: 0 },
     } }));
@@ -77,8 +77,8 @@ it('continues Salesforce when HubSpot fails and never forwards CRM credentials',
   try {
     const address = server.address();
     if (!address || typeof address === 'string') throw new Error('Missing fixture port.');
-    const child = spawn(process.execPath, ['scripts/watchdog.mjs', '--once'], { cwd: process.cwd(), env: { ...process.env,
-      CONTROL_TOWER_WATCHDOG_URL: `http://127.0.0.1:${address.port}`, CONTROL_TOWER_WATCHDOG_PROVIDERS: 'hubspot,salesforce',
+    const child = spawn(process.execPath, ['scripts/monitor.mjs', '--once'], { cwd: process.cwd(), env: { ...process.env,
+      CONTROL_TOWER_MONITOR_URL: `http://127.0.0.1:${address.port}`, CONTROL_TOWER_MONITOR_PROVIDERS: 'hubspot,salesforce',
       CONTROL_TOWER_SYNC_KEY: 'fixture-operator-key', SALESFORCE_ACCESS_TOKEN: 'sf-must-not-be-sent', HUBSPOT_ACCESS_TOKEN: 'hs-must-not-be-sent',
     } });
     let output = '';

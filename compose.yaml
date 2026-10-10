@@ -24,17 +24,17 @@ services:
     volumes:
       - ${CONTROL_TOWER_SQLITE_DIR:-./.runtime/sqlite}:/app/.runtime/sqlite
 
-  watchdog:
-    profiles: [watchdog]
+  monitor:
+    profiles: [monitor]
     build:
       context: .
-    command: [node, /app/scripts/watchdog.mjs]
+    command: [node, /app/scripts/monitor.mjs]
     restart: unless-stopped
     depends_on: [app]
     environment:
-      CONTROL_TOWER_WATCHDOG_URL: http://app:3000
+      CONTROL_TOWER_MONITOR_URL: http://app:3000
       CONTROL_TOWER_SYNC_KEY: ${CONTROL_TOWER_SYNC_KEY:-}
-      CONTROL_TOWER_WATCHDOG_PROVIDERS: ${CONTROL_TOWER_WATCHDOG_PROVIDERS:-hubspot}
+      CONTROL_TOWER_MONITOR_PROVIDERS: ${CONTROL_TOWER_MONITOR_PROVIDERS:-hubspot}
 
   n8n:
     image: n8nio/n8n@sha256:14c4285bc3034dc5b51034aea393711d27053588e460722bce523453a626f23c

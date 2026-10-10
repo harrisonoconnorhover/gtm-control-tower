@@ -7,18 +7,18 @@ import { build } from 'esbuild';
 // Read-only qualification. All monitoring settings and findings use a disposable
 // local database; no saved operator policy or native record is changed.
 if (!process.argv.includes('--run')) {
-  console.log('Read-only HubSpot check: node --env-file=.env.local scripts/check-watchdog-native.mjs --run');
+  console.log('Read-only HubSpot check: node --env-file=.env.local scripts/check-monitor-native.mjs --run');
   process.exit(0);
 }
 assert(process.env.HUBSPOT_ACCESS_TOKEN, 'Configure HUBSPOT_ACCESS_TOKEN first.');
 const { mkdirSync } = await import('node:fs');
 const root = resolve(import.meta.dirname, '..');
 mkdirSync(resolve(root, 'outputs'), { recursive: true });
-const output = mkdtempSync(resolve(root, 'outputs/watchdog-native-'));
-process.env.CONTROL_TOWER_SQLITE_PATH = resolve(output, 'watchdog.db');
+const output = mkdtempSync(resolve(root, 'outputs/monitor-native-'));
+process.env.CONTROL_TOWER_SQLITE_PATH = resolve(output, 'monitor.db');
 const bundle = resolve(output, 'probe.mjs');
 await build({ stdin: {
-  contents: `export * from './lib/watchdog'; export * from './lib/crm-account'; export * from './lib/watchdog-hubspot';`,
+  contents: `export * from './lib/monitor'; export * from './lib/crm-account'; export * from './lib/monitor-hubspot';`,
   resolveDir: root, loader: 'ts',
 }, bundle: true, platform: 'node', format: 'esm', packages: 'external', outfile: bundle });
 
@@ -28,24 +28,24 @@ globalThis.fetch = async (input, init) => {
   const url = new URL(String(input));
   assert.equal(url.origin, 'https://api.hubapi.com');
   const method = (init?.method || 'GET').toUpperCase();
-  assert(method === 'GET' || (method === 'POST' && url.pathname.endsWith('/contacts/search')), 'Native watchdog qualification forbids CRM mutations.');
+  assert(method === 'GET' || (method === 'POST' && url.pathname.endsWith('/contacts/search')), 'Native monitor qualification forbids CRM mutations.');
   if (method === 'GET') calls.get++; else calls.search++;
   return originalFetch(input, init);
 };
 
 try {
-  const watchdogModule = await import(pathToFileURL(bundle).href);
-  const { accountId } = await watchdogModule.readHubSpotAccountIdentity(process.env.HUBSPOT_ACCESS_TOKEN);
-  let view = await watchdogModule.getWatchdogOverview(accountId);
-  await watchdogModule.configureWatchdog(accountId, { ...view.config, enabled: true, automaticRepairs: false });
+  const monitorModule = await import(pathToFileURL(bundle).href);
+  const { accountId } = await monitorModule.readHubSpotAccountIdentity(process.env.HUBSPOT_ACCESS_TOKEN);
+  let view = await monitorModule.getMonitorOverview(accountId);
+  await monitorModule.configureMonitor(accountId, { ...view.config, enabled: true, automaticRepairs: false });
   let pages = 0;
   do {
-    view = await watchdogModule.tickWatchdog(accountId, process.env.HUBSPOT_ACCESS_TOKEN, { force: true });
+    view = await monitorModule.tickMonitor(accountId, process.env.HUBSPOT_ACCESS_TOKEN, { force: true });
     pages++;
     assert.notEqual(view.runs[0]?.status, 'failed', view.runs[0]?.error || 'Native baseline failed.');
   } while (view.phase === 'baseline' && pages < 40);
   // Exercise the actual contact Search API even when the baseline is partial.
-  const source = watchdogModule.hubspotWatchdogSource(process.env.HUBSPOT_ACCESS_TOKEN);
+  const source = monitorModule.hubspotMonitorSource(process.env.HUBSPOT_ACCESS_TOKEN);
   const changes = await source.changes(new Date(Date.now() - 86_400_000).toISOString(), new Date(Date.now() - 60_000).toISOString(), null);
   assert(Array.isArray(changes.contacts));
   const summary = {

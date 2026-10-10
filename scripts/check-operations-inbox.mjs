@@ -16,9 +16,9 @@ page.on('pageerror', (error) => errors.push(error.message));
 const common = { updatedAt: new Date().toISOString(), assignee: 'RevOps', note: '', accountId: 'fictional-account' };
 const inbox = { items: [
   { ...common, id: 'import-1', kind: 'import', provider: 'salesforce', title: 'Conference attendees.csv', source: 'CSV upload', status: 'ready', summary: '37 proposed · 4 held · 0 unmatched · 0 unresolved', counts: { 'proposed-update': 37, held: 4, unmatched: 0, unresolved: 0, skipped: 1, unchanged: 3 }, href: '/app/lab?workspaceId=fixture&reviewId=saved-review' },
-  { ...common, id: 'hs-finding', kind: 'finding', provider: 'hubspot', title: 'This contact has no email.', source: 'Contact · Fictional person', status: 'needs_review', summary: 'Confirm the address with the owner.', href: '/app/watchdog?provider=hubspot&finding=missing-email' },
-  { ...common, id: 'sf-finding', kind: 'finding', provider: 'salesforce', title: 'Contact title repair needs verification.', source: 'Contact · Fictional contact', status: 'reconcile', summary: 'The response was interrupted. Check the outcome.', href: '/app/watchdog?provider=salesforce&finding=uncertain' },
-  { ...common, id: 'done', kind: 'finding', provider: 'hubspot', title: 'Whitespace repaired and verified.', source: 'Contact · Fictional record', status: 'completed', summary: 'Readback matched.', href: '/app/watchdog?provider=hubspot&finding=done' },
+  { ...common, id: 'hs-finding', kind: 'finding', provider: 'hubspot', title: 'This contact has no email.', source: 'Contact · Fictional person', status: 'needs_review', summary: 'Confirm the address with the owner.', href: '/app/monitor?provider=hubspot&finding=missing-email' },
+  { ...common, id: 'sf-finding', kind: 'finding', provider: 'salesforce', title: 'Contact title repair needs verification.', source: 'Contact · Fictional contact', status: 'reconcile', summary: 'The response was interrupted. Check the outcome.', href: '/app/monitor?provider=salesforce&finding=uncertain' },
+  { ...common, id: 'done', kind: 'finding', provider: 'hubspot', title: 'Whitespace repaired and verified.', source: 'Contact · Fictional record', status: 'completed', summary: 'Readback matched.', href: '/app/monitor?provider=hubspot&finding=done' },
 ], connections: [{ provider: 'hubspot', accountId: 'fictional-hs' }, { provider: 'salesforce', accountId: 'fictional-sf' }], coverage: 'Fictional UI fixture; no live CRM records or changes.' };
 await context.route('**/*', async (route) => {
   const request = route.request(); const url = new URL(request.url());
