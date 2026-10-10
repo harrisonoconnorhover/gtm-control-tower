@@ -10,14 +10,27 @@ then add only the connectors you use.
 ## 1. CSV + SQLite dashboard
 
 Requirements: **Docker installed and running**. On macOS or Windows, open Docker
-Desktop and wait until its engine is ready. An error mentioning `docker.sock`
-or an unavailable Docker API usually means the engine has not started.
+Desktop and wait until its engine is ready.
 
 ```bash
 git clone https://github.com/harrisonoconnorhover/gtm-control-tower.git
 cd gtm-control-tower
 docker compose up --build app
 ```
+
+<details>
+<summary>Docker reports an unavailable engine or a docker.sock error</summary>
+
+Open Docker Desktop and wait for its engine. If it is already running, check
+`docker context show`, `docker info`, and `docker compose version`; a selected
+context, `DOCKER_HOST`, or socket permission can also prevent a connection.
+On Linux, check your Docker service and socket permissions.
+
+With Node installed, `npm run doctor` checks Docker, engine reachability, and
+Compose with a three-second limit per check. These are warnings; Docker is not
+needed for the [browser cleaner](https://gtm-control-tower.pages.dev/#clean-csv).
+
+</details>
 
 Open `http://localhost:3000/app/lab`, choose **CSV file**, and load the bundled
 64-row practice batch or use the included
