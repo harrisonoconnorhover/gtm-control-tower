@@ -2,37 +2,37 @@
 
 ## Finished
 
-- Loaded 2,900 seed-42 records into designated HubSpot and Salesforce development accounts. Both native monitor runs passed: 29 automatic trims, 420 controlled changes and saved human triage.
-- Qualified both native Safe Import paths: 12 approved phone fills per provider, protected fields and three unchanged controls preserved, bounded continuation and repeated approval verified.
-- Fixed HubSpot's completed mixed association batches and aggregate coverage recovery. Healthy pages cannot hide unresolved read gaps. Improved triage accessibility and mobile incident navigation.
-- Added resumable native setup and a private offline report. Corrected future HubSpot domain mapping after identifying setup-induced company creation; retained current evidence unchanged.
-- Preserved main's browser CSV workspace: upload, formatting review, manual edits, exclusions, Undo and downloads with source columns and values retained in tab memory.
+- Confirmed the live browser workspace opens company files without email or name columns. The reported blocker belongs to the older uploader; both `#audit` and `#clean-csv` now open the generic workspace.
+- Added review findings for empty rows and exact repeated whole rows, independent of email mapping. Findings recalculate after edits, exclusions, restoration, and Undo.
+- Clarified optional email checks and acceptance of contacts, companies, deals, and other tables. Every included source row and column remains downloadable.
+- Preserved the prior native HubSpot/Salesforce work and evidence. See [native qualification](docs/native-incident-qualification.md) for its 2,900-record test and limits.
 
 ## Try It
 
-1. Open `outputs/native-incidents/native-20261010/report.html` for private results. Test records remain available for inspection.
-2. Use `/app/incidents` for investigation, assignment and evidence download. Follow [native qualification](docs/native-incident-qualification.md) before rerunning temporal tests.
-3. Use `/#clean-csv` and [the browser guide](docs/browser-csv.md) for file cleanup. Download before closing or refreshing; edits are not persisted.
+1. Open [the live CSV workspace](https://gtm-control-tower.pages.dev/#clean-csv). Refresh if the older email/name blocker is still visible.
+2. For the new review findings locally, run `npm run build:public`, then `npx vite preview --config vite.public.config.ts --host 127.0.0.1 --port 4175`. Open `http://127.0.0.1:4175/#audit` and choose a file with no email or name columns.
+3. Repeated and empty rows appear in **Needs review**. Edit, exclude, restore, or download; no row is removed automatically.
 
 ## Checks
 
-- Combined branch: all 774 tests, TypeScript, lint, app/public builds and diff checks passed. Public CSV desktop/mobile checks passed, including exact downloads, Undo, invalid-file recovery and no processing requests or browser storage. Its preview server is stopped.
-- Native report: 158/158 checks passed, including 64 HubSpot and 38 Salesforce monitor checks, 22 browser checks per provider and 12 import assertions. Native readback, desktop/mobile presentation and report filtering passed.
-- The failed first HubSpot baseline remains retained. Exactly 237 documented test fields were restored and verified before the successful rerun; phone fills were preserved. All qualification monitors and local native-test servers are stopped.
+- All 24 browser CSV unit tests passed. TypeScript, focused lint, script syntax, public production build, and diff checks passed.
+- Desktop and 390px mobile browser checks passed against the production build, including company/deal files without identity columns, exact download contents, findings, edits, exclusions, restoration, Undo, and the legacy URL.
+- Browser tests confirmed no page errors, API/external calls, processing requests, or persistent browser storage. Desktop/mobile screenshots were visually inspected.
+- A fictional company CSV opened successfully on the current live site. The added generic findings have not been publicly deployed.
 
 ## Decisions
 
-- Native polling and local browser proof do not qualify hosted execution, webhook/CDC delivery, Slack or live models. These services were not invoked.
-- HubSpot's existing automation created 351 companies because of setup domain mismatches. These separately reported manual findings remain outside repair authority and were not deleted. Unknown writes require reconciliation.
-- Browser cleanup preserves email local parts and custom fields; unresolved rows remain included unless excluded. Formula-like CSV values receive disclosed apostrophe protection.
+- Exact full-row equality is a review hint; it does not establish a duplicate person or authorize merging.
+- Empty-row and repeated-row checks work without identity; email checks only run when a column is selected.
+- Preserve the separate connected contact importer's identity requirement and source-data privacy.
 
 ## Remaining
 
-- Configure and qualify native subscriptions, Slack and optional models in the intended deployment.
-- Hosted Safe Import, individual team identities, arbitrary workflow repair, autonomous merging and automatic restoration remain outside this qualification.
+- Publish the additional review findings to the static site when authorized. The current live version already accepts files without identity columns.
+- Hosted CRM execution, native event delivery, and Slack qualification remain outside this change.
 
 ## Review First
 
-1. [Native findings and limits](docs/native-incident-qualification.md), plus `lib/monitor-hubspot.ts` and `lib/crm-incidents.ts`.
-2. [Browser workspace](components/browser-csv-workspace.tsx), [CSV helpers](lib/browser-csv.ts) and [guide](docs/browser-csv.md).
-3. Private native report and retained failed-run/restoration evidence under `outputs/native-incidents/native-20261010`.
+1. `lib/browser-csv.ts` and `tests/browser-csv.test.ts`.
+2. `components/browser-csv-workspace.tsx` and [CSV guide](docs/browser-csv.md).
+3. `outputs/browser-csv/companies-no-identity.png` and `deals-no-identity.png`.

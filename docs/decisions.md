@@ -897,3 +897,12 @@ lifecycle, and merge policies. Preserve email local parts and only normalize
 their domains; missing, malformed, and repeated addresses remain review warnings.
 Include unresolved rows in downloads, with counted apostrophe protection for
 formula-like cells. Keep saved reviews and CRM operations in the self-hosted app.
+
+## October 10, 2026 — Review files without contact identity columns
+
+The browser workspace accepts tables without email, name, or record ID columns.
+Use source row positions for local editing and show empty or exactly repeated
+whole rows independently of email mapping. Never infer a duplicate person or
+remove a row from these hints. Email checks remain optional and their absence is
+shown as limited coverage, not a blocked file. Retain the separate contact
+importer's identity contract for connected CRM workflows.

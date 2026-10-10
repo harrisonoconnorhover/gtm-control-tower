@@ -26,7 +26,7 @@ const expectedDownload = 'Record ID,Name,Email,Custom note,Phone,Expression\r\n'
 const browser = await chromium.launch({ executablePath, headless: true });
 const outcomes = [];
 
-async function workspace(viewport) {
+async function workspace(viewport, anchor = '#clean-csv') {
   const context = await browser.newContext({ viewport, acceptDownloads: true, serviceWorkers: 'block' });
   const page = await context.newPage();
   page.setDefaultTimeout(15_000);
@@ -50,7 +50,7 @@ async function workspace(viewport) {
   async function open(reload = false) {
     processing = false;
     if (reload) await page.reload();
-    else await page.goto(new URL('/#clean-csv', base).href);
+    else await page.goto(new URL(`/${anchor}`, base).href);
     await page.getByRole('heading', { name: 'A cleaner CSV. Zero setup.', exact: true }).waitFor();
     await page.waitForLoadState('networkidle');
     assert.deepEqual(await storage(), { local: {}, session: {} }, 'Opening the cleaner must not create browser storage.');
@@ -88,6 +88,29 @@ async function reviewCount(page, count) {
 async function noPageOverflow(page) {
   const sizes = await page.evaluate(() => ({ viewport: document.documentElement.clientWidth, content: document.documentElement.scrollWidth }));
   assert(sizes.content <= sizes.viewport + 1, `The page overflows horizontally: ${JSON.stringify(sizes)}`);
+}
+
+async function withoutIdentity(page, kind, source, lastColumn) {
+  await upload(page, `${kind}.csv`, source);
+  assert.equal(await page.getByRole('alert').count(), 0);
+  await page.getByLabel('Review coverage').filter({ hasText: 'No email column is selected' }).waitFor();
+  await reviewCount(page, 3);
+  assert.equal((await downloadCsv(page, `${kind}-unchanged.csv`)).text, source.replaceAll('\n', '\r\n'), 'No identity column or review finding may prevent a complete download.');
+  await page.getByRole('button', { name: 'Review row 2', exact: true }).click();
+  await page.getByLabel(`${lastColumn} — row 2`, { exact: true }).fill('Distinct row');
+  await page.getByRole('button', { name: 'Save row', exact: true }).click();
+  await reviewCount(page, 1);
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  await reviewCount(page, 3);
+  await page.getByRole('button', { name: 'Exclude row', exact: true }).click();
+  await reviewCount(page, 1);
+  await page.getByRole('button', { name: 'Restore row', exact: true }).click();
+  await reviewCount(page, 3);
+  await page.getByRole('button', { name: 'Close', exact: true }).click();
+  await page.getByRole('button', { name: 'Needs review', exact: true }).click();
+  assert.equal(await page.getByRole('button', { name: /^Review row / }).count(), 3);
+  await noPageOverflow(page);
+  await page.screenshot({ path: resolve(output, `${kind}-no-identity.png`), fullPage: true });
 }
 
 try {
@@ -144,6 +167,7 @@ try {
   await page.getByRole('alert').filter({ hasText: 'could not be read as UTF-8' }).waitFor();
   await upload(page, 'recovered.csv', 'SKU,Details\n00123,Still here');
   assert.equal(await page.getByRole('alert').count(), 0, 'A valid file should clear a previous parsing error.');
+  await withoutIdentity(page, 'companies', 'Company,Domain,Notes\nAcme,acme.example,Keep this\nAcme,acme.example,Keep this\n,,', 'Notes');
   await desktop.assertPrivate();
   await desktop.open(true);
   await page.getByRole('button', { name: 'Choose CSV file', exact: true }).waitFor();
@@ -152,7 +176,7 @@ try {
   await desktop.context.close();
   outcomes.push('Desktop: upload, preview, cleanup, manual correction, exclusion/restore, Undo, column mapping, exact download bytes, malformed/invalid UTF-8 file recovery and refresh reset.');
 
-  const mobile = await workspace({ width: 390, height: 844 });
+  const mobile = await workspace({ width: 390, height: 844 }, '#audit');
   await noPageOverflow(mobile.page);
   await mobile.page.screenshot({ path: resolve(output, 'mobile-start.png'), fullPage: true });
   mobile.startProcessing();
@@ -168,9 +192,11 @@ try {
   await mobile.page.getByLabel('Email — row 4', { exact: true }).waitFor();
   await noPageOverflow(mobile.page);
   await mobile.page.screenshot({ path: resolve(output, 'mobile-cleaned.png'), fullPage: true });
+  await withoutIdentity(mobile.page, 'deals', 'Deal ID,Amount,Pipeline,Details\n00123,500,New,Keep this\n00123,500,New,Keep this\n,,,', 'Details');
   await mobile.assertPrivate();
   await mobile.context.close();
   outcomes.push('Mobile 390px: sample, cleanup, actual download and row editor; page width stays within viewport.');
+  outcomes.push('No email/name: company and deal files open, empty/repeated rows appear in review, edits/exclusion/restore/Undo recalculate findings, and every source cell downloads; legacy #audit link works.');
   outcomes.push('Both sessions: no page errors, no API/external requests, no HTTP requests while processing CSV, and no local/session storage.');
   console.log(JSON.stringify({ status: 'passed', outcomes, screenshots: output }, null, 2));
 } finally {

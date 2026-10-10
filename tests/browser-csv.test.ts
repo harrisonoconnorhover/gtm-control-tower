@@ -73,6 +73,68 @@ describe('browser CSV workspace', () => {
     expect(exportBrowserCsv(cleaned).csv).toBe('SKU,Description,Description\r\n00123, Keep me ,Trim me');
   });
 
+  it.each([
+    ['company', 'Domain,Industry\nexample.com,Software\nexample.com,Software\n ,\n,'],
+    ['deal', 'Deal ID,Stage,Amount\n00123,Discovery,00042\n00123,Discovery,00042\n, ,\n,,'],
+    ['arbitrary', 'SKU,Description,Description\n00123,"Hello, José", Keep me \n00123,"Hello, José", Keep me \n, ,\n,,'],
+  ])('reviews empty and repeated %s rows without contact identity columns', (_kind, csv) => {
+    const document = parseBrowserCsv(csv);
+    const before = structuredClone(document);
+    expect(document.emailColumn).toBeNull();
+    expect(browserCsvIssues(document)).toEqual(new Map([
+      [0, ['Repeated row: all column values match; review before excluding']],
+      [1, ['Repeated row: all column values match; review before excluding']],
+      [2, ['Empty row: review before excluding']],
+      [3, ['Empty row: review before excluding']],
+    ]));
+    expect(document).toEqual(before);
+    const exported = exportBrowserCsv(document);
+    expect(exported.rowCount).toBe(4);
+    expect(exported.csv).toBe(csv.replaceAll('\n', '\r\n'));
+    expect(parseBrowserCsv(exported.csv)).toEqual(document);
+  });
+
+  it('only treats all exactly equal source values as repeated rows', () => {
+    const document = parseBrowserCsv('ID,Value\n00123, value \n00123,value\n00123,VALUE\n00042,value\n00123, value ');
+    expect([...browserCsvIssues(document).keys()]).toEqual([0, 4]);
+    expect(document.rows.map((row) => row.values)).toEqual([
+      ['00123', ' value '], ['00123', 'value'], ['00123', 'VALUE'], ['00042', 'value'], ['00123', ' value '],
+    ]);
+  });
+
+  it('keeps general row findings alongside optional email warnings', () => {
+    const document = parseBrowserCsv('Email,Note\nAda@example.com,same\nAda@example.com,same\ninvalid,broken\ninvalid,broken\n,\n , ');
+    const issues = browserCsvIssues(document);
+    for (const id of [0, 1]) expect(issues.get(id)).toEqual([
+      'Repeated row: all column values match; review before excluding',
+      'Repeated email: review these rows before removing any',
+    ]);
+    for (const id of [2, 3]) expect(issues.get(id)).toEqual([
+      'Repeated row: all column values match; review before excluding',
+      'Check email format',
+    ]);
+    for (const id of [4, 5]) expect(issues.get(id)).toEqual(['Empty row: review before excluding', 'Missing email']);
+    const unmapped = browserCsvIssues({ ...document, emailColumn: null });
+    expect(unmapped.get(0)).toEqual(['Repeated row: all column values match; review before excluding']);
+    expect(unmapped.get(4)).toEqual(['Empty row: review before excluding']);
+  });
+
+  it('recomputes general findings after edits, exclusions and restores without losing source cells', () => {
+    const document = parseBrowserCsv('ID,Amount\n00123,00042\n00123,00042\n, ');
+    const excluded = toggleBrowserRow(document, 1);
+    expect([...browserCsvIssues(excluded).keys()]).toEqual([2]);
+    expect(exportBrowserCsv(excluded).csv).toBe('ID,Amount\r\n00123,00042\r\n, ');
+    const restored = toggleBrowserRow(excluded, 1);
+    expect(browserCsvIssues(restored)).toEqual(browserCsvIssues(document));
+    expect(exportBrowserCsv(restored)).toEqual(exportBrowserCsv(document));
+    const changed = updateBrowserCell(restored, 1, 1, '00043');
+    expect([...browserCsvIssues(changed).keys()]).toEqual([2]);
+    const filled = updateBrowserCell(changed, 2, 0, '00099');
+    expect(browserCsvIssues(filled).size).toBe(0);
+    expect(filled.rows.map((row) => row.original)).toEqual(document.rows.map((row) => row.values));
+    expect(document.rows.every((row) => !row.excluded)).toBe(true);
+  });
+
   it('marks all repeated emails without merging local-part case, dots or plus aliases', () => {
     const document = parseBrowserCsv('Email\nAda+event@EXAMPLE.COM\n Ada+event@example.com \nada+event@example.com\nAda@example.com\nA.da+event@example.com\nAda+event@mañana.example\nAda+event@xn--maana-pta.example');
     expect([...browserCsvIssues(document).keys()]).toEqual([0, 1, 5, 6]);
