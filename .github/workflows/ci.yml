@@ -28,7 +28,7 @@ jobs:
       - run: npm run lint
       - run: npm run build
       - run: npm run build:public
-      - name: Check browser CSV workflows
+      - name: Check public browser workflows
         timeout-minutes: 5
         env:
           CHROMIUM_PATH: /usr/bin/google-chrome
@@ -41,4 +41,5 @@ jobs:
           npm run test:browser-csv
           npm run test:browser-csv-related
           npm run test:browser-csv-keyboard
+          npm run test:inbound-navigation
       - run: npm run smoke:fresh-install

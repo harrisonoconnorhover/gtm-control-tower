@@ -926,6 +926,10 @@ working file when switching rows, closing the editor, downloading, or applying
 another action. Keep explicit Save and Discard controls plus ten-action Undo;
 refreshing or closing the tab still requires a download to retain the work.
 
+Retain the Inbound Routing Lab after its first visit too, preserving pending
+practice corrections across internal navigation. Keep its initialization lazy so
+opening the cleaner alone does not start the lab's storage or connection check.
+
 Use the existing exact-row and normalized-email comparisons to show related
 source rows together, including records on other pages. Show differences first
 and keep every original column available. Never infer a winning record or merge

@@ -27,6 +27,7 @@
     "test:browser-csv": "node scripts/check-browser-csv.mjs",
     "test:browser-csv-related": "node scripts/check-browser-csv-related.mjs",
     "test:browser-csv-keyboard": "node scripts/check-browser-csv-keyboard.mjs",
+    "test:inbound-navigation": "node scripts/check-inbound-navigation.mjs",
     "test:csv-mapping": "node scripts/check-csv-mapping.mjs",
     "test:operator-key": "node scripts/check-operator-key.mjs",
     "setup": "node scripts/setup.mjs",
