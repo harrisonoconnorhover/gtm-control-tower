@@ -46,6 +46,15 @@ describe('browser CSV workspace', () => {
     expect(() => parseBrowserCsv(csv)).toThrow(message);
   });
 
+  it.each(['bad"quote', '"unfinished'])(
+    'identifies the source column when a wide CSV has malformed quoting: %j',
+    (malformedCell) => {
+      const headers = Array.from({ length: 100 }, (_, column) => `Field ${column + 1}`).join(',');
+      const values = Array.from({ length: 100 }, (_, column) => column === 89 ? malformedCell : 'kept').join(',');
+      expect(() => parseBrowserCsv(`${headers}\n${values}`)).toThrow('CSV row 2, column 90');
+    },
+  );
+
   it('retains explicitly empty records instead of silently deleting rows', () => {
     expect(parseBrowserCsv('name,note\n,\n,').rows.map((row) => row.values)).toEqual([['', ''], ['', '']]);
     expect(parseBrowserCsv('note\n\n').rows[0].values).toEqual(['']);

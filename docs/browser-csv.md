@@ -37,6 +37,8 @@ Opening another CSV starts a new history. Excluded rows remain available in the
 **Excluded** view and can be restored; no rows are merged or removed automatically.
 
 For wide files, **Find a column** narrows the editor by column name or number.
+When a row search matches a value in a later column, the editor identifies the
+matching fields. Choose a field to jump to its column without losing your edits.
 **Previous row** and **Next row** follow your current row filter and search, keeping
 pending edits as you move. Duplicate or unnamed columns show their source position;
 these display labels are not written into your CSV headers.

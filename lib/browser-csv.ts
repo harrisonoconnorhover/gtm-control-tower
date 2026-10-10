@@ -263,14 +263,14 @@ function parseRecords(input: string): string[][] {
       state = 'quoted';
       recordStarted = true;
     } else if (char === '"' || state === 'closed') {
-      throw new Error(`CSV row ${records.length + 1} has invalid quoting. Enclose the whole value in quotes and double any quote inside it.`);
+      throw new Error(`CSV row ${records.length + 1}, column ${row.length + 1} has invalid quoting. Enclose the whole value in quotes and double any quote inside it.`);
     } else {
       cell += char;
       state = 'unquoted';
       recordStarted = true;
     }
   }
-  if (state === 'quoted') throw new Error(`CSV row ${records.length + 1} has an unmatched quote.`);
+  if (state === 'quoted') throw new Error(`CSV row ${records.length + 1}, column ${row.length + 1} has an unmatched quote.`);
   if (recordStarted) finishRecord();
   return records;
 }

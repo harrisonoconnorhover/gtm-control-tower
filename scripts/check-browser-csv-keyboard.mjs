@@ -51,20 +51,44 @@ async function closeWithKeyboard(page, fromEditorHeading = false) {
 }
 
 async function wideColumnReview(page, width) {
-  const columnCount = width === 390 ? 100 : 50;
+  const columnCount = 100;
   const sourceHeaders = ['Record ID', 'Email', 'Name', 'Queue', ...Array.from({ length: columnCount - 5 }, (_, index) => `Custom property ${index + 5}`), 'Renewal notes'];
   sourceHeaders[10] = '2026';
+  sourceHeaders[89] = 'Handoff notes';
   const sourceRows = Array.from({ length: 6 }, (_, index) => [
     String(index + 1).padStart(5, '0'), index % 2 === 0 ? `invalid-${index + 1}` : `person${index + 1}@example.com`,
     `Person ${index + 1}`, index === 0 || index === 4 ? 'Priority' : 'Standard',
     ...Array.from({ length: columnCount - 5 }, (_, column) => `Value ${index + 1}:${column + 5}`), `Original late ${index + 1}`,
   ]);
+  sourceRows[0][89] = 'Amber-Fox-731';
   const encode = () => [sourceHeaders, ...sourceRows].map((row) => row.join(',')).join('\r\n');
   await page.getByLabel('Choose a CSV file', { exact: true }).setInputFiles({ name: `wide-${columnCount}.csv`, mimeType: 'text/csv', buffer: Buffer.from(encode()) });
   await page.getByRole('heading', { name: `wide-${columnCount}.csv`, exact: true }).waitFor();
   await activate(page, page.getByRole('button', { name: 'Needs review', exact: true }));
   await activate(page, page.getByRole('button', { name: 'Review row 1', exact: true }));
   const findColumn = page.getByRole('searchbox', { name: 'Find a column', exact: true });
+  const rowSearch = page.getByLabel('Search rows', { exact: true });
+  const matchingFields = page.getByRole('group', { name: 'Fields matching row search', exact: true });
+  await rowSearch.fill('aMbEr-FoX-731');
+  assert.equal(await matchingFields.getByRole('button').count(), 1, 'The cue should use the row search case-insensitive literal match.');
+  await activate(page, matchingFields.getByRole('button', { name: 'Show Handoff notes, column 90', exact: true }));
+  await expectFocus(page, findColumn, 'Choosing a matching field should focus the existing column search.');
+  assert.equal(await findColumn.inputValue(), 'column 90');
+  const matchedField = page.getByLabel('Handoff notes — row 1', { exact: true });
+  assert.equal(await matchedField.inputValue(), 'Amber-Fox-731');
+  await page.getByRole('complementary', { name: 'Edit row 1', exact: true }).screenshot({ path: resolve(output, `search-match-${width}.png`) });
+  await matchedField.fill('Edited Amber-Fox-731');
+  sourceRows[0][89] = 'Edited Amber-Fox-731';
+  await rowSearch.fill('Value 1:');
+  assert.equal(await matchingFields.getByRole('button').count(), sourceRows[0].filter((value) => value.toLocaleLowerCase().includes('value 1:')).length);
+  const matchList = matchingFields.locator('.overflow-y-auto');
+  const matchListSize = await matchList.evaluate((element) => ({ height: element.getBoundingClientRect().height, scrollHeight: element.scrollHeight }));
+  assert(matchListSize.height <= 113 && matchListSize.scrollHeight > matchListSize.height, 'Many matching fields should stay in a compact scrolling list.');
+  await activate(page, matchingFields.getByRole('button', { name: 'Show Custom property 5, column 5', exact: true }));
+  await findColumn.fill('90');
+  assert.equal(await matchedField.inputValue(), sourceRows[0][89], 'Following another search match must keep the pending late-column edit.');
+  await rowSearch.fill('');
+  assert.equal(await matchingFields.count(), 0, 'Clearing row search should remove its field cues.');
   await findColumn.fill('Renewal');
   const editor = () => page.getByRole('complementary', { name: /^Edit row / });
   assert.equal(await editor().locator('textarea').count(), 1);
@@ -118,7 +142,7 @@ async function wideColumnReview(page, width) {
   assert.equal(bytes.subarray(3).toString('utf8'), encode(), 'Column filtering and row navigation must not edit any other source cell.');
   await download.saveAs(resolve(output, `wide-${columnCount}-${width}.csv`));
   assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'Wide source columns must not overflow the page.');
-  checks.push(`${width}px: ${columnCount}-column file searched by label/position; late-column edits retained through row stepping; filter/search boundaries and off-view editing respected; clear/no-results states and exact downloaded cells verified.`);
+  checks.push(`${width}px: ${columnCount}-column file searched by label/position; row-search cues reveal the unique column90 match and keep multiple matches compact; cue navigation and row stepping retain drafts; filter/search boundaries, off-view editing and exact downloaded cells verified.`);
 }
 
 async function bulkColumnFormatting(page, width) {
