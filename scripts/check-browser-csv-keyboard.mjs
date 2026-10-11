@@ -146,43 +146,82 @@ async function wideColumnReview(page, width) {
 }
 
 async function bulkColumnFormatting(page, width) {
-  const columnCount = width === 390 ? 100 : 50;
+  const columnCount = 100;
   const sourceHeaders = Array.from({ length: columnCount }, (_, index) => `Field ${index + 1}`);
   const values = sourceHeaders.map((_, index) => index === 0 ? ' Ada@EXAMPLE.COM ' : ` Value ${index + 1} `);
   await page.getByLabel('Choose a CSV file', { exact: true }).setInputFiles({ name: 'generic-wide.csv', mimeType: 'text/csv', buffer: Buffer.from([sourceHeaders, values].map((row) => row.join(',')).join('\r\n')) });
   const rules = page.getByRole('group', { name: 'Trim outer spaces in these columns', exact: true });
   const count = (included) => rules.getByText(`${included} of ${columnCount} columns included`, { exact: true }).waitFor();
+  const formattingSearch = rules.getByRole('searchbox', { name: 'Find a formatting column', exact: true });
+  const clearSearch = async () => {
+    await activate(page, rules.getByRole('button', { name: 'Clear formatting column search', exact: true }));
+    await expectFocus(page, formattingSearch, 'Clearing formatting search should return focus to its input.');
+  };
+  const checkDownload = async (expectedValues, filename) => {
+    const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Download CSV', exact: true }).first().click()]);
+    const chunks = [];
+    for await (const chunk of await download.createReadStream()) chunks.push(chunk);
+    const bytes = Buffer.concat(chunks);
+    assert.deepEqual([...bytes.subarray(0, 3)], [0xef, 0xbb, 0xbf]);
+    assert.equal(bytes.subarray(3).toString('utf8'), [sourceHeaders, expectedValues].map((row) => row.join(',')).join('\r\n'), 'Search and selection must keep every source column at its original index.');
+    await download.saveAs(resolve(output, filename));
+  };
   await count(0);
   assert(await rules.getByRole('button', { name: 'Clear all', exact: true }).isDisabled());
   await activate(page, page.getByRole('button', { name: 'Review row 1', exact: true }));
   const lastField = page.getByLabel(`Field ${columnCount} — row 1`, { exact: true });
   await lastField.fill(' Draft last ');
   values[columnCount - 1] = ' Draft last ';
-  await activate(page, rules.getByRole('button', { name: 'Select all', exact: true }));
+  await formattingSearch.fill('column 90');
+  assert.equal(await rules.getByRole('checkbox').count(), 1);
+  await rules.getByRole('checkbox', { name: 'Field 90', exact: true }).check();
+  await count(1);
+  await formattingSearch.fill('unmatched_custom_crm_property_'.repeat(5).slice(0, 120));
+  await rules.getByText(/No columns match/).waitFor();
+  await count(1);
+  const searchSize = await rules.evaluate((element) => ({ width: element.clientWidth, scrollWidth: element.scrollWidth, right: element.getBoundingClientRect().right }));
+  assert(searchSize.scrollWidth <= searchSize.width + 1 && searchSize.right <= width, 'A long unmatched property name must wrap without widening or clipping the formatting panel.');
+  await clearSearch();
+  assert(await rules.getByRole('checkbox', { name: 'Field 90', exact: true }).isChecked(), 'Hiding a column must retain its selection.');
+  const mapping = page.getByLabel('Email column', { exact: true });
+  await mapping.selectOption('0');
+  await formattingSearch.fill('column 1');
+  const emailChoice = rules.getByRole('checkbox', { name: /^Field 1\b/ });
+  assert(await emailChoice.isChecked() && await emailChoice.isDisabled(), 'A searched email column must remain included in email formatting.');
+  await count(2);
+  await formattingSearch.fill('90');
+  await rules.screenshot({ path: resolve(output, `formatting-search-${width}.png`) });
+  await activate(page, page.getByRole('button', { name: 'Apply formatting changes', exact: true }));
+  await checkDownload(values.map((value, column) => column === 0 ? 'Ada@example.com' : column === 89 ? value.trim() : value), `formatting-search-${width}.csv`);
+  for (const included of [2, 1, 0]) {
+    await activate(page, page.getByRole('button', { name: 'Undo', exact: true }));
+    await count(included);
+  }
+  assert.equal(await lastField.inputValue(), values[columnCount - 1], 'Undoing formatting choices must retain the earlier manual draft.');
+  await rules.getByText('Select all and Clear all also affect columns hidden by this search.', { exact: true }).waitFor();
+  await activate(page, rules.getByRole('button', { name: 'Select all columns', exact: true }));
   await count(columnCount);
+  await clearSearch();
   assert(await rules.getByRole('button', { name: 'Select all', exact: true }).isDisabled());
   assert.equal(await rules.locator('input:checked').count(), columnCount);
   assert.equal(await lastField.inputValue(), ' Draft last ', 'Bulk selection must retain the draft without applying formatting.');
-  await activate(page, rules.getByRole('button', { name: 'Clear all', exact: true }));
+  await formattingSearch.fill('90');
+  await activate(page, rules.getByRole('button', { name: 'Clear all columns', exact: true }));
   await count(0);
   await activate(page, page.getByRole('button', { name: 'Undo', exact: true }));
   await count(columnCount);
+  await clearSearch();
   assert.equal(await page.getByLabel('Field 1 — row 1', { exact: true }).inputValue(), values[0]);
   assert.equal(await lastField.inputValue(), values[columnCount - 1]);
   await rules.screenshot({ path: resolve(output, `bulk-formatting-${width}.png`) });
   await activate(page, page.getByRole('button', { name: 'Apply formatting changes', exact: true }));
-  const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Download CSV', exact: true }).first().click()]);
-  const chunks = [];
-  for await (const chunk of await download.createReadStream()) chunks.push(chunk);
-  const bytes = Buffer.concat(chunks);
-  assert.deepEqual([...bytes.subarray(0, 3)], [0xef, 0xbb, 0xbf]);
-  assert.equal(bytes.subarray(3).toString('utf8'), [sourceHeaders, values.map((value) => value.trim())].map((row) => row.join(',')).join('\r\n'), 'Every source column, including the last draft, should trim only after Apply.');
-  await download.saveAs(resolve(output, `bulk-formatting-${width}.csv`));
+  await checkDownload(values.map((value) => value.trim()), `bulk-formatting-${width}.csv`);
 
-  const mapping = page.getByLabel('Email column', { exact: true });
   await mapping.selectOption('0');
-  await activate(page, rules.getByRole('button', { name: 'Clear other columns', exact: true }));
+  await formattingSearch.fill('90');
+  await activate(page, rules.getByRole('button', { name: 'Clear all other columns', exact: true }));
   await count(1);
+  await clearSearch();
   assert(await rules.getByRole('checkbox', { name: /^Field 1\b/ }).isDisabled());
   await mapping.selectOption('');
   await count(1); // The selected email's earlier checked trim preference survives.
@@ -194,8 +233,13 @@ async function bulkColumnFormatting(page, width) {
   assert(await rules.getByRole('button', { name: 'Clear other columns', exact: true }).isDisabled());
   await mapping.selectOption('');
   await count(0); // The selected email's earlier unchecked trim preference survives too.
+  await formattingSearch.fill('90');
+  await page.getByLabel('Choose a CSV file', { exact: true }).setInputFiles({ name: 'replacement-wide.csv', mimeType: 'text/csv', buffer: Buffer.from([sourceHeaders, values].map((row) => row.join(',')).join('\r\n')) });
+  await page.getByRole('heading', { name: 'replacement-wide.csv', exact: true }).waitFor();
+  assert.equal(await formattingSearch.inputValue(), '', 'A replacement file should reset the formatting search.');
+  assert.equal(await rules.getByRole('checkbox').count(), columnCount);
   assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'Bulk formatting controls must fit the viewport.');
-  checks.push(`${width}px: ${columnCount} generic columns bulk-selected/cleared with keyboard, count and disabled states verified; drafts and Undo preserved; Apply/download trims every column; mapped-email clear keeps its prior checked or unchecked preference.`);
+  checks.push(`${width}px: formatting search selects column90 without changing hidden choices; clear/miss, mapped email, global bulk labels, draft/Undo, replacement reset and exact selective/all-column downloads verified.`);
 }
 
 try {

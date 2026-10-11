@@ -940,3 +940,11 @@ Add a UTF-8 BOM only at the browser download boundary so ordinary Excel opening
 recognizes accented text. Keep model exports unchanged and verify reimport strips
 the marker from the first header. This does not change spreadsheet type inference;
 IDs and phone numbers may still need import-as-text settings.
+
+## October 10, 2026 — Find formatting columns in wide files
+
+Let users find formatting columns by source name or position while retaining
+hidden selections. Keep bulk selection and clearing scoped to all source columns,
+including hidden ones, with the selected email column still included in email
+formatting. Column selections update the formatting preview; applying the changes
+remains an explicit action.

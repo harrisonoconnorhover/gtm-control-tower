@@ -14,8 +14,15 @@ const inputClass = 'w-full rounded-lg border border-white/20 bg-[#091914] px-3 p
 type RowFilter = 'all' | 'review' | 'changed' | 'excluded';
 const changed = (row: BrowserCsvRow) => row.values.some((value, column) => value !== row.original[column]);
 
+function matchesColumnSearch(label: string, column: number, query: string): boolean {
+  const term = query.trim().toLocaleLowerCase();
+  const position = /^(?:column\s*)?(\d+)$/u.exec(term);
+  return !term || label.toLocaleLowerCase().includes(term) || Boolean(position && column + 1 === Number(position[1]));
+}
+
 export function BrowserCsvWorkspace({ active = true }: { active?: boolean }) {
   const fileInput = useRef<HTMLInputElement>(null);
+  const formattingSearchInput = useRef<HTMLInputElement>(null);
   const readVersion = useRef(0);
   const rowButtons = useRef(new Map<number, HTMLButtonElement>());
   const rowsHeading = useRef<HTMLHeadingElement>(null);
@@ -26,6 +33,7 @@ export function BrowserCsvWorkspace({ active = true }: { active?: boolean }) {
   const [draftValues, setDraftValues] = useState<string[] | null>(null);
   const [filter, setFilter] = useState<RowFilter>('all');
   const [search, setSearch] = useState('');
+  const [formattingSearch, setFormattingSearch] = useState('');
   const [page, setPage] = useState(0);
   const [proposalPage, setProposalPage] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -49,6 +57,9 @@ export function BrowserCsvWorkspace({ active = true }: { active?: boolean }) {
   const proposals = useMemo(() => document ? cleanupProposals(document) : [], [document]);
   const optionalTrimCount = document ? document.trimColumns.filter((column) => column !== document.emailColumn).length : 0;
   const includedTrimCount = optionalTrimCount + (document && document.emailColumn !== null ? 1 : 0);
+  const formattingColumns = document?.headers.map((_, column) => ({ column, label: browserCsvColumnLabel(document.headers, column) }))
+    .filter(({ column, label }) => matchesColumnSearch(label, column, formattingSearch)) ?? [];
+  const formattingSearchActive = Boolean(formattingSearch.trim());
   const currentProposalPage = Math.min(proposalPage, Math.max(0, Math.ceil(proposals.length / 5) - 1));
   const download = useMemo(() => document ? exportBrowserCsv(document) : null, [document]);
   const rows = useMemo(() => document?.rows.filter((row) => {
@@ -152,6 +163,7 @@ export function BrowserCsvWorkspace({ active = true }: { active?: boolean }) {
     setDraftValues(null);
     setFilter('all');
     setSearch('');
+    setFormattingSearch('');
     setPage(0);
     setProposalPage(0);
     setRulesOpen(next.trimColumns.length === 0 && next.emailColumn === null);
@@ -303,16 +315,22 @@ export function BrowserCsvWorkspace({ active = true }: { active?: boolean }) {
                     </select>
                     <span className="mt-2 block leading-5 text-[#a2b8ab]">Checks formatting and repeated addresses, not whether a mailbox exists. Applying email formatting trims outer spaces and standardizes domains; the part before @ stays unchanged.</span>
                   </label>
-                  <fieldset>
+                  <fieldset className="min-w-0">
                     <legend className="text-xs text-[#c4d7cb]">Trim outer spaces in these columns</legend>
                     <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
                       <p className="text-xs text-[#a2b8ab]">{includedTrimCount} of {document.headers.length} columns included</p>
                       <div className="flex flex-wrap gap-2">
-                        <button className={secondary} disabled={includedTrimCount === document.headers.length} onClick={() => selectTrimColumns(true)}>Select all</button>
-                        <button className={secondary} disabled={optionalTrimCount === 0} onClick={() => selectTrimColumns(false)}>{document.emailColumn === null ? 'Clear all' : 'Clear other columns'}</button>
+                        <button className={secondary} disabled={includedTrimCount === document.headers.length} onClick={() => selectTrimColumns(true)}>{formattingSearchActive ? 'Select all columns' : 'Select all'}</button>
+                        <button className={secondary} disabled={optionalTrimCount === 0} onClick={() => selectTrimColumns(false)}>{document.emailColumn === null ? (formattingSearchActive ? 'Clear all columns' : 'Clear all') : (formattingSearchActive ? 'Clear all other columns' : 'Clear other columns')}</button>
                       </div>
                     </div>
-                    <div className="mt-3 grid max-h-48 gap-3 overflow-auto sm:grid-cols-2">{document.headers.map((_, column) => <label key={column} className="flex items-start gap-2 text-xs text-[#a2b8ab]"><input type="checkbox" className="mt-0.5 accent-[#d8ff67]" checked={column === document.emailColumn || document.trimColumns.includes(column)} disabled={column === document.emailColumn} onChange={(event) => { const current = withRowEdits(document); commit({ ...current, trimColumns: event.target.checked ? [...current.trimColumns, column] : current.trimColumns.filter((item) => item !== column) }, 'Formatting preview updated.', current); }} /><span className="break-all">{browserCsvColumnLabel(document.headers, column)}{column === document.emailColumn && <span className="mt-1 block text-[11px]">Included in email formatting</span>}</span></label>)}</div>
+                    {document.headers.length > 8 && <div className="mt-3">
+                      <div className="flex items-end gap-2"><label className="min-w-0 flex-1 text-xs text-[#c4d7cb]">Find a formatting column<input ref={formattingSearchInput} type="search" aria-label="Find a formatting column" placeholder="Name or column number" value={formattingSearch} onChange={(event) => setFormattingSearch(event.target.value)} className={`${inputClass} mt-1.5`} /></label><button type="button" aria-label="Clear formatting column search" className={secondary} disabled={!formattingSearch} onClick={() => { setFormattingSearch(''); formattingSearchInput.current?.focus(); }}>Clear</button></div>
+                      <p aria-live="polite" className="mt-2 text-xs text-[#a2b8ab]">{formattingColumns.length} of {document.headers.length} columns shown</p>
+                      {formattingSearchActive && <p className="mt-1 text-xs leading-5 text-[#a2b8ab]">Select all and Clear all also affect columns hidden by this search.</p>}
+                    </div>}
+                    <div className="mt-3 grid max-h-48 gap-3 overflow-auto sm:grid-cols-2">{formattingColumns.map(({ column, label }) => <label key={column} className="flex items-start gap-2 text-xs text-[#a2b8ab]"><input type="checkbox" className="mt-0.5 accent-[#d8ff67]" checked={column === document.emailColumn || document.trimColumns.includes(column)} disabled={column === document.emailColumn} onChange={(event) => { const current = withRowEdits(document); commit({ ...current, trimColumns: event.target.checked ? [...current.trimColumns, column] : current.trimColumns.filter((item) => item !== column) }, 'Formatting preview updated.', current); }} /><span className="break-all">{label}{column === document.emailColumn && <span className="mt-1 block text-[11px]">Included in email formatting</span>}</span></label>)}</div>
+                    {!formattingColumns.length && <p className="mt-3 break-words text-xs text-[#a2b8ab]">No columns match “{formattingSearch}”. Try a column name or number.</p>}
                   </fieldset>
                 </div>
               </details>
@@ -356,11 +374,7 @@ function RowEditor({ row, draft, onDraftChange, headers, rowSearch, issues, onSa
   const columnSearchInput = useRef<HTMLInputElement>(null);
   const columns = useMemo(() => headers.map((_, index) => ({ index, label: browserCsvColumnLabel(headers, index) })), [headers]);
   const matchingColumns = rowSearch ? columns.filter(({ index }) => row.values[index].toLocaleLowerCase().includes(rowSearch.toLocaleLowerCase())) : [];
-  const searchTerm = columnSearch.trim().toLocaleLowerCase();
-  const positionMatch = /^(?:column\s*)?(\d+)$/u.exec(searchTerm);
-  const visibleColumns = columns.filter(({ index, label }) => !searchTerm
-    || label.toLocaleLowerCase().includes(searchTerm)
-    || (positionMatch && index + 1 === Number(positionMatch[1])));
+  const visibleColumns = columns.filter(({ index, label }) => matchesColumnSearch(label, index, columnSearch));
   const dirty = draft.some((value, column) => value !== row.values[column]);
   const heading = useRef<HTMLHeadingElement>(null);
   useEffect(() => { heading.current?.focus({ preventScroll: true }); heading.current?.scrollIntoView({ block: window.matchMedia('(max-width: 1279px)').matches ? 'start' : 'nearest' }); }, [row.id]);

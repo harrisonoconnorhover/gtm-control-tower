@@ -52,10 +52,13 @@ trims surrounding whitespace and normalizes the domain to lowercase ASCII using
 IDNA for internationalized domains. It preserves the email's local-part case,
 plus tags, and dots. Review the before/after values before applying changes.
 
-For wide files, **Select all** includes every column in whitespace cleanup.
+For wide files, **Find a formatting column** filters the choices by name or column
+number without changing hidden selections. **Select all** includes every source
+column in whitespace cleanup.
 **Clear all** clears those choices; with an email column selected, **Clear other
-columns** keeps its required email formatting. These choices update the preview;
-values change only after **Apply formatting changes**.
+columns** keeps its required email formatting. Both bulk controls also affect
+columns hidden by the search. These choices update the preview; values change
+only after **Apply formatting changes**.
 
 Email warnings invite review; they do not establish that two rows are the same
 person. The cleaner never merges or removes rows automatically and does not guess
