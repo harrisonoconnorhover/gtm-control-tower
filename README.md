@@ -161,12 +161,20 @@ source.
 ## Clean a CSV in your browser
 
 Open **[Clean a CSV](https://gtm-control-tower.pages.dev/#clean-csv)**. No install,
-account, or CRM connection is required. Choose a CSV up to 10 MB and 10,000 data
-rows, select the email and whitespace-cleanup columns, then preview changes
-before applying them. No email or name column is required; formatting choices
-open automatically when no email or cleanup columns are recognized. Review
-empty or repeated rows and compare related rows before deciding whether to
-exclude one. You can edit cells, restore excluded rows, and download when ready.
+account, or CRM connection is required.
+
+1. **Open a file.** Choose your CSV (up to 10 MB and 10,000 data rows), or click
+   **Try sample CSV** to start with six fictional contacts.
+2. **Review and clean.** Preview the suggested formatting, then apply the changes
+   you want. Open a row to edit its cells or compare related rows before excluding
+   anything. Search formatting columns by name or number when working with a wide file.
+3. **Download your CSV.** Every original column and every included row is retained.
+   Review warnings do not block the download.
+
+No email or name column is required. Formatting choices open automatically when
+no email or cleanup columns are recognized.
+
+[![Browser CSV workspace with a file chooser and sample file option](docs/images/browser-csv.jpg)](https://gtm-control-tower.pages.dev/#clean-csv)
 
 Pending row edits stay when you download, switch rows, or close the editor.
 **Discard edits** cancels the current draft; **Undo** first cancels that draft,
