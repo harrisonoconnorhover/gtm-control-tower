@@ -2,38 +2,39 @@
 
 ## Finished
 
-- Kept browser CSV files and pending edits through row changes, downloads, editor closing, and navigation within the public site.
-- Added related-row comparisons across pages, with custom columns, differences-first review, and explicit exclusion/Undo.
-- Made mobile Review actions visible without swiping. Restored keyboard focus after closing an editor and moved pagination to the start of the next page.
-- Distinguished repeated and unnamed source columns without changing exported headers; retained empty final rows in single-column exports.
-- Opened formatting choices automatically for generic files with no recognized cleanup columns.
+- Published the browser CSV workflow and refinements at [Clean a CSV](https://gtm-control-tower.pages.dev/#clean-csv), with no installation or account required.
+- Made wide files practical: search editing and formatting columns, find row-search matches, select formatting columns in bulk, and read long or ambiguous headers on mobile.
+- Added related-row comparisons across pages, including custom fields and differing/all-field views; exclusion stays explicit and comparison choices survive editing.
+- Preserved pending CSV edits and Inbound Lab corrections through site navigation. Undo separates manual corrections from subsequent formatting, column choices, or exclusion; keyboard focus and mobile actions stay reachable.
+- Clarified downloads and malformed-file errors, improved UTF-8/empty-row roundtrips, added browser checks to CI, accelerated the existing secret scan, and replaced the old Docker-first quick start with three browser steps and a screenshot.
 
 ## Try It
 
-1. Run `npm run preview:public -- --port 4175` and open `http://127.0.0.1:4175/#clean-csv`.
-2. Load the sample, apply formatting, and review row 1 to compare its related row. Edit a cell, switch rows, and download without a separate Save click.
-3. Visit the overview and return: the file stays open. Download before refreshing or closing the tab.
+1. Open [Clean a CSV](https://gtm-control-tower.pages.dev/#clean-csv), load the sample or your UTF-8 CSV, preview formatting, and apply the changes you want.
+2. Review a row, compare related records, or search formatting columns by name or number. Download includes pending edits and unresolved review rows unless explicitly excluded.
+3. Download before refreshing, closing the tab, replacing the file, or leaving the site. Navigation within this site preserves the file in tab memory.
 
 ## Checks
 
-- All 801 tests passed. TypeScript, full ESLint, operator production build, and public production build passed.
-- Production-browser upload/edit/download, related-row comparison, and keyboard checks passed at 1440px and 390px. No CSV-processing HTTP requests or source-data storage occurred.
-- A 10,000-row, 100-column file opened, applied 30,000 formatting changes, and downloaded every source column and included row correctly.
-- Downloaded UTF-8 bytes include an Excel-compatible BOM; accented names and first headers survive reopening. Diff checks passed.
+- [Full CI passed for `306597c`](https://github.com/harrisonoconnorhover/gtm-control-tower/actions/runs/38097955744): 812 tests, TypeScript, ESLint, both production builds, audit gate, browser workflows, and isolated fresh-install smoke test.
+- Production commit `306597c` is live. Hosted desktop/mobile keyboard, wide-file formatting, long-header layout, exact downloads, and Inbound Lab navigation checks passed on `index-CEK78sG0.js`.
+- A 10,000-row × 100-column probe applied 1,000,000 formatting changes and verified every downloaded cell. Both documented CSV examples retained their source structure and business fields.
+- WebKit 26.5 core-flow, related-row, and Option+Tab picker checks passed on earlier snapshots. Diff checks and screenshot inspection passed.
 
 ## Decisions
 
-- Retain the file in tab memory across site views; keep browser storage and server uploads out of CSV processing.
-- Save pending row edits during ordinary actions; explicit Discard and bounded Undo remain available.
-- Compare related source rows without choosing a winner, merging, or removing rows automatically.
+- Keep CSV processing in tab memory, without source-data uploads or browser storage.
+- Require explicit formatting and exclusion; never automatically merge records or invent business policies.
+- Preserve manual work through ordinary actions, with Discard and bounded Undo available.
 
 ## Remaining
 
-- These refinements are verified locally; public deployment is pending.
-- Refreshing, closing the tab, or leaving the site still loses the session unless the user downloads it.
+- Downloads are the saved copy; persistent sessions and direct CRM operations belong to the separate self-hosted workspace.
+- Actual Safari and iOS devices have not been tested.
+- Four existing moderate development-tool advisories remain; the high-severity audit gate passes.
 
 ## Review First
 
 1. `components/browser-csv-workspace.tsx` and `components/browser-csv-related-rows.tsx`.
-2. `lib/browser-csv.ts` and browser regression scripts.
-3. `docs/browser-csv.md` and `outputs/browser-csv-related/` screenshots.
+2. `lib/browser-csv.ts` and the public browser regression scripts.
+3. `docs/browser-csv.md`, `.github/workflows/ci.yml`, and screenshots under `outputs/browser-refinement/hosted-latest/`.
