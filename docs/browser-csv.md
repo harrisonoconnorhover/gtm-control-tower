@@ -27,8 +27,8 @@ and other tables open with every original column and row available.
 ## Editing and review
 
 Your edits stay when you switch rows, close the row editor, download, or apply
-another action such as formatting or exclusion. **Save row** updates the review
-notes and related-row comparison immediately. **Discard edits** returns the open
+another action such as formatting or exclusion. **Save row** updates the formatting
+preview, search results, review notes, and related-row comparison immediately. **Discard edits** returns the open
 row to its last saved values.
 
 **Undo** first discards any unsaved edits in the open row. After that, it can undo

@@ -95,7 +95,7 @@ try {
     await comparison().getByRole('button', { name: 'Show all 8 columns', exact: true }).click();
     await page.getByLabel('Company — row 1', { exact: true }).fill('West updated');
     await comparison().waitFor({ state: 'hidden' });
-    await page.getByText('Save row to refresh review notes and related-row comparisons.', { exact: true }).waitFor();
+    await page.getByText('Save row to refresh the formatting preview, search results, review notes, and related-row comparisons.', { exact: true }).waitFor();
     await page.getByRole('button', { name: 'Save row', exact: true }).click();
     await comparison().waitFor();
     assert.equal(await comparison().getByRole('combobox').inputValue(), '63', 'Saving must preserve the selected nonfirst peer.');
