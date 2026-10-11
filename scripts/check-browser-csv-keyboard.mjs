@@ -242,6 +242,42 @@ async function bulkColumnFormatting(page, width) {
   checks.push(`${width}px: formatting search selects column90 without changing hidden choices; clear/miss, mapped email, global bulk labels, draft/Undo, replacement reset and exact selective/all-column downloads verified.`);
 }
 
+async function longHeaderLayout(page, width) {
+  const longHeader = 'Customer_success_handoff_context_for_previous_owner_and_renewal_support_internal_notes_'.repeat(2).slice(0, 120);
+  const sourceHeaders = [longHeader, 'Name', 'Email', ...Array.from({ length: 7 }, (_, index) => `Custom ${index + 4}`)];
+  const values = [' Needs follow-up ', 'Ada', 'Ada@EXAMPLE.COM', ...Array.from({ length: 7 }, (_, index) => `Value ${index + 4}`)];
+  await page.getByLabel('Choose a CSV file', { exact: true }).setInputFiles({ name: 'long-header.csv', mimeType: 'text/csv', buffer: Buffer.from([sourceHeaders, values].map((row) => row.join(',')).join('\r\n')) });
+  await page.getByRole('heading', { name: 'long-header.csv', exact: true }).waitFor();
+  await page.getByText('Choose columns & formatting rules', { exact: true }).click();
+  const fits = async (locator, description) => {
+    const box = await locator.boundingBox();
+    assert(box && box.x >= 0 && box.x + box.width <= width + 1, `${description} must fit the viewport with the full source header.`);
+  };
+  await fits(page.getByLabel('Email column', { exact: true }), 'Email selector');
+  await page.getByRole('group', { name: 'Trim outer spaces in these columns', exact: true }).getByRole('checkbox', { name: longHeader, exact: true }).check();
+  await fits(page.getByText(`Row 1 · ${longHeader}`, { exact: true }), 'Formatting preview label');
+  await page.getByRole('region', { name: 'Suggested cleanup', exact: true }).screenshot({ path: resolve(output, `long-header-cleanup-${width}.png`) });
+  await activate(page, page.getByRole('button', { name: 'Review row 1', exact: true }));
+  const editor = page.getByRole('complementary', { name: 'Edit row 1', exact: true });
+  await fits(editor, 'Row editor');
+  await fits(editor.getByText(longHeader, { exact: true }), 'Row editor label');
+  await fits(page.getByLabel(`${longHeader} — row 1`, { exact: true }), 'Row editor field');
+  assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), 'A long source header must not widen the page.');
+  await editor.screenshot({ path: resolve(output, `long-header-editor-${width}.png`) });
+  await page.getByRole('searchbox', { name: 'Find a column', exact: true }).fill('unmatched_custom_crm_property_'.repeat(5).slice(0, 120));
+  assert(await editor.getByText(/No columns match/).evaluate((element) => element.scrollWidth <= element.clientWidth + 1), 'A long unmatched column query must wrap within the editor.');
+  assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
+  await editor.screenshot({ path: resolve(output, `long-header-no-match-${width}.png`) });
+  await activate(page, page.getByRole('button', { name: 'Apply formatting changes', exact: true }));
+  const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Download CSV', exact: true }).first().click()]);
+  const chunks = [];
+  for await (const chunk of await download.createReadStream()) chunks.push(chunk);
+  const bytes = Buffer.concat(chunks);
+  assert.deepEqual([...bytes.subarray(0, 3)], [0xef, 0xbb, 0xbf]);
+  assert.equal(bytes.subarray(3).toString('utf8'), [sourceHeaders, values.map((value, column) => column === 0 ? value.trim() : column === 2 ? 'Ada@example.com' : value)].map((row) => row.join(',')).join('\r\n'), 'Wrapping labels must not shorten or rename the exported header.');
+  checks.push(`${width}px: 120-character source header fits email mapping, formatting preview and row editor; full header and intended cell changes preserved in actual download.`);
+}
+
 try {
   for (const width of [1440, 390]) {
     const context = await browser.newContext({ viewport: { width, height: 950 } });
@@ -297,6 +333,7 @@ try {
     checks.push(`${width}px: Enter opens a row; Tab/Enter closes to its action; Next/Previous focus and scroll to Your rows; closing a corrected filtered row uses the heading fallback; duplicate and blank/header label collisions match comparison.`);
     await wideColumnReview(page, width);
     await bulkColumnFormatting(page, width);
+    await longHeaderLayout(page, width);
     await context.close();
   }
   console.log(JSON.stringify({ status: 'passed', checks, screenshots: output }, null, 2));
