@@ -94,6 +94,8 @@ export async function claimSafeImportChunk(review: SafeImportReview, now: Date):
   if (!header) throw new Error('A saved approval is required before continuation.');
   const current = await hydrateExecution(db, header.payload_json);
   if (current.lease && Date.parse(current.lease.expiresAt) > now.getTime()) return { claimed: false, execution: current };
+  if (current.nextAttemptAt && Date.parse(current.nextAttemptAt) > now.getTime()
+    && (Date.parse(review.expiresAt) > now.getTime() || current.unsentHoldReason)) return { claimed: false, execution: current };
   const lease = { token: crypto.randomUUID(), expiresAt: new Date(now.getTime() + 300_000).toISOString() };
   const json = JSON.stringify({ ...current, records: [], lease, progressToken: crypto.randomUUID() });
   const claimed = await db.prepare(`UPDATE safe_import_executions SET payload_json = ? WHERE id = ? AND payload_json = ? RETURNING id`)
@@ -112,11 +114,28 @@ export async function releaseSafeImportChunk(execution: SafeImportExecution): Pr
 export async function getNextSafeImportJob(now = new Date()): Promise<SafeImportReview | null> {
   await ensureSafeImportSchema();
   const db = await getDatabase();
-  const row = await db.prepare(`SELECT workspace_id, review_id FROM safe_import_executions
-    WHERE json_extract(payload_json, '$.status') = 'running'
-    AND (json_extract(payload_json, '$.lease.expiresAt') IS NULL OR json_extract(payload_json, '$.lease.expiresAt') <= ?)
-    ORDER BY updated_at, id LIMIT 1`).bind(now.toISOString()).first<{ workspace_id: string; review_id: string }>();
+  const row = await db.prepare(`SELECT e.workspace_id, e.review_id FROM safe_import_executions e
+    JOIN safe_import_reviews r ON r.id = e.review_id
+    WHERE json_extract(e.payload_json, '$.status') = 'running'
+    AND (json_extract(e.payload_json, '$.lease.expiresAt') IS NULL OR json_extract(e.payload_json, '$.lease.expiresAt') <= ?)
+    AND (json_extract(e.payload_json, '$.nextAttemptAt') IS NULL OR json_extract(e.payload_json, '$.nextAttemptAt') <= ? OR (r.expires_at <= ? AND json_extract(e.payload_json, '$.unsentHoldReason') IS NULL))
+    ORDER BY e.updated_at, e.id LIMIT 1`).bind(now.toISOString(), now.toISOString(), now.toISOString()).first<{ workspace_id: string; review_id: string }>();
   return row ? getSafeImportReview(row.workspace_id, row.review_id) : null;
+}
+
+/** The runner sleeps until work is eligible instead of polling a cooled-down queue every second. */
+export async function getNextSafeImportAttemptAt(now = new Date()): Promise<string | null> {
+  await ensureSafeImportSchema();
+  const db = await getDatabase();
+  const row = await db.prepare(`SELECT MIN(MAX(
+      COALESCE(json_extract(e.payload_json, '$.lease.expiresAt'), ?),
+      CASE WHEN json_extract(e.payload_json, '$.unsentHoldReason') IS NULL
+        THEN MIN(COALESCE(json_extract(e.payload_json, '$.nextAttemptAt'), ?), r.expires_at)
+        ELSE COALESCE(json_extract(e.payload_json, '$.nextAttemptAt'), ?) END, ?
+    )) AS next_attempt_at FROM safe_import_executions e JOIN safe_import_reviews r ON r.id = e.review_id
+    WHERE json_extract(e.payload_json, '$.status') = 'running'`)
+    .bind(now.toISOString(), now.toISOString(), now.toISOString(), now.toISOString()).first<{ next_attempt_at: string | null }>();
+  return row?.next_attempt_at ?? null;
 }
 
 /** The unique review constraint decides the sole winner, before any CRM request. */
@@ -149,8 +168,9 @@ export async function updateSafeImportExecution(execution: SafeImportExecution, 
   const baseline = previous ?? current;
   if (!baseline || baseline.id !== execution.id || baseline.executionKey !== execution.executionKey
     || baseline.approvedAt !== execution.approvedAt || baseline.createdAt !== execution.createdAt
+    || (baseline.unsentHoldReason !== undefined && baseline.unsentHoldReason !== execution.unsentHoldReason)
     || JSON.stringify(baseline.account) !== JSON.stringify(execution.account)) {
-    throw new Error('A saved execution cannot change its approval or account.');
+    throw new Error('A saved execution cannot change its approval, account, or permanent hold.');
   }
   if (!header || !current || JSON.stringify(current) !== JSON.stringify(baseline)
     || execution.records.length !== baseline.records.length
@@ -166,6 +186,9 @@ export async function updateSafeImportExecution(execution: SafeImportExecution, 
     .bind(headerJson, execution.updatedAt, execution.workspaceId, execution.reviewId, execution.id, header.payload_json)];
   execution.records.forEach((record, index) => {
     if (JSON.stringify(record) === JSON.stringify(baseline.records[index])) return;
+    // A header-level hold covers untouched seeds and rejected-but-unsent rows without thousands of writes.
+    if (execution.unsentHoldReason && baseline.records[index].status === 'pending'
+      && JSON.stringify(record) === JSON.stringify({ ...baseline.records[index], status: 'held', error: execution.unsentHoldReason })) return;
     statements.push(db.prepare(`INSERT INTO safe_import_execution_records (execution_id, contact_id, payload_json)
       SELECT ?, ?, ? WHERE EXISTS (SELECT 1 FROM safe_import_executions WHERE id = ? AND payload_json = ?)
       ON CONFLICT(execution_id, contact_id) DO UPDATE SET payload_json = excluded.payload_json`)
@@ -213,7 +236,9 @@ async function hydrateExecution(db: DatabaseAdapter, json: string): Promise<Safe
     const progress = byId.get(record.contactId);
     if (progress && (progress.contactId !== record.contactId || progress.nativeId !== record.nativeId
       || progress.objectType !== record.objectType)) throw new Error('Saved execution progress has a different approved target.');
-    return progress ?? record;
+    const current = progress ?? record;
+    return execution.unsentHoldReason && current.status === 'pending'
+      ? { ...current, status: 'held', error: execution.unsentHoldReason } : current;
   });
   return execution;
 }

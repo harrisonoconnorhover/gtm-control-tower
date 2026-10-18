@@ -76,6 +76,7 @@ await context.route('**/*', async (route) => {
     connectors: ['csv', 'hubspot', 'salesforce'].map((id) => ({ id, label: id, configured: true, directions: ['source', 'destination'], phases: [],
       mode: 'direct', features: ['safe-writeback', 'account-scan'] })) } });
   if (endpoint === 'state') return route.fulfill({ status: 503, json: { error: 'Warehouse excluded from Safe Import UI regression.' } });
+  if (endpoint === 'website-checks' && request.method() === 'GET') return route.fulfill({ json: { checks: [] } });
   if (endpoint === 'duplicate-scan' && request.method() === 'GET') return route.fulfill({ json: { scan: provider === 'salesforce' ? scan : null } });
   if (endpoint === 'import-matches' && provider === 'salesforce') {
     const body = request.postDataJSON(), input = body.contacts[0];

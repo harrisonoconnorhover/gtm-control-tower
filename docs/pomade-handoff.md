@@ -40,7 +40,7 @@ sharing accounts, sessions, or databases with Control Tower.
 
 The public portfolio site documents this workflow. It cannot save workspaces or
 load a handoff into the operator application. Use the
-[self-hosted setup](../README.md#self-host-the-full-operator-workspace)
+[self-hosted setup](../README.md#quick-start-one-command-no-accounts-required)
 for the actual controls.
 
 ## Download a small fictional example
@@ -98,6 +98,22 @@ This is a one-way file handoff. There is no shared runtime, automatic send, ongo
 two-way sync, or automatic merge. The sample and source-status labels do not
 establish research accuracy. The earlier native import and verification evidence
 retains its own dated scope.
+
+## Separate CRM-only cohort workflow
+
+The self-hosted `/app/cohort` workflow now prepares HubSpot cohorts, exports a
+CRM evidence request to Pomade, and reviews its correlated result. See the
+[CRM-only cohort guide](crm-cohort-guide.md) for fictional and native setup steps.
+It uses selected CRM properties and linked notes, with fresh native comparison
+on return in real mode. Accepting proposals records review decisions; the new
+cohort flow performs no CRM writes or sending.
+
+Its `crm-evidence-request` and `crm-evidence-result` envelopes are separate from
+the original handoff described above. The existing handoff format, import path,
+and September native qualification remain unchanged. The new loop currently has
+fictional/mocked qualification only; it has not run a live HubSpot cohort or
+actual model extraction. The [original implementation plan](crm-cohort-playbook-plan.md)
+retains its dated design and acceptance criteria.
 
 ## Dated qualification
 

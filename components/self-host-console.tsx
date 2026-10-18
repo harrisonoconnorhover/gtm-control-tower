@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useMemo, useRef, useState } from 'react';
 import {
   csvFieldLabels,
+  csvFieldLabelsForObject,
   destinationHoldFlags,
   isDestinationReadyContact,
   previewContactsCsv,
@@ -14,18 +15,22 @@ import {
 import type { ConnectorCatalog, ConnectorId, ConnectorReceipt } from '@/lib/connector-contract';
 import type { CrmSourcePreview } from '@/lib/crm-source';
 import { tabularRowsToCsv, type GoogleSheetsPreview } from '@/lib/google-sheets';
-import type { LiveContactState } from '@/lib/live-control-tower';
+import type { ImportObject, LiveContactState } from '@/lib/live-control-tower';
 import { messyLeadDemoCsv } from '@/lib/messy-lead-demo';
 import type { MappingPreset } from '@/lib/workspace';
 import { importPomadeHandoff, MAX_POMADE_HANDOFF_BYTES, type PomadeHandoffImport } from '@/lib/pomade-handoff';
 import { PomadeSourceContext } from '@/components/pomade-source-context';
+import { customFieldKey, validateCustomFields, type CustomFieldDefinition } from '@/lib/import-fields';
+import { resolveImportTemplates, type ImportTemplate } from '@/lib/import-template';
+import type { NormalizationSettings } from '@/lib/import-normalization';
+import type { HubSpotImportBinding } from '@/lib/hubspot-import';
 
 const mappingFields = Object.keys(csvFieldLabels) as CsvFieldKey[];
 
 // Empty strings survive saved presets and override automatic suggestions on import.
-function mappingForHeaders(mapping: CsvColumnMapping, headers: string[]): CsvColumnMapping {
+function mappingForHeaders(mapping: CsvColumnMapping, headers: string[], fields = mappingFields): CsvColumnMapping {
   const sources = Object.values(mapping).filter(Boolean);
-  return Object.fromEntries(mappingFields.map((field) => {
+  return Object.fromEntries(fields.map((field) => {
     const source = mapping[field];
     return [field, source && headers.includes(source) && sources.filter((value) => value === source).length === 1 ? source : ''];
   }));
@@ -35,19 +40,26 @@ type Props = {
   catalog: ConnectorCatalog | null;
   contacts: LiveContactState[];
   sourceType: ConnectorId;
+  importObject: ImportObject;
   destinationType: ConnectorId;
   mapping: CsvColumnMapping;
   presets: MappingPreset[];
+  templates: ImportTemplate[];
+  customFields: CustomFieldDefinition[];
+  normalizationSettings: NormalizationSettings;
+  hubspotBinding?: HubSpotImportBinding;
   workspaceRevision: number | null;
   persistenceStatus: 'loading' | 'saved' | 'saving' | 'disabled' | 'error';
   lastReceipt: ConnectorReceipt | null;
   operatorKey: string;
   onOperatorKeyChange: (value: string) => void;
-  onMappedImport: (csv: string, fileName: string, mapping: CsvColumnMapping, source: ConnectorId) => Promise<void>;
+  onMappedImport: (csv: string, fileName: string, mapping: CsvColumnMapping, source: ConnectorId, importObject: ImportObject, customFields?: CustomFieldDefinition[], normalization?: NormalizationSettings, hubspotBinding?: HubSpotImportBinding) => Promise<void>;
   onPomadeImport: (handoff: PomadeHandoffImport, fileName: string) => Promise<void>;
   onSourceChange: (source: ConnectorId) => void;
   onDestinationChange: (destination: ConnectorId) => void;
-  onSavePreset: (name: string, mapping: CsvColumnMapping) => Promise<void>;
+  onSavePreset: (name: string, mapping: CsvColumnMapping, importObject: ImportObject) => Promise<void>;
+  onSaveTemplate: (name: string, mapping: CsvColumnMapping, importObject: ImportObject, customFields: CustomFieldDefinition[], normalization: NormalizationSettings, templateId?: string, hubspotBinding?: HubSpotImportBinding) => Promise<void>;
+  onDeleteTemplate: (id: string) => Promise<void>;
   onUndo: () => Promise<void>;
   onExport: () => void;
   onReceipt: (receipt: ConnectorReceipt) => Promise<void>;
@@ -57,9 +69,14 @@ export function SelfHostConsole({
   catalog,
   contacts,
   sourceType,
+  importObject,
   destinationType,
   mapping,
   presets,
+  templates,
+  customFields,
+  normalizationSettings,
+  hubspotBinding,
   workspaceRevision,
   persistenceStatus,
   lastReceipt,
@@ -70,10 +87,35 @@ export function SelfHostConsole({
   onSourceChange,
   onDestinationChange,
   onSavePreset,
+  onSaveTemplate,
+  onDeleteTemplate,
   onUndo,
   onExport,
   onReceipt,
 }: Props) {
+  const [draftImportObject, setDraftImportObject] = useState<ImportObject>(importObject);
+  const [draftCustomFields, setDraftCustomFields] = useState<CustomFieldDefinition[]>(customFields);
+  const [draftNormalization, setDraftNormalization] = useState<NormalizationSettings | null>(null);
+  const [normalizationBaseline, setNormalizationBaseline] = useState(normalizationSettings);
+  const [draftHubSpotBinding, setDraftHubSpotBinding] = useState(hubspotBinding);
+  const [hubspotBindingBaseline, setHubSpotBindingBaseline] = useState(hubspotBinding);
+  const [mappingProvenance, setMappingProvenance] = useState<Record<string, { templateId: string; templateName: string }>>({});
+  const [manuallyMappedHeaders, setManuallyMappedHeaders] = useState<string[]>([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState('');
+  const [templateName, setTemplateName] = useState('My team import');
+  const [customFieldLabel, setCustomFieldLabel] = useState('');
+  const [customFieldProperty, setCustomFieldProperty] = useState('');
+  const [customFieldObject, setCustomFieldObject] = useState<'contact' | 'company'>(importObject === 'company' ? 'company' : 'contact');
+  const fieldLabels = csvFieldLabelsForObject(draftImportObject, draftCustomFields);
+  const objectFields = Object.keys(fieldLabels) as CsvFieldKey[];
+  const companyDraft = draftImportObject === 'company';
+  const combinedDraft = draftImportObject === 'contact_company';
+  const localDraft = draftImportObject !== 'contact';
+  const previewSource = localDraft ? 'csv' : sourceType;
+  const objectLabel = draftImportObject === 'company' ? 'company' : combinedDraft ? 'contact and associated company' : 'contact';
+  const associatedFields = objectFields.filter((field) => field.startsWith('associatedCompany') || field.startsWith('custom:company:'));
+  const contactFields = objectFields.filter((field) => !associatedFields.includes(field));
+  const applicablePresets = presets.filter((preset) => (preset.importObject ?? 'contact') === draftImportObject);
   const fileInput = useRef<HTMLInputElement>(null);
   const pomadeInput = useRef<HTMLInputElement>(null);
   const [pomadePreview, setPomadePreview] = useState<PomadeHandoffImport | null>(null);
@@ -99,11 +141,21 @@ export function SelfHostConsole({
   const heldRows = activeRows.length - readyRows.length;
   const currentPhase = lastReceipt?.phase ?? (contacts.length ? 'validate' : preview ? 'preview' : null);
   const mappedColumns = preview?.headers.filter((header) => Object.values(draftMapping).includes(header)).length ?? 0;
+  const currentNormalization = normalizationBaseline === normalizationSettings ? draftNormalization ?? normalizationSettings : normalizationSettings;
+  const currentHubSpotBinding = hubspotBindingBaseline === hubspotBinding ? draftHubSpotBinding : hubspotBinding;
+  const templateObject = preview ? draftImportObject : importObject;
+  const applicableTemplates = templates.filter((template) => template.importObject === templateObject);
+  const selectedTemplate = applicableTemplates.find((template) => template.id === selectedTemplateId);
 
   function clearPreview() {
     setRawCsv(null);
     setPreview(null);
     setDraftMapping({});
+    setMappingProvenance({});
+    setManuallyMappedHeaders([]);
+    setDraftNormalization(null);
+    setDraftHubSpotBinding(undefined);
+    setSelectedTemplateId('');
     setMappingNotice('');
     setPomadePreview(null);
   }
@@ -115,6 +167,7 @@ export function SelfHostConsole({
     try {
       if (file.size > MAX_POMADE_HANDOFF_BYTES) throw new Error('Use a Pomade handoff smaller than 2 MB.');
       const imported = await importPomadeHandoff(await file.text());
+      setDraftImportObject('contact');
       setPomadePreview(imported);
       setPomadeFileName(file.name);
       setStatus('ready');
@@ -139,14 +192,28 @@ export function SelfHostConsole({
     }
   }
 
-  async function prepareCsv(csv: string, fileName: string) {
+  async function prepareCsv(csv: string, fileName: string, object: ImportObject = draftImportObject) {
     clearPreview();
     try {
-      const nextPreview = previewContactsCsv(csv);
+      const currentDefinitions = draftCustomFields.filter((field) => object === 'contact_company' || field.object === object);
+      const headers = previewContactsCsv(csv, object, currentDefinitions).headers;
+      const resolved = resolveImportTemplates(headers, object, templates, currentDefinitions);
+      const nextPreview = previewContactsCsv(csv, object, resolved.customFields);
+      setDraftImportObject(object);
+      setCustomFieldObject(object === 'company' ? 'company' : 'contact');
       setRawCsv(csv);
       setRawName(fileName);
       setPreview(nextPreview);
-      setDraftMapping(mappingForHeaders(nextPreview.suggestedMapping, nextPreview.headers));
+      setDraftCustomFields(resolved.customFields);
+      setDraftMapping(resolved.mapping);
+      setMappingProvenance(resolved.provenance);
+      setDraftNormalization(resolved.template?.normalization ?? null);
+      setDraftHubSpotBinding(resolved.template?.hubspotBinding);
+      setHubSpotBindingBaseline(hubspotBinding);
+      setNormalizationBaseline(normalizationSettings);
+      setSelectedTemplateId(resolved.template?.id ?? '');
+      if (resolved.template) setTemplateName(resolved.template.name);
+      setMappingNotice(resolved.conflicts.join(' '));
       setStatus('ready');
       setMessage(`${nextPreview.sourceRows.toLocaleString()} rows ready to map.`);
     } catch (error) {
@@ -158,12 +225,119 @@ export function SelfHostConsole({
   function mapColumn(header: string, field: CsvFieldKey | '') {
     const previousSource = field ? draftMapping[field] : '';
     setDraftMapping((current) => ({
-      ...Object.fromEntries(mappingFields.map((key) => [key, current[key] === header ? '' : current[key] ?? ''])),
+      ...Object.fromEntries(objectFields.map((key) => [key, current[key] === header ? '' : current[key] ?? ''])),
       ...(field ? { [field]: header } : {}),
     }));
+    setMappingProvenance((current) => Object.fromEntries(Object.entries(current).filter(([key]) => key !== field && draftMapping[key as CsvFieldKey] !== header)));
+    setManuallyMappedHeaders((current) => [...new Set([...current, header])]);
     setMappingNotice(field
-      ? `${header} → ${csvFieldLabels[field]}.${previousSource && previousSource !== header ? ` ${previousSource} is now unmapped.` : ''}`
-      : `${header} will not be imported into this contact workspace.`);
+      ? `${header} → ${fieldLabels[field]}.${previousSource && previousSource !== header ? ` ${previousSource} is now unmapped.` : ''}`
+      : `${header} will not be imported into this ${objectLabel} workspace.`);
+  }
+
+  function applyTemplate(template: ImportTemplate) {
+    if (!preview || !rawCsv) return;
+    const resolved = resolveImportTemplates(preview.headers, draftImportObject, [template]);
+    setDraftCustomFields(resolved.customFields);
+    setDraftMapping(resolved.mapping);
+    setMappingProvenance(resolved.provenance);
+    setManuallyMappedHeaders([]);
+    setDraftNormalization(template.normalization);
+    setDraftHubSpotBinding(template.hubspotBinding);
+    setHubSpotBindingBaseline(hubspotBinding);
+    setNormalizationBaseline(normalizationSettings);
+    setSelectedTemplateId(template.id);
+    setTemplateName(template.name);
+    setPreview(previewContactsCsv(rawCsv, draftImportObject, resolved.customFields));
+    setMappingNotice(resolved.conflicts.length ? resolved.conflicts.join(' ') : `${template.name} applied. Review the matches before loading. Its normalization rules will be available for preview after loading.`);
+  }
+
+  function autoMapHeaders() {
+    if (!preview || !rawCsv) return;
+    const resolved = resolveImportTemplates(preview.headers, draftImportObject, templates, draftCustomFields);
+    setDraftCustomFields(resolved.customFields);
+    setDraftMapping(resolved.mapping);
+    setMappingProvenance(resolved.provenance);
+    setManuallyMappedHeaders([]);
+    setDraftNormalization(resolved.template?.normalization ?? null);
+    setDraftHubSpotBinding(resolved.template?.hubspotBinding);
+    setHubSpotBindingBaseline(hubspotBinding);
+    setNormalizationBaseline(normalizationSettings);
+    setSelectedTemplateId(resolved.template?.id ?? '');
+    if (resolved.template) setTemplateName(resolved.template.name);
+    setPreview(previewContactsCsv(rawCsv, draftImportObject, resolved.customFields));
+    setMappingNotice(resolved.conflicts.length ? resolved.conflicts.join(' ') : 'Saved template and automatic header matches restored. Review them before loading.');
+  }
+
+  function addCustomField() {
+    const label = customFieldLabel.trim();
+    const key = customFieldProperty.trim();
+    const object = companyDraft ? 'company' : combinedDraft ? customFieldObject : 'contact';
+    try {
+      setDraftCustomFields(validateCustomFields([...draftCustomFields, { key, label, object }]));
+    } catch (error) {
+      setMappingNotice(error instanceof Error ? error.message : 'That custom field could not be added.');
+      return;
+    }
+    setCustomFieldLabel('');
+    setCustomFieldProperty('');
+    setMappingNotice(`${label} added to ${object === 'company' && combinedDraft ? 'Associated Company' : object === 'company' ? 'Company' : 'Contact'} fields. Choose it for the matching source column, then save a shared template to remember the mapping.`);
+  }
+
+  function removeCustomField(definition: CustomFieldDefinition) {
+    const field = customFieldKey(definition);
+    setDraftCustomFields((current) => current.filter((candidate) => candidate.object !== definition.object || candidate.key !== definition.key));
+    setDraftMapping((current) => Object.fromEntries(Object.entries(current).filter(([key]) => key !== field)));
+    setMappingProvenance((current) => Object.fromEntries(Object.entries(current).filter(([key]) => key !== field)));
+    setMappingNotice(`${definition.label} removed from this draft. Saved templates and loaded rows have not changed.`);
+  }
+
+  async function saveSharedTemplate(update = false) {
+    setStatus('working');
+    try {
+      await onSaveTemplate(templateName, preview ? draftMapping : mapping, templateObject, preview ? draftCustomFields : customFields, preview ? currentNormalization : normalizationSettings, update ? selectedTemplate?.id : undefined, preview ? currentHubSpotBinding : hubspotBinding);
+      setStatus('ready');
+      setMappingNotice(`${templateName.trim()} ${update ? 'updated' : 'saved'} for future imports on this installation.`);
+    } catch (error) {
+      setStatus('error');
+      setMessage(error instanceof Error ? error.message : 'The import template could not be saved.');
+    }
+  }
+
+  async function deleteSharedTemplate(id: string) {
+    setStatus('working');
+    try {
+      await onDeleteTemplate(id);
+      if (selectedTemplateId === id) setSelectedTemplateId('');
+      setMappingProvenance((current) => Object.fromEntries(Object.entries(current).filter(([, source]) => source.templateId !== id)));
+      setStatus('ready');
+      setMappingNotice('Shared template deleted. Your current mapping and loaded rows are unchanged.');
+    } catch (error) {
+      setStatus('error');
+      setMessage(error instanceof Error ? error.message : 'The import template could not be deleted.');
+    }
+  }
+
+  function sharedTemplateControls() {
+    const unavailable = persistenceStatus !== 'saved' || status === 'working';
+    return <section aria-label="Shared import templates" className="mt-4 rounded-xl border border-[#83bcff]/20 bg-[#83bcff]/[0.035] p-3">
+      <h4 className="text-sm font-semibold text-[#c5dbef]">Shared import templates</h4>
+      <p className="mt-1 text-xs leading-5 text-[#9cb0a7]">Remember source headers, field mappings, custom fields, and normalization rules for everyone using this installation. Future matching columns get an auto-mapped flag.</p>
+      {(preview ? currentHubSpotBinding : hubspotBinding) && <p className="mt-2 text-xs text-[#83bcff]">Includes HubSpot field mappings for portal {(preview ? currentHubSpotBinding : hubspotBinding)?.portalId}. Actual fields and options are checked again during the dry run.</p>}
+      {!preview && <p className="mt-2 text-xs leading-5 text-[#9cb0a7]">Save this workspace’s mapping and current normalization rules. Selecting an existing template below lets you update it with these settings.</p>}
+      {preview && selectedTemplate && <p className="mt-2 text-xs leading-5 text-[#83bcff]">{selectedTemplate.name} selected. Its normalization rules can be previewed and applied after loading; mapping does not change values.</p>}
+      <div className="mt-3 flex flex-wrap items-end gap-2">
+        <label className="grid min-w-[160px] flex-1 gap-1 text-[10px] font-semibold text-[#9cb0a7]">Shared template name
+          <input aria-label="Shared template name" value={templateName} maxLength={120} onChange={(event) => setTemplateName(event.target.value)} className="rounded-lg border border-white/10 bg-[#0c1d17] px-3 py-2 text-xs text-[#dce9e2]" />
+        </label>
+        <button type="button" onClick={() => void saveSharedTemplate()} disabled={unavailable || !templateName.trim()} className="rounded-full border border-[#83bcff]/30 px-3 py-2 text-xs font-semibold text-[#83bcff] disabled:opacity-40">Save shared template</button>
+        {selectedTemplate && <button type="button" onClick={() => void saveSharedTemplate(true)} disabled={unavailable || !templateName.trim()} className="rounded-full border border-white/15 px-3 py-2 text-xs text-[#a9bbb2] disabled:opacity-40">Update selected template</button>}
+      </div>
+      {applicableTemplates.length > 0 && <div className="mt-3 space-y-2">{applicableTemplates.map((template) => <div key={template.id} className="flex flex-wrap items-center gap-2 rounded-lg border border-white/10 px-2 py-2">
+        <button type="button" onClick={() => { if (preview) applyTemplate(template); else { setSelectedTemplateId(template.id); setTemplateName(template.name); setMappingNotice(`${template.name} selected for updating with this workspace’s mapping and normalization rules.`); } }} disabled={status === 'working'} className="min-w-0 flex-1 break-words px-1 text-left text-xs font-semibold text-[#a9bbb2] disabled:opacity-40">{preview ? 'Apply' : 'Select'} {template.name}{selectedTemplateId === template.id ? ' · selected' : ''}</button>
+        <button type="button" aria-label={`Delete ${template.name} template`} onClick={() => void deleteSharedTemplate(template.id)} disabled={unavailable} className="rounded-full px-2 py-1 text-[10px] text-[#a9bbb2] hover:text-[#ff9d7f] disabled:opacity-40">Delete</button>
+      </div>)}</div>}
+    </section>;
   }
 
   async function readCsv(file: File) {
@@ -228,7 +402,7 @@ export function SelfHostConsole({
     if (!rawCsv || !preview) return;
     setStatus('working');
     try {
-      await onMappedImport(rawCsv, rawName, draftMapping, sourceType);
+      await onMappedImport(rawCsv, rawName, draftMapping, previewSource, draftImportObject, draftCustomFields, currentNormalization, currentHubSpotBinding);
       setStatus('ready');
       setMessage(`${preview.sourceRows.toLocaleString()} mapped rows validated and loaded.`);
     } catch (error) {
@@ -264,19 +438,31 @@ export function SelfHostConsole({
 
   return (
     <section className="mb-6 overflow-hidden rounded-[30px] border border-[#83bcff]/20 bg-[#0b1b19]" aria-label="Self-hosted workspace setup">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 px-5 py-4 sm:px-6"><p className="text-xs text-[#9cb0a7]">Keep an eye on connected CRM records between imports.</p><Link href={destinationType === 'salesforce' ? '/app/monitor?provider=salesforce' : '/app/monitor'} className="rounded-full border border-[#cdfc54]/25 px-4 py-2 text-xs font-semibold text-[#cdfc54]">Open CRM Monitor</Link></div>
+      {importObject === 'contact' && <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 px-5 py-4 sm:px-6"><p className="text-xs text-[#9cb0a7]">Prepare existing CRM contacts with evidence already in HubSpot.</p><Link href="/app/cohort" className="rounded-full border border-[#cdfc54]/25 px-4 py-2 text-xs font-semibold text-[#cdfc54]">Prepare CRM cohort</Link></div>}
+      {importObject === 'contact' && <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 px-5 py-4 sm:px-6"><p className="text-xs text-[#9cb0a7]">Keep an eye on connected CRM records between imports.</p><Link href={destinationType === 'salesforce' ? '/app/monitor?provider=salesforce' : '/app/monitor'} className="rounded-full border border-[#cdfc54]/25 px-4 py-2 text-xs font-semibold text-[#cdfc54]">Open CRM Monitor</Link></div>}
       {catalog?.accessKeyRequired && <div className="border-b border-white/10 px-5 py-4 sm:px-6"><label className="grid max-w-lg gap-2 text-xs font-semibold text-[#9cb0a7]">Operator access key<input type="password" value={operatorKey} onChange={(event) => onOperatorKeyChange(event.target.value)} className="rounded-xl border border-white/10 bg-[#07130f] px-4 py-3 text-sm text-[#e5f1eb] outline-none focus:border-[#83bcff]/50" /></label><p className="mt-2 text-[10px] text-[#71877c]">Kept only in this browser tab and required for private CRM reads and writes.</p></div>}
+      <div className="border-b border-white/10 px-5 py-5 sm:px-6">
+        <label className="grid max-w-lg gap-2 text-sm font-semibold">What does each row represent?
+          <select aria-label="Import object" value={draftImportObject} disabled={status === 'working'} onChange={(event) => { clearPreview(); setDraftImportObject(event.target.value as ImportObject); setMessage('Choose a file for this object. Your saved rows have not changed.'); }} className="rounded-xl border border-white/15 bg-[#07130f] px-4 py-3 text-sm text-[#e5f1eb]">
+            <option value="contact">Contacts — one person per row</option>
+            <option value="company">Companies — one company per row</option>
+            <option value="contact_company">Contacts + associated companies — one contact and company per row</option>
+          </select>
+        </label>
+        <p className="mt-2 max-w-3xl text-xs leading-5 text-[#9cb0a7]">{combinedDraft ? 'Map Contact fields and associated Company fields separately. Pomade uses the associated Company name and website for identity and ICP checks, and the Contact email for verification. Review and export locally; CRM contact/company imports and association writes are not available in this mode.' : companyDraft ? 'Map company names and websites. Company review/export only; CRM Company/Account import is not available.' : 'Map person names and emails. Company name and website describe that contact’s company; they do not create or link a separate Company/Account record.'}</p>
+        {contacts.length > 0 && <p className="mt-2 text-xs text-[#83bcff]">Current saved workspace: {importObject === 'company' ? 'Companies' : importObject === 'contact_company' ? 'Contacts + associated companies' : 'Contacts'}. This choice applies when you validate and load the next file.</p>}
+      </div>
       <div className="grid gap-6 border-b border-white/10 px-5 py-5 lg:grid-cols-[1fr_1fr_auto] lg:items-end sm:px-6">
         <label className="grid gap-2 text-xs font-semibold text-[#9cb0a7]">
           Where is your data?
-          <select value={sourceType} onChange={(event) => onSourceChange(event.target.value as ConnectorId)} className="rounded-2xl border border-white/10 bg-[#07130f] px-4 py-3 text-sm text-[#e5f1eb] outline-none focus:border-[#83bcff]/50">
-            {sources.map((connector) => <option key={connector.id} value={connector.id}>{connector.label}</option>)}
+          <select value={previewSource} disabled={localDraft || importObject !== 'contact'} onChange={(event) => onSourceChange(event.target.value as ConnectorId)} className="rounded-2xl border border-white/10 bg-[#07130f] px-4 py-3 text-sm text-[#e5f1eb] outline-none focus:border-[#83bcff]/50">
+            {sources.filter((connector) => !localDraft || connector.id === 'csv').map((connector) => <option key={connector.id} value={connector.id}>{connector.label}</option>)}
           </select>
         </label>
         <label className="grid gap-2 text-xs font-semibold text-[#9cb0a7]">
           Where should clean records go?
-          <select value={destinationType} onChange={(event) => onDestinationChange(event.target.value as ConnectorId)} className="rounded-2xl border border-white/10 bg-[#07130f] px-4 py-3 text-sm text-[#e5f1eb] outline-none focus:border-[#83bcff]/50">
-            {destinations.map((connector) => <option key={connector.id} value={connector.id}>{connector.label}</option>)}
+          <select value={localDraft || importObject !== 'contact' ? 'csv' : destinationType} disabled={localDraft || importObject !== 'contact'} onChange={(event) => onDestinationChange(event.target.value as ConnectorId)} className="rounded-2xl border border-white/10 bg-[#07130f] px-4 py-3 text-sm text-[#e5f1eb] outline-none focus:border-[#83bcff]/50">
+            {destinations.filter((connector) => (!localDraft && importObject === 'contact') || connector.id === 'csv').map((connector) => <option key={connector.id} value={connector.id}>{connector.label}</option>)}
           </select>
         </label>
         <div className="flex flex-wrap gap-2 lg:justify-end">
@@ -290,25 +476,25 @@ export function SelfHostConsole({
           <div className="flex items-center justify-between gap-3">
             <div>
               <p className="font-mono text-[9px] uppercase tracking-wider text-[#83bcff]">Source</p>
-              <h3 className="mt-1 text-lg font-semibold">{sourceType === 'google-sheets' ? 'Preview a worksheet' : sourceType === 'csv' ? 'Choose a CSV' : `Preview ${sourceType === 'hubspot' ? 'contacts' : 'active Leads'}`}</h3>
+              <h3 className="mt-1 text-lg font-semibold">{previewSource === 'google-sheets' ? 'Preview a worksheet' : previewSource === 'csv' ? 'Choose a CSV' : `Preview ${sourceType === 'hubspot' ? 'contacts' : 'active Leads'}`}</h3>
             </div>
             <span className={`rounded-full px-3 py-1 font-mono text-[9px] uppercase ${persistenceStatus === 'saved' ? 'bg-[#cdfc54]/10 text-[#cdfc54]' : persistenceStatus === 'disabled' ? 'bg-white/[0.06] text-[#71877c]' : 'bg-[#e6bd68]/10 text-[#e6bd68]'}`}>
               {persistenceStatus === 'disabled' ? 'Session only' : workspaceRevision === null ? persistenceStatus : `SQLite r${workspaceRevision} · ${persistenceStatus}`}
             </span>
           </div>
 
-          {sourceType === 'csv' && (
+          {previewSource === 'csv' && (
             <div className="mt-4">
               <input ref={fileInput} type="file" accept=".csv,text/csv" aria-label="CSV file" className="sr-only" onChange={(event) => { const file = event.currentTarget.files?.[0]; if (file) void readCsv(file); event.currentTarget.value = ''; }} />
               <button onClick={() => fileInput.current?.click()} disabled={status === 'working'} className="w-full rounded-2xl border border-dashed border-[#83bcff]/30 bg-[#83bcff]/[0.05] px-5 py-6 text-sm font-semibold text-[#83bcff] hover:bg-[#83bcff]/10 disabled:opacity-40">Choose CSV to preview</button>
-              <button onClick={() => void prepareCsv(messyLeadDemoCsv(), 'gtm-control-tower-messy-leads-64.csv')} disabled={status === 'working'} className="mt-2 w-full rounded-2xl border border-white/10 bg-white/[0.035] px-5 py-3 text-xs font-semibold text-[#a9bbb2] hover:bg-white/[0.06] disabled:opacity-40">Or load the bundled 64-row practice batch</button>
+              <button onClick={() => void prepareCsv(messyLeadDemoCsv(), 'gtm-control-tower-messy-leads-64.csv', 'contact')} disabled={status === 'working'} className="mt-2 w-full rounded-2xl border border-white/10 bg-white/[0.035] px-5 py-3 text-xs font-semibold text-[#a9bbb2] hover:bg-white/[0.06] disabled:opacity-40">Or load the bundled 64-row contact practice batch</button>
               <input ref={pomadeInput} type="file" accept=".json,application/json" aria-label="Pomade handoff file" className="sr-only" onChange={(event) => { const file = event.currentTarget.files?.[0]; if (file) void readPomadeHandoff(file); event.currentTarget.value = ''; }} />
               <button onClick={() => pomadeInput.current?.click()} disabled={status === 'working'} className="mt-2 w-full rounded-2xl border border-white/10 px-5 py-3 text-xs font-semibold text-[#a9bbb2] hover:bg-white/[0.06] disabled:opacity-40">Import Pomade handoff</button>
               <p className="mt-2 text-[10px] leading-4 text-[#71877c]">Optional JSON file · no Pomade account or connection needed · existing-record updates only.</p>
             </div>
           )}
 
-          {sourceType === 'google-sheets' && (
+          {previewSource === 'google-sheets' && (
             <div className="mt-4 grid gap-3">
               <input value={sourceSpreadsheet} onChange={(event) => setSourceSpreadsheet(event.target.value)} placeholder="Google Sheet URL or spreadsheet ID" className="rounded-2xl border border-white/10 bg-[#07130f] px-4 py-3 text-sm outline-none focus:border-[#83bcff]/50" />
               <input value={sourceSheet} onChange={(event) => setSourceSheet(event.target.value)} placeholder="Source worksheet, e.g. Leads" className="rounded-2xl border border-white/10 bg-[#07130f] px-4 py-3 text-sm outline-none focus:border-[#83bcff]/50" />
@@ -316,7 +502,7 @@ export function SelfHostConsole({
             </div>
           )}
 
-          {(sourceType === 'hubspot' || sourceType === 'salesforce') && (
+          {!localDraft && (sourceType === 'hubspot' || sourceType === 'salesforce') && (
             <div className="mt-4 grid gap-3">
               <label className="grid gap-1 font-mono text-[8px] uppercase tracking-wider text-[#71877c]">
                 Maximum records · 1–500
@@ -327,7 +513,7 @@ export function SelfHostConsole({
             </div>
           )}
 
-          {destinationType === 'google-sheets' && contacts.length > 0 && (
+          {importObject === 'contact' && destinationType === 'google-sheets' && contacts.length > 0 && (
             <div className="mt-5 border-t border-white/10 pt-5">
               <p className="text-xs font-semibold">Google Sheets destination</p>
               <p className="mt-1 text-[11px] leading-5 text-[#71877c]">n8n queues Sheets writes one at a time and upserts up to 1,000 destination-ready records to the separate <strong className="text-[#a9bbb2]">GTM Clean</strong> worksheet. Matching normalized emails update in place. {heldRows} unresolved active row{heldRows === 1 ? '' : 's'} stay out.</p>
@@ -360,12 +546,13 @@ export function SelfHostConsole({
             <>
               <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
                 <p className="text-xs text-[#a9bbb2]">{mappedColumns} of {preview.headers.length} columns matched · {preview.headers.length - mappedColumns} not imported</p>
-                <button type="button" onClick={() => { setDraftMapping(mappingForHeaders(preview.suggestedMapping, preview.headers)); setMappingNotice('Automatic header matches restored. Review them before loading.'); }} className="rounded-full border border-[#83bcff]/30 px-3 py-2 text-xs font-semibold text-[#83bcff]">Auto-map headers</button>
+                <button type="button" onClick={autoMapHeaders} className="rounded-full border border-[#83bcff]/30 px-3 py-2 text-xs font-semibold text-[#83bcff]">Auto-map headers</button>
               </div>
               <section aria-label="CSV column mapping" className="mt-3 max-h-[480px] space-y-2 overflow-y-auto pr-1">
                 {preview.headers.map((header, index) => {
-                  const field = mappingFields.find((key) => draftMapping[key] === header);
+                  const field = objectFields.find((key) => draftMapping[key] === header);
                   const sample = preview.sampleRows.map((row) => row[header]).find((value) => value?.trim());
+                  const provenance = field ? mappingProvenance[field] : undefined;
                   return <div key={header} role="group" aria-label={`CSV column ${header}`} className="grid min-w-0 gap-3 rounded-xl border border-white/10 bg-white/[0.025] p-3 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] sm:items-center">
                     <div className="min-w-0">
                       <p className="text-[10px] font-semibold uppercase tracking-wide text-[#83bcff]">Your CSV column · {index + 1}</p>
@@ -377,31 +564,47 @@ export function SelfHostConsole({
                       <label className="grid gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-[#cdfc54]">Control Tower field
                         <select aria-label={`Control Tower field for ${header}`} value={field ?? ''} onChange={(event) => mapColumn(header, event.target.value as CsvFieldKey | '')} className="min-w-0 w-full rounded-lg border border-white/15 bg-[#0c1d17] px-2 py-2.5 text-xs font-normal normal-case tracking-normal text-[#dce9e2]">
                           <option value="">Do not import this column</option>
-                          {mappingFields.map((key) => <option key={key} value={key}>{csvFieldLabels[key]}</option>)}
+                          {combinedDraft ? <><optgroup label="Contact fields">{contactFields.map((key) => <option key={key} value={key}>{fieldLabels[key]}</option>)}</optgroup><optgroup label="Associated Company fields">{associatedFields.map((key) => <option key={key} value={key}>{fieldLabels[key]}</option>)}</optgroup></> : objectFields.map((key) => <option key={key} value={key}>{fieldLabels[key]}</option>)}
                         </select>
                       </label>
-                      <p className={`mt-1.5 text-[10px] ${field ? 'text-[#a9bbb2]' : 'text-[#e6bd68]'}`}>{!field ? 'Not mapped' : preview.suggestedMapping[field] === header ? 'Auto-matched from header' : 'Manual match'}</p>
+                      <p className={`mt-1.5 text-[10px] ${provenance ? 'text-[#83bcff]' : field ? 'text-[#a9bbb2]' : 'text-[#e6bd68]'}`}>{!field ? 'Not mapped' : `${combinedDraft ? associatedFields.includes(field) ? 'Company object · ' : 'Contact object · ' : ''}${provenance ? `Auto-mapped · ${provenance.templateName}` : !manuallyMappedHeaders.includes(header) && preview.suggestedMapping[field] === header ? 'Auto-matched from header' : 'Manual match'}`}</p>
+                      {field?.startsWith('custom:') && <p className="mt-1 break-words text-[10px] leading-4 text-[#71877c]">Custom field · {draftCustomFields.find((definition) => customFieldKey(definition) === field)?.key} · sample: {sample || 'empty'}</p>}
                     </div>
                   </div>;
                 })}
               </section>
               {mappingNotice && <p role="status" className="mt-3 text-xs leading-5 text-[#a9bbb2]">{mappingNotice}</p>}
-              <p className="mt-3 text-[11px] leading-5 text-[#9cb0a7]">Unmapped columns are not loaded into this contact workspace. Loading saves the mapped records here; it does not write to your CRM.</p>
+              <p className="mt-3 text-[11px] leading-5 text-[#9cb0a7]">Unmapped columns are not loaded into this {objectLabel} workspace. Loading saves the mapped records here; it does not write to your CRM.</p>
+              {combinedDraft && <p className="mt-2 text-xs text-[#83bcff]">Map a contact name or email and an associated company name, website, or record ID. Company fields stay separate from Contact fields.</p>}
+              <details className="mt-4 rounded-xl border border-white/10 p-3">
+                <summary className="cursor-pointer text-xs font-semibold text-[#c5dbef]">Add custom destination fields{draftCustomFields.length > 0 ? ` · ${draftCustomFields.length}` : ''}</summary>
+                <p className="mt-2 text-xs leading-5 text-[#9cb0a7]">Use your CRM field label and property key, then choose it in the mapping above. For example, map “Favorite icecream” to “Fav. Ice Cream.” Custom values stay in local review and CSV export; adding a field does not enable CRM writes.</p>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  <label className="grid gap-1 text-[10px] font-semibold text-[#9cb0a7]">CRM field label<input aria-label="Custom field label" placeholder="Fav. Ice Cream" value={customFieldLabel} maxLength={120} onChange={(event) => setCustomFieldLabel(event.target.value)} className="rounded-lg border border-white/10 bg-[#0c1d17] px-3 py-2 text-xs text-[#dce9e2]" /></label>
+                  <label className="grid gap-1 text-[10px] font-semibold text-[#9cb0a7]">CRM property key<input aria-label="Custom field property key" placeholder="fav_ice_cream" value={customFieldProperty} maxLength={80} onChange={(event) => setCustomFieldProperty(event.target.value)} className="rounded-lg border border-white/10 bg-[#0c1d17] px-3 py-2 text-xs text-[#dce9e2]" /></label>
+                  {combinedDraft && <label className="grid gap-1 text-[10px] font-semibold text-[#9cb0a7]">Object<select aria-label="Custom field object" value={customFieldObject} onChange={(event) => setCustomFieldObject(event.target.value as 'contact' | 'company')} className="rounded-lg border border-white/10 bg-[#0c1d17] px-3 py-2 text-xs text-[#dce9e2]"><option value="contact">Contact</option><option value="company">Associated Company</option></select></label>}
+                  <button type="button" onClick={addCustomField} disabled={status === 'working' || !customFieldLabel.trim() || !customFieldProperty.trim()} className="self-end rounded-full border border-[#83bcff]/30 px-3 py-2 text-xs font-semibold text-[#83bcff] disabled:opacity-40">Add custom field</button>
+                </div>
+                {draftCustomFields.length > 0 && <div className="mt-3 space-y-2">{draftCustomFields.map((definition) => <div key={`${definition.object}:${definition.key}`} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-white/10 px-2 py-2 text-[11px]"><span className="min-w-0 break-words text-[#a9bbb2]">{definition.label} · {definition.object === 'company' && combinedDraft ? 'Associated Company' : definition.object === 'company' ? 'Company' : 'Contact'} · {definition.key}</span><button type="button" aria-label={`Remove custom field ${definition.label}`} onClick={() => removeCustomField(definition)} className="text-[#71877c] hover:text-[#ff9d7f]">Remove</button></div>)}</div>}
+              </details>
               <div className="mt-4 flex flex-wrap items-end gap-2">
                 <label className="grid flex-1 gap-1 font-mono text-[8px] uppercase tracking-wider text-[#71877c]">
                   Mapping preset name
                   <input value={presetName} onChange={(event) => setPresetName(event.target.value)} className="rounded-full border border-white/10 bg-[#0c1d17] px-4 py-2.5 text-xs normal-case tracking-normal text-[#dce9e2]" />
                 </label>
-                <button onClick={() => void onSavePreset(presetName, draftMapping)} disabled={persistenceStatus === 'disabled' || persistenceStatus === 'error'} className="rounded-full border border-white/10 px-4 py-2.5 text-xs text-[#a9bbb2] disabled:opacity-40">Save mapping</button>
-                <button onClick={() => void importMappedData()} disabled={status === 'working' || (!draftMapping.rawEmail && !draftMapping.fullName && !draftMapping.firstName && !draftMapping.lastName)} className="rounded-full bg-[#cdfc54] px-5 py-2.5 text-xs font-bold text-[#07130f] disabled:opacity-40">Validate + load</button>
+                <button onClick={() => void onSavePreset(presetName, draftMapping, draftImportObject)} disabled={persistenceStatus === 'disabled' || persistenceStatus === 'error' || draftCustomFields.length > 0} className="rounded-full border border-white/10 px-4 py-2.5 text-xs text-[#a9bbb2] disabled:opacity-40">Save mapping</button>
+                <button onClick={() => void importMappedData()} disabled={status === 'working' || (companyDraft ? !draftMapping.company && !draftMapping.website : (!draftMapping.rawEmail && !draftMapping.fullName && !draftMapping.firstName && !draftMapping.lastName) || (combinedDraft && !draftMapping.associatedCompanyId && !draftMapping.associatedCompanyName && !draftMapping.associatedCompanyWebsite))} className="rounded-full bg-[#cdfc54] px-5 py-2.5 text-xs font-bold text-[#07130f] disabled:opacity-40">Validate + load</button>
               </div>
-              {presets.length > 0 && (
+              <p className="mt-2 text-[10px] leading-4 text-[#71877c]">{draftCustomFields.length > 0 ? 'Use a shared template to retain custom fields and normalization rules.' : '“Save mapping” keeps a preset in this workspace. Use a shared import template below to remember mappings across future workspaces.'}</p>
+              {applicablePresets.length > 0 && (
                 <div className="mt-3 flex flex-wrap gap-2">
-                  {presets.map((preset) => <button key={preset.id} onClick={() => { setDraftMapping(mappingForHeaders(preset.mapping, preview.headers)); setMappingNotice('Preset applied to matching headers. Missing or conflicting matches remain unmapped; review those columns.'); }} className="rounded-full bg-white/[0.05] px-3 py-1.5 font-mono text-[9px] text-[#8fa99d]">Use {preset.name}</button>)}
+                  {applicablePresets.map((preset) => <button key={preset.id} onClick={() => { setDraftMapping(mappingForHeaders(preset.mapping, preview.headers, objectFields)); setMappingProvenance({}); setManuallyMappedHeaders(preview.headers); setSelectedTemplateId(''); setDraftNormalization(null); setMappingNotice('Preset applied to matching headers. Missing or conflicting matches remain unmapped; review those columns.'); }} className="rounded-full bg-white/[0.05] px-3 py-1.5 font-mono text-[9px] text-[#8fa99d]">Use {preset.name}</button>)}
                 </div>
               )}
             </>
-          ) : <p className="mt-5 rounded-2xl border border-dashed border-white/10 px-4 py-8 text-center text-xs text-[#71877c]">Choose a CSV or preview a Google worksheet to map its columns.</p>}
+          ) : <p className="mt-5 rounded-2xl border border-dashed border-white/10 px-4 py-8 text-center text-xs text-[#71877c]">Choose the row object, then preview a source file to map its columns.</p>}
+          {!pomadePreview && (preview || contacts.length > 0) && sharedTemplateControls()}
+          {!preview && mappingNotice && <p role="status" className="mt-3 text-xs leading-5 text-[#a9bbb2]">{mappingNotice}</p>}
         </div>
       </div>
 

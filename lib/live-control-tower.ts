@@ -1,3 +1,4 @@
+import type { SuppressionMatch } from './suppression';
 import { validPomadeOrigins, type PomadeOrigin } from './pomade-handoff';
 import { validImportMatchDecisions, type ConfirmedImportMatch } from './import-match-decision';
 import type { ScenarioKey } from './control-tower';
@@ -17,7 +18,25 @@ export type LiveFunnelStage = {
   count: number;
 };
 
+export type ImportObject = 'contact' | 'company' | 'contact_company';
+
+export type AssociatedCompany = {
+  recordId: string | null;
+  name: string;
+  website: string;
+  phone: string;
+  state: string;
+  country?: string;
+  address?: string;
+  city?: string;
+  postalCode?: string;
+  customFields?: Record<string, string>;
+};
+
 export type LiveContactState = {
+  /** Older saved rows without this field represent contacts. */
+  importObject?: ImportObject;
+  associatedCompany?: AssociatedCompany;
   contactId: string;
   fullName: string;
   firstName?: string;
@@ -29,6 +48,13 @@ export type LiveContactState = {
   jobTitle?: string | null;
   website?: string | null;
   state?: string | null;
+  country?: string | null;
+  address?: string | null;
+  city?: string | null;
+  postalCode?: string | null;
+  department?: string | null;
+  persona?: string | null;
+  customFields?: Record<string, string>;
   region: string;
   segment: string;
   lifecycleStage: string;
@@ -37,6 +63,7 @@ export type LiveContactState = {
   canonicalContactId: string | null;
   recordStatus: 'active' | 'merged';
   importExclusion?: ImportExclusion;
+  suppressionMatches?: SuppressionMatch[];
   sourceOrigins?: PomadeOrigin[];
   crmMatchDecisions?: Partial<Record<'hubspot' | 'salesforce', ConfirmedImportMatch>>;
   lastAction: string;
@@ -161,6 +188,7 @@ function isFunnelStage(value: unknown): value is LiveFunnelStage {
 
 function isContactState(value: unknown): value is LiveContactState {
   if (!isRecord(value)) return false;
+  if (value.importObject !== undefined && !['contact', 'company', 'contact_company'].includes(value.importObject as string)) return false;
   if (!isNullableString(value.normalizedEmail) || !isNullableString(value.company)) return false;
   if (!isNullableString(value.ownerId) || !isNullableString(value.canonicalContactId)) return false;
   if (value.recordStatus !== 'active' && value.recordStatus !== 'merged') return false;

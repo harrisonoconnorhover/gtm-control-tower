@@ -8,12 +8,14 @@ import { claimSafeImportExecution, updateSafeImportExecution, claimSafeImportChu
 import { getWorkspace } from './workspace-store';
 import { safeImportWorkspaceFingerprint } from './safe-import-review-server';
 import { notifyImportExecution } from './operation-notifications';
+import { withCrmRequestGate, observeCrmCooldown, isCrmReadDeferredError, type CrmRequestScope } from './crm-read-transport';
 
-type WriteOutcome = { status: 'accepted' | 'failed' | 'unknown'; error: string | null };
+type WriteOutcome = { status: 'accepted' | 'failed' | 'unknown' | 'held'; error: string | null; stopReason?: string }
+  | { status: 'pending'; error: string; retryAt: string; reason: string };
 export type SafeImportExecutionDependencies = {
   readAccount: () => Promise<CrmAccountIdentity>;
   readRecord: (nativeId: string, objectType?: NativeCrmRecord['objectType']) => Promise<NativeCrmRecord | null>;
-  writeRecord: (record: CrmPlanRecord) => Promise<WriteOutcome>;
+  writeRecord: (record: CrmPlanRecord, beforeSend?: () => Promise<void>) => Promise<WriteOutcome>;
   claimExecution: typeof claimSafeImportExecution;
   saveExecution: typeof updateSafeImportExecution;
   now: () => Date;
@@ -30,12 +32,18 @@ export async function executeSafeImportReview(
 ): Promise<SafeImportExecution> {
   const deps = dependencies(review, overrides);
   const planned = validateReview(review, deps.now());
-  await requireAccount(review.account, deps);
+  let deferred: { retryAt: string; message: string } | undefined;
+  try { await requireAccount(review.account, deps); }
+  catch (error) {
+    if (!isCrmReadDeferredError(error)) throw error;
+    deferred = error;
+  }
   await deps.assertWorkspace();
   const now = deps.now().toISOString();
   const claim = await deps.claimExecution(review, {
     id: crypto.randomUUID(), executionKey: `safe-import:${review.id}`, reviewId: review.id, workspaceId: review.workspaceId,
     account: review.account, approvedAt: now, createdAt: now, updatedAt: now, status: 'running',
+    ...(deferred ? { nextAttemptAt: deferred.retryAt, retryReason: deferred.message } : {}),
     records: planned.map((record) => ({ contactId: record.contactId, nativeId: record.nativeId!, status: 'pending', error: null,
       ...(review.connectorId === 'salesforce' ? { objectType: record.matches[0].objectType } : {}) })),
   });
@@ -56,7 +64,10 @@ export async function continueSafeImportExecution(
   if (!claim.claimed) return claim.execution;
   let execution = claim.execution;
   try {
-    execution = await markAbandonedSending(execution, deps);
+    execution = await clearCooldown(await markAbandonedSending(execution, deps), deps);
+    if (!execution.unsentHoldReason && Date.parse(review.expiresAt) <= deps.now().getTime()) {
+      execution = await holdUnsent(execution, 'The original approval expired before this record was sent. Prepare a new review.', deps);
+    }
     const started = deps.now().getTime();
     let processed = 0;
     for (let index = 0; index < execution.records.length; index += 1) {
@@ -67,7 +78,12 @@ export async function continueSafeImportExecution(
       processed += 1;
       const record = matchingPlan(review, planned, execution.records[index]);
       if (needsReadback) {
-        execution = await saveRecord(execution, index, { verification: await verifyRecord(review.account, record, deps) }, deps);
+        try { execution = await saveRecord(execution, index, { verification: await verifyRecord(review.account, record, deps) }, deps); }
+        catch (error) {
+          if (!isCrmReadDeferredError(error)) throw error;
+          execution = await deferExecution(execution, error.retryAt, error.message, deps);
+          break;
+        }
         continue;
       }
       try {
@@ -80,6 +96,10 @@ export async function continueSafeImportExecution(
         await deps.assertWorkspace();
         if (Date.parse(review.expiresAt) <= deps.now().getTime()) throw new Error('The approved review expired during the CRM recheck. Prepare a new review.');
       } catch (error) {
+        if (isCrmReadDeferredError(error)) {
+          execution = await deferExecution(execution, error.retryAt, error.message, deps);
+          break;
+        }
         execution = await saveRecord(execution, index, { status: 'held', error: message(error, 'The CRM could not be rechecked. No update was sent.') }, deps);
         continue;
       }
@@ -87,11 +107,27 @@ export async function continueSafeImportExecution(
       // If a successor acquired the expired lease, the stale worker cannot start another write.
       execution = await saveRecord(execution, index, { status: 'sending', error: null }, deps);
       let outcome: WriteOutcome;
-      try { outcome = await deps.writeRecord(record); }
+      try { outcome = await deps.writeRecord(record, async () => {
+        await deps.assertWorkspace();
+        if (Date.parse(review.expiresAt) <= deps.now().getTime()) throw new Error('The original approval expired while waiting for CRM capacity. No update was sent; prepare a new review.');
+      }); }
       catch { outcome = { status: 'unknown', error: 'The update response was lost. Outcome unknown; reconcile by reading the CRM. This update will not be resent.' }; }
-      execution = await saveRecord(execution, index, outcome, deps);
+      execution = await saveRecord(execution, index, { status: outcome.status, error: outcome.error }, deps);
+      if (outcome.status === 'pending') {
+        execution = await deferExecution(execution, outcome.retryAt, outcome.error, deps);
+        break;
+      }
+      if (outcome.stopReason) {
+        execution = await holdUnsent(execution, outcome.stopReason, deps);
+        break;
+      }
       if (outcome.status === 'accepted' || outcome.status === 'unknown') {
-        execution = await saveRecord(execution, index, { verification: await verifyRecord(review.account, record, deps) }, deps);
+        try { execution = await saveRecord(execution, index, { verification: await verifyRecord(review.account, record, deps) }, deps); }
+        catch (error) {
+          if (!isCrmReadDeferredError(error)) throw error;
+          execution = await deferExecution(execution, error.retryAt, error.message, deps);
+          break;
+        }
       }
     }
     execution = await saveStatus(execution, deps);
@@ -134,6 +170,27 @@ export async function reconcileSafeImportExecution(
     if (execution.status !== 'running') await notifyImportExecution(review, execution);
   } finally { await releaseSafeImportChunk(execution); }
   return (await getSafeImportExecution(review.workspaceId, review.id))!;
+}
+
+async function holdUnsent(execution: SafeImportExecution, reason: string, deps: SafeImportExecutionDependencies): Promise<SafeImportExecution> {
+  const held = { ...execution, unsentHoldReason: reason, records: execution.records.map((progress) => progress.status === 'pending'
+    ? { ...progress, status: 'held' as const, error: reason } : progress) };
+  await deps.saveExecution(held, execution);
+  return held;
+}
+
+async function deferExecution(execution: SafeImportExecution, retryAt: string, reason: string, deps: SafeImportExecutionDependencies): Promise<SafeImportExecution> {
+  const next = { ...execution, nextAttemptAt: retryAt, retryReason: reason, updatedAt: deps.now().toISOString() };
+  await deps.saveExecution(next, execution);
+  return next;
+}
+
+async function clearCooldown(execution: SafeImportExecution, deps: SafeImportExecutionDependencies): Promise<SafeImportExecution> {
+  if (!execution.nextAttemptAt && !execution.retryReason) return execution;
+  const next = { ...execution };
+  delete next.nextAttemptAt; delete next.retryReason;
+  await deps.saveExecution(next, execution);
+  return next;
 }
 
 async function markAbandonedSending(execution: SafeImportExecution, deps: SafeImportExecutionDependencies): Promise<SafeImportExecution> {
@@ -219,7 +276,10 @@ async function verifyRecord(account: CrmAccountIdentity, record: CrmPlanRecord, 
       || (current.objectType === 'lead' && current.isConverted !== false)) throw new Error('The updated CRM record is missing, converted, or unavailable.');
     result.actual = { email: current.email.trim().toLowerCase(), fields: current.fields };
     result.status = result.actual.email === expected.email && portableCrmFieldNames.every((field) => clean(current.fields[field]) === clean(expected.fields[field])) ? 'verified' : 'different';
-  } catch (error) { result.error = message(error, 'Readback could not verify this contact.'); }
+  } catch (error) {
+    if (isCrmReadDeferredError(error)) throw error;
+    result.error = message(error, 'Readback could not verify this contact.');
+  }
   result.checkedAt = deps.now().toISOString();
   return result;
 }
@@ -238,8 +298,8 @@ function dependencies(review: SafeImportReview, overrides: Partial<SafeImportExe
       : readSalesforceAccountIdentity(salesforce().apiRoot, salesforce().headers),
     readRecord: (nativeId, objectType) => review.connectorId === 'hubspot' ? readHubSpotRecordById(nativeId, token)
       : readSalesforceRecordById(nativeId, objectType!, salesforce().apiRoot, salesforce().headers),
-    writeRecord: (record) => review.connectorId === 'hubspot' ? writeHubSpotSafeImportRecord(record, token)
-      : writeSalesforceSafeImportRecord(record, salesforce().apiRoot, salesforce().headers),
+    writeRecord: (record, beforeSend) => review.connectorId === 'hubspot' ? writeHubSpotSafeImportRecord(record, token, beforeSend)
+      : writeSalesforceSafeImportRecord(record, salesforce().apiRoot, salesforce().headers, beforeSend),
     claimExecution: claimSafeImportExecution, saveExecution: updateSafeImportExecution, now: () => new Date(),
     assertWorkspace: async () => {
       const workspace = await getWorkspace(review.workspaceId);
@@ -264,7 +324,7 @@ function validTarget(connectorId: SafeImportReview['connectorId'], record: CrmPl
 }
 
 /** Only the exact native sObject can be patched; never an external-ID upsert or parent relationship. */
-export async function writeSalesforceSafeImportRecord(record: CrmPlanRecord, apiRoot: string, headers: Record<string, string>): Promise<WriteOutcome> {
+export async function writeSalesforceSafeImportRecord(record: CrmPlanRecord, apiRoot: string, headers: Record<string, string>, beforeSend?: () => Promise<void>): Promise<WriteOutcome> {
   const root = new URL(apiRoot);
   if (root.protocol !== 'https:' || root.username || root.password || root.search || root.hash
     || !/^\/services\/data\/v\d+\.\d+$/.test(root.pathname)) throw new Error('Salesforce requires an instance API root.');
@@ -275,36 +335,64 @@ export async function writeSalesforceSafeImportRecord(record: CrmPlanRecord, api
     throw new Error('Safe Import only permits reviewed nonblank fills against existing Salesforce Lead or Contact IDs and supported fields.');
   }
   const objectName = record.matches[0].objectType === 'lead' ? 'Lead' : 'Contact';
-  const response = await fetch(`${root.href}/sobjects/${objectName}/${record.nativeId}`, {
-    method: 'PATCH', cache: 'no-store', redirect: 'manual', signal: AbortSignal.timeout(30_000),
-    headers: { ...headers, 'content-type': 'application/json', 'Sforce-Auto-Assign': 'FALSE' },
-    body: JSON.stringify(toSalesforceFieldPayload(record.after, record.changes.map((change) => change.field))),
+  const scope: CrmRequestScope = { provider: 'salesforce', accessToken: new Headers(headers).get('authorization')?.replace(/^Bearer\s+/i, '') ?? '', origin: root.origin };
+  return gatedWrite(scope, beforeSend, async (signal) => {
+    const response = await fetch(`${root.href}/sobjects/${objectName}/${record.nativeId}`, {
+      method: 'PATCH', cache: 'no-store', redirect: 'manual', signal,
+      headers: { ...headers, 'content-type': 'application/json', 'Sforce-Auto-Assign': 'FALSE' },
+      body: JSON.stringify(toSalesforceFieldPayload(record.after, record.changes.map((change) => change.field))),
+    });
+    if (response.status === 204) return { status: 'accepted', error: null };
+    const cooldown = await observeCrmCooldown(scope, response, await response.json().catch(() => null));
+    if (cooldown) return { status: 'pending', error: `Salesforce rejected this request due to ${cooldown.reason === 'quota' ? 'quota exhaustion' : 'rate limiting'}. Waiting before rechecking unsent updates.`, retryAt: cooldown.retryAt, reason: cooldown.reason };
+    const rejected = [400, 401, 403, 404, 409, 412, 422].includes(response.status);
+    return { status: rejected ? 'failed' : 'unknown', error: `Salesforce returned ${response.status}. ${rejected ? 'Prepare a new review before another write.' : 'Outcome unknown; reconcile without resending.'}`,
+        ...([401, 403].includes(response.status) ? { stopReason: 'Salesforce rejected access. Remaining unsent rows are held; correct the connection or permissions and prepare a new review.' } : {}) };
   });
-  if (response.status === 204) return { status: 'accepted', error: null };
-  const rejected = [400, 401, 403, 404, 409, 412, 422, 429].includes(response.status);
-  return { status: rejected ? 'failed' : 'unknown', error: `Salesforce returned ${response.status}. ${rejected ? 'Prepare a new review before another write.' : 'Outcome unknown; reconcile without resending.'}` };
 }
 
 /** Native-ID PATCH only. A timeout or server error cannot be assumed safe to resend. */
-export async function writeHubSpotSafeImportRecord(record: CrmPlanRecord, token: string): Promise<WriteOutcome> {
+export async function writeHubSpotSafeImportRecord(record: CrmPlanRecord, token: string, beforeSend?: () => Promise<void>): Promise<WriteOutcome> {
   if (record.operation !== 'update' || !record.nativeId || !/^\d+$/.test(record.nativeId) || !record.changes.length
     || record.changes.some((change) => !portableCrmFieldNames.includes(change.field) || clean(change.before) !== null
       || clean(change.after) === null || change.after !== record.after[change.field])) {
     throw new Error('Safe Import only permits reviewed nonblank fills against existing numeric contact IDs.');
   }
-  const response = await fetch(`https://api.hubapi.com/crm/objects/2026-03/contacts/${record.nativeId}`, {
-    method: 'PATCH', cache: 'no-store', redirect: 'manual', signal: AbortSignal.timeout(30_000),
-    headers: { authorization: `Bearer ${token}`, accept: 'application/json', 'content-type': 'application/json' },
-    body: JSON.stringify({ properties: toHubSpotFieldPayload(record.after, record.changes.map((change) => change.field)) }),
+  const scope: CrmRequestScope = { provider: 'hubspot', accessToken: token };
+  return gatedWrite(scope, beforeSend, async (signal) => {
+    const response = await fetch(`https://api.hubapi.com/crm/objects/2026-03/contacts/${record.nativeId}`, {
+      method: 'PATCH', cache: 'no-store', redirect: 'manual', signal,
+      headers: { authorization: `Bearer ${token}`, accept: 'application/json', 'content-type': 'application/json' },
+      body: JSON.stringify({ properties: toHubSpotFieldPayload(record.after, record.changes.map((change) => change.field)) }),
+    });
+    if (!response.ok || response.status === 207) {
+      const cooldown = await observeCrmCooldown(scope, response, await response.json().catch(() => null));
+      if (cooldown) return { status: 'pending', error: `HubSpot rejected this request due to ${cooldown.reason === 'quota' ? 'quota exhaustion' : 'rate limiting'}. Waiting before rechecking unsent updates.`, retryAt: cooldown.retryAt, reason: cooldown.reason };
+      const rejected = [400, 401, 403, 404, 409, 422].includes(response.status);
+      return { status: rejected ? 'failed' : 'unknown', error: `HubSpot returned ${response.status}. ${rejected ? 'Prepare a new review before another write.' : 'Outcome unknown; reconcile without resending.'}`,
+          ...([401, 403].includes(response.status) ? { stopReason: 'HubSpot rejected access. Remaining unsent rows are held; correct the connection or permissions and prepare a new review.' } : {}) };
+    }
+    const body: unknown = await response.json();
+    if (!body || typeof body !== 'object' || !('id' in body) || body.id !== record.nativeId
+      || ('archived' in body && body.archived !== false)) return { status: 'unknown', error: 'HubSpot did not return the expected native contact identity. Reconcile without resending.' };
+    return { status: 'accepted', error: null };
   });
-  if (!response.ok || response.status === 207) {
-    const rejected = [400, 401, 403, 404, 409, 422, 429].includes(response.status);
-    return { status: rejected ? 'failed' : 'unknown', error: `HubSpot returned ${response.status}. ${rejected ? 'Prepare a new review before another write.' : 'Outcome unknown; reconcile without resending.'}` };
+}
+
+/** Waiting is safe to defer; once dispatched, a lost response remains unknown. */
+async function gatedWrite(scope: CrmRequestScope, beforeSend: (() => Promise<void>) | undefined, operation: (signal: AbortSignal) => Promise<WriteOutcome>): Promise<WriteOutcome> {
+  let dispatched = false;
+  try {
+    return await withCrmRequestGate(scope, async (signal) => {
+      try { await beforeSend?.(); }
+      catch (error) { return { status: 'held', error: message(error, 'The approved workspace or deadline changed while waiting. No update was sent.') }; }
+      dispatched = true;
+      return operation(signal);
+    }, { budgetMs: 30_000 });
+  } catch (error) {
+    if (!dispatched && isCrmReadDeferredError(error)) return { status: 'pending', error: error.message, retryAt: error.retryAt, reason: error.reason };
+    throw error;
   }
-  const body: unknown = await response.json();
-  if (!body || typeof body !== 'object' || !('id' in body) || body.id !== record.nativeId
-    || ('archived' in body && body.archived !== false)) return { status: 'unknown', error: 'HubSpot did not return the expected native contact identity. Reconcile without resending.' };
-  return { status: 'accepted', error: null };
 }
 
 function clean(value: string | null | undefined): string | null { return value?.trim() || null; }

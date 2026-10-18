@@ -1,0 +1,141 @@
+contact_id,full_name,email,company,website,phone,state,owner_id,lifecycle_stage,scenario
+bg-001,Avelis Ashmere,avelis.ashmere@amber-kestrel.test,Amber Kestrel Analytics,https://amber-kestrel.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-002,Avelis Briarholt,avelis.briarholt@amber-lattice.test,Amber Lattice Analytics,https://amber-lattice.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-003,Avelis Cedarwyn,avelis.cedarwyn@amber-meadow.test,Amber Meadow Analytics,https://amber-meadow.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-004,Avelis Duskvale,avelis.duskvale@amber-nimbus.test,Amber Nimbus Analytics,https://amber-nimbus.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-005,Avelis Emberwick,avelis.emberwick@amber-orchard.test,Amber Orchard Analytics,https://amber-orchard.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-006,Avelis Fallowden,avelis.fallowden@amber-pebble.test,Amber Pebble Analytics,https://amber-pebble.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-007,Avelis Glenquill,avelis.glenquill@amber-quartz.test,Amber Quartz Analytics,https://amber-quartz.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-008,Avelis Hawkridge,avelis.hawkridge@amber-reef.test,Amber Reef Analytics,https://amber-reef.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-009,Avelis Ivybourne,avelis.ivybourne@amber-spruce.test,Amber Spruce Analytics,https://amber-spruce.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-010,Avelis Junipercrest,avelis.junipercrest@amber-thistle.test,Amber Thistle Analytics,https://amber-thistle.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-011,Brenora Ashmere,brenora.ashmere@birch-kestrel.test,Birch Kestrel Analytics,https://birch-kestrel.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-012,Brenora Briarholt,brenora.briarholt@birch-lattice.test,Birch Lattice Analytics,https://birch-lattice.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-013,Brenora Cedarwyn,brenora.cedarwyn@birch-meadow.test,Birch Meadow Analytics,https://birch-meadow.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-014,Brenora Duskvale,brenora.duskvale@birch-nimbus.test,Birch Nimbus Analytics,https://birch-nimbus.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-015,Brenora Emberwick,brenora.emberwick@birch-orchard.test,Birch Orchard Analytics,https://birch-orchard.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-016,Brenora Fallowden,brenora.fallowden@birch-pebble.test,Birch Pebble Analytics,https://birch-pebble.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-017,Brenora Glenquill,brenora.glenquill@birch-quartz.test,Birch Quartz Analytics,https://birch-quartz.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-018,Brenora Hawkridge,brenora.hawkridge@birch-reef.test,Birch Reef Analytics,https://birch-reef.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-019,Brenora Ivybourne,brenora.ivybourne@birch-spruce.test,Birch Spruce Analytics,https://birch-spruce.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-020,Brenora Junipercrest,brenora.junipercrest@birch-thistle.test,Birch Thistle Analytics,https://birch-thistle.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-021,Cailen Ashmere,cailen.ashmere@coral-kestrel.test,Coral Kestrel Analytics,https://coral-kestrel.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-022,Cailen Briarholt,cailen.briarholt@coral-lattice.test,Coral Lattice Analytics,https://coral-lattice.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-023,Cailen Cedarwyn,cailen.cedarwyn@coral-meadow.test,Coral Meadow Analytics,https://coral-meadow.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-024,Cailen Duskvale,cailen.duskvale@coral-nimbus.test,Coral Nimbus Analytics,https://coral-nimbus.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-025,Cailen Emberwick,cailen.emberwick@coral-orchard.test,Coral Orchard Analytics,https://coral-orchard.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-026,Cailen Fallowden,cailen.fallowden@coral-pebble.test,Coral Pebble Analytics,https://coral-pebble.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-027,Cailen Glenquill,cailen.glenquill@coral-quartz.test,Coral Quartz Analytics,https://coral-quartz.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-028,Cailen Hawkridge,cailen.hawkridge@coral-reef.test,Coral Reef Analytics,https://coral-reef.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-029,Cailen Ivybourne,cailen.ivybourne@coral-spruce.test,Coral Spruce Analytics,https://coral-spruce.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-030,Cailen Junipercrest,cailen.junipercrest@coral-thistle.test,Coral Thistle Analytics,https://coral-thistle.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-031,Delyra Ashmere,delyra.ashmere@dune-kestrel.test,Dune Kestrel Analytics,https://dune-kestrel.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-032,Delyra Briarholt,delyra.briarholt@dune-lattice.test,Dune Lattice Analytics,https://dune-lattice.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-033,Delyra Cedarwyn,delyra.cedarwyn@dune-meadow.test,Dune Meadow Analytics,https://dune-meadow.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-034,Delyra Duskvale,delyra.duskvale@dune-nimbus.test,Dune Nimbus Analytics,https://dune-nimbus.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-035,Delyra Emberwick,delyra.emberwick@dune-orchard.test,Dune Orchard Analytics,https://dune-orchard.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-036,Delyra Fallowden,delyra.fallowden@dune-pebble.test,Dune Pebble Analytics,https://dune-pebble.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-037,Delyra Glenquill,delyra.glenquill@dune-quartz.test,Dune Quartz Analytics,https://dune-quartz.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-038,Delyra Hawkridge,delyra.hawkridge@dune-reef.test,Dune Reef Analytics,https://dune-reef.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-039,Delyra Ivybourne,delyra.ivybourne@dune-spruce.test,Dune Spruce Analytics,https://dune-spruce.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-040,Delyra Junipercrest,delyra.junipercrest@dune-thistle.test,Dune Thistle Analytics,https://dune-thistle.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-041,Elarin Ashmere,elarin.ashmere@elm-kestrel.test,Elm Kestrel Analytics,https://elm-kestrel.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-042,Elarin Briarholt,elarin.briarholt@elm-lattice.test,Elm Lattice Analytics,https://elm-lattice.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-043,Elarin Cedarwyn,elarin.cedarwyn@elm-meadow.test,Elm Meadow Analytics,https://elm-meadow.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-044,Elarin Duskvale,elarin.duskvale@elm-nimbus.test,Elm Nimbus Analytics,https://elm-nimbus.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-045,Elarin Emberwick,elarin.emberwick@elm-orchard.test,Elm Orchard Analytics,https://elm-orchard.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-046,Elarin Fallowden,elarin.fallowden@elm-pebble.test,Elm Pebble Analytics,https://elm-pebble.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-047,Elarin Glenquill,elarin.glenquill@elm-quartz.test,Elm Quartz Analytics,https://elm-quartz.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-048,Elarin Hawkridge,elarin.hawkridge@elm-reef.test,Elm Reef Analytics,https://elm-reef.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-049,Elarin Ivybourne,elarin.ivybourne@elm-spruce.test,Elm Spruce Analytics,https://elm-spruce.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-050,Elarin Junipercrest,elarin.junipercrest@elm-thistle.test,Elm Thistle Analytics,https://elm-thistle.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-051,Fennora Ashmere,fennora.ashmere@fable-kestrel.test,Fable Kestrel Analytics,https://fable-kestrel.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-052,Fennora Briarholt,fennora.briarholt@fable-lattice.test,Fable Lattice Analytics,https://fable-lattice.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-053,Fennora Cedarwyn,fennora.cedarwyn@fable-meadow.test,Fable Meadow Analytics,https://fable-meadow.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-054,Fennora Duskvale,fennora.duskvale@fable-nimbus.test,Fable Nimbus Analytics,https://fable-nimbus.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-055,Fennora Emberwick,fennora.emberwick@fable-orchard.test,Fable Orchard Analytics,https://fable-orchard.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-056,Fennora Fallowden,fennora.fallowden@fable-pebble.test,Fable Pebble Analytics,https://fable-pebble.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-057,Fennora Glenquill,fennora.glenquill@fable-quartz.test,Fable Quartz Analytics,https://fable-quartz.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-058,Fennora Hawkridge,fennora.hawkridge@fable-reef.test,Fable Reef Analytics,https://fable-reef.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-059,Fennora Ivybourne,fennora.ivybourne@fable-spruce.test,Fable Spruce Analytics,https://fable-spruce.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-060,Fennora Junipercrest,fennora.junipercrest@fable-thistle.test,Fable Thistle Analytics,https://fable-thistle.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-061,Gavriel Ashmere,gavriel.ashmere@granite-kestrel.test,Granite Kestrel Analytics,https://granite-kestrel.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-062,Gavriel Briarholt,gavriel.briarholt@granite-lattice.test,Granite Lattice Analytics,https://granite-lattice.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-063,Gavriel Cedarwyn,gavriel.cedarwyn@granite-meadow.test,Granite Meadow Analytics,https://granite-meadow.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-064,Gavriel Duskvale,gavriel.duskvale@granite-nimbus.test,Granite Nimbus Analytics,https://granite-nimbus.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-065,Gavriel Emberwick,gavriel.emberwick@granite-orchard.test,Granite Orchard Analytics,https://granite-orchard.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-066,Gavriel Fallowden,gavriel.fallowden@granite-pebble.test,Granite Pebble Analytics,https://granite-pebble.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-067,Gavriel Glenquill,gavriel.glenquill@granite-quartz.test,Granite Quartz Analytics,https://granite-quartz.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-068,Gavriel Hawkridge,gavriel.hawkridge@granite-reef.test,Granite Reef Analytics,https://granite-reef.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-069,Gavriel Ivybourne,gavriel.ivybourne@granite-spruce.test,Granite Spruce Analytics,https://granite-spruce.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-070,Gavriel Junipercrest,gavriel.junipercrest@granite-thistle.test,Granite Thistle Analytics,https://granite-thistle.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-071,Helora Ashmere,helora.ashmere@hazel-kestrel.test,Hazel Kestrel Analytics,https://hazel-kestrel.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-072,Helora Briarholt,helora.briarholt@hazel-lattice.test,Hazel Lattice Analytics,https://hazel-lattice.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-073,Helora Cedarwyn,helora.cedarwyn@hazel-meadow.test,Hazel Meadow Analytics,https://hazel-meadow.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-074,Helora Duskvale,helora.duskvale@hazel-nimbus.test,Hazel Nimbus Analytics,https://hazel-nimbus.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-075,Helora Emberwick,helora.emberwick@hazel-orchard.test,Hazel Orchard Analytics,https://hazel-orchard.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-076,Helora Fallowden,helora.fallowden@hazel-pebble.test,Hazel Pebble Analytics,https://hazel-pebble.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-077,Helora Glenquill,helora.glenquill@hazel-quartz.test,Hazel Quartz Analytics,https://hazel-quartz.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-078,Helora Hawkridge,helora.hawkridge@hazel-reef.test,Hazel Reef Analytics,https://hazel-reef.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-079,Helora Ivybourne,helora.ivybourne@hazel-spruce.test,Hazel Spruce Analytics,https://hazel-spruce.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-080,Helora Junipercrest,helora.junipercrest@hazel-thistle.test,Hazel Thistle Analytics,https://hazel-thistle.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-081,Iverin Ashmere,iverin.ashmere@indigo-kestrel.test,Indigo Kestrel Analytics,https://indigo-kestrel.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-082,Iverin Briarholt,iverin.briarholt@indigo-lattice.test,Indigo Lattice Analytics,https://indigo-lattice.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-083,Iverin Cedarwyn,iverin.cedarwyn@indigo-meadow.test,Indigo Meadow Analytics,https://indigo-meadow.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-084,Iverin Duskvale,iverin.duskvale@indigo-nimbus.test,Indigo Nimbus Analytics,https://indigo-nimbus.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-085,Iverin Emberwick,iverin.emberwick@indigo-orchard.test,Indigo Orchard Analytics,https://indigo-orchard.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-086,Iverin Fallowden,iverin.fallowden@indigo-pebble.test,Indigo Pebble Analytics,https://indigo-pebble.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-087,Iverin Glenquill,iverin.glenquill@indigo-quartz.test,Indigo Quartz Analytics,https://indigo-quartz.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-088,Iverin Hawkridge,iverin.hawkridge@indigo-reef.test,Indigo Reef Analytics,https://indigo-reef.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-089,Iverin Ivybourne,iverin.ivybourne@indigo-spruce.test,Indigo Spruce Analytics,https://indigo-spruce.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-090,Iverin Junipercrest,iverin.junipercrest@indigo-thistle.test,Indigo Thistle Analytics,https://indigo-thistle.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-091,Jasmera Ashmere,jasmera.ashmere@jade-kestrel.test,Jade Kestrel Analytics,https://jade-kestrel.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-092,Jasmera Briarholt,jasmera.briarholt@jade-lattice.test,Jade Lattice Analytics,https://jade-lattice.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-093,Jasmera Cedarwyn,jasmera.cedarwyn@jade-meadow.test,Jade Meadow Analytics,https://jade-meadow.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-094,Jasmera Duskvale,jasmera.duskvale@jade-nimbus.test,Jade Nimbus Analytics,https://jade-nimbus.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-095,Jasmera Emberwick,jasmera.emberwick@jade-orchard.test,Jade Orchard Analytics,https://jade-orchard.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-096,Jasmera Fallowden,jasmera.fallowden@jade-pebble.test,Jade Pebble Analytics,https://jade-pebble.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-097,Jasmera Glenquill,jasmera.glenquill@jade-quartz.test,Jade Quartz Analytics,https://jade-quartz.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-098,Jasmera Hawkridge,jasmera.hawkridge@jade-reef.test,Jade Reef Analytics,https://jade-reef.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-099,Jasmera Ivybourne,jasmera.ivybourne@jade-spruce.test,Jade Spruce Analytics,https://jade-spruce.test/,,CA,DEMO-REVOPS,lead,clean_unique
+bg-100,Jasmera Junipercrest,jasmera.junipercrest@jade-thistle.test,Jade Thistle Analytics,https://jade-thistle.test/,,CA,DEMO-REVOPS,lead,clean_unique
+common-01,John Smith,john.smith@fablegate.test,Fablegate Systems,https://fablegate.test/,+1 202 555 0101,CA,DEMO-REVOPS,lead,common_name_distinct_people
+common-02,John Smith,jsmith-fablegate@fablegate.test,Fablegate Systems,https://fablegate.test/,+1 202 555 0102,CA,DEMO-REVOPS,lead,common_name_distinct_people
+common-03,John Smith,john-events@fablegate.test,Fablegate Systems,https://fablegate.test/,+1 202 555 0103,CA,DEMO-REVOPS,lead,common_name_distinct_people
+common-04,John Smith,js-kitebrook@kitebrook.test,Kitebrook Finance,https://kitebrook.test/,+1 202 555 0104,CA,DEMO-REVOPS,lead,common_name_distinct_people
+common-05,John Smith,smith-lantern@lanternwell.test,Lanternwell Design,https://lanternwell.test/,+1 202 555 0105,CA,DEMO-REVOPS,lead,common_name_distinct_people
+common-06,John Smith,j-smith-freight@meadowglass.test,Meadowglass Freight,https://meadowglass.test/,+1 202 555 0106,CA,DEMO-REVOPS,lead,common_name_distinct_people
+rare-01,Zelyra Quenholt,zelyra.quenholt@tamarind.test,Tamarind Systems,https://tamarind.test/,+1 202 555 0121,CA,DEMO-REVOPS,lead,uncommon_name_same_person_changed_email_phone
+rare-02,Zelyra Quenholt,z.quenholt@tamarind.test,Tamarind Systems,https://tamarind.test/,+1 202 555 0122,CA,DEMO-REVOPS,lead,uncommon_name_same_person_changed_email_phone
+confirm-01,Zorelia Mossvale,zorelia@velour.test,Velour Research,https://velour.test/,+1 202 555 0125,CA,DEMO-REVOPS,lead,known_duplicate_confirm
+confirm-02,Zorelia Mossvale,z.mossvale@velour.test,Velour Research,https://velour.test/,(202) 555-0125,CA,DEMO-REVOPS,lead,known_duplicate_confirm
+company-01,Nerissa Thornfield,nerissa@fictional-microsoft.test,Microsfot,https://fictional-microsoft.test/,,CA,DEMO-REVOPS,lead,company_typo_same_website
+company-02,Oryn Halewood,oryn@fictional-microsoft.test,Microsoft,https://fictional-microsoft.test/,,CA,DEMO-REVOPS,lead,company_typo_same_website
+initial-01,A. Ternwick,a.ternwick@seagrove.test,Seagrove Studio,https://seagrove.test/,,CA,DEMO-REVOPS,lead,first_initial_same_person
+initial-02,Aveline Ternwick,aveline@seagrove.test,Seagrove Studio,https://seagrove.test/,,CA,DEMO-REVOPS,lead,first_initial_same_person
+order-01,Solene Arcvale,solene@seabrook.test,Seabrook Labs,https://seabrook.test/,,CA,DEMO-REVOPS,lead,name_order_same_person
+order-02,Arcvale Solene,s.arcvale@seabrook.test,Seabrook Labs,https://seabrook.test/,,CA,DEMO-REVOPS,lead,name_order_same_person
+email-01,Tervin Rookhaven,tervin.rookhaevn@lumenforge.test,Lumenforge Works,https://lumenforge.test/,,CA,DEMO-REVOPS,lead,email_transposition_same_person
+email-02,Tervin Rookhaven,tervin.rookhaven@lumenforge.test,Lumenforge Works,https://lumenforge.test/,,CA,DEMO-REVOPS,lead,email_transposition_same_person
+role-01,Umbria Valecrest,info@oakenreach.test,Oakenreach,https://oakenreach.test/,,CA,DEMO-REVOPS,lead,shared_role_inbox_distinct_people
+role-02,Verran Willowmere,info@oakenreach.test,Oakenreach,https://oakenreach.test/,,CA,DEMO-REVOPS,lead,shared_role_inbox_distinct_people
+role-03,Wystra Alderfall,support@oakenreach.test,Oakenreach,https://oakenreach.test/,,CA,DEMO-REVOPS,lead,shared_role_inbox_distinct_people
+phone-01,Xandrel Larkspur,xandrel.one@brookhaven.test,Brookhaven Textiles,https://brookhaven.test/,+1 202 555 0134 ext 11,CA,DEMO-REVOPS,lead,same_name_shared_switchboard_distinct_people
+phone-02,Xandrel Larkspur,xandrel.two@brookhaven.test,Brookhaven Textiles,https://brookhaven.test/,+1 202 555 0134 ext 22,CA,DEMO-REVOPS,lead,same_name_shared_switchboard_distinct_people
+phone-03,Ylena Ferncrest,ylena@brookhaven.test,Brookhaven Textiles,https://brookhaven.test/,+1 202 555 0134,CA,DEMO-REVOPS,lead,shared_switchboard_distinct_people
+middle-01,Zevran James Evershade,zevran.j@cobaltshore.test,Cobaltshore Tools,https://cobaltshore.test/,,CA,DEMO-REVOPS,lead,conflicting_middle_names_distinct_people
+middle-02,Zevran Mary Evershade,zevran.m@cobaltshore.test,Cobaltshore Tools,https://cobaltshore.test/,,CA,DEMO-REVOPS,lead,conflicting_middle_names_distinct_people
+nickname-01,Robert Bramblewick,robert@cloverstone.test,Cloverstone Partners,https://cloverstone.test/,,CA,DEMO-REVOPS,lead,nickname_known_duplicate_missed_without_anchor
+nickname-02,Bob Bramblewick,bob@cloverstone.test,Cloverstone Partners,https://cloverstone.test/,,CA,DEMO-REVOPS,lead,nickname_known_duplicate_missed_without_anchor
+short-01,Kirella Dawnwharf,kirella@fictional-ibm.test,IBM,https://fictional-ibm.test/,,CA,DEMO-REVOPS,lead,short_company_distinct
+short-02,Luthen Eskerval,luthen@fictional-ibn.test,IBN,https://fictional-ibn.test/,,CA,DEMO-REVOPS,lead,short_company_distinct
+suffix-01,Merora Flintshore,merora@polarisweave.test,Polarisweave LLC,https://polarisweave.test/,,CA,DEMO-REVOPS,lead,company_legal_suffix_same_company
+suffix-02,Nythan Goldmere,nythan@polarisweave.test,Polarisweave,https://polarisweave.test/,,CA,DEMO-REVOPS,lead,company_legal_suffix_same_company
+alias-01,Orvelia Hemlock,orvelia+event@cinderstone.test,Cinderstone Studio,https://cinderstone.test/,,CA,DEMO-REVOPS,lead,business_plus_address_not_provider_alias
+alias-02,Orvelia Hemlock,orvelia@cinderstone.test,Cinderstone Studio,https://cinderstone.test/,,CA,DEMO-REVOPS,lead,business_plus_address_not_provider_alias
+accent-01,José Inkwell,jose.one@silvergrove.test,Silvergrove Design,https://silvergrove.test/,,CA,DEMO-REVOPS,lead,accent_same_person
+accent-02,Jose Inkwell,jose.two@silvergrove.test,Silvergrove Design,https://silvergrove.test/,,CA,DEMO-REVOPS,lead,accent_same_person
+exact-01,Pyrin Jasperdale,pyrin@brackenfield.test,Brackenfield Research,https://brackenfield.test/,,CA,DEMO-REVOPS,lead,exact_email_known_duplicate
+exact-02,Pyrin Jasperdale,pyrin@brackenfield.test,Brackenfield Research,https://brackenfield.test/,,CA,DEMO-REVOPS,lead,exact_email_known_duplicate
+nearco-01,Quessia Kingswell,quessia@marshlight.test,Marshlight,https://marshlight.test/,,CA,DEMO-REVOPS,lead,similar_company_distinct_entities
+nearco-02,Rhovan Linden,rhovan@marshlift.test,Marshlift,https://marshlift.test/,,CA,DEMO-REVOPS,lead,similar_company_distinct_entities

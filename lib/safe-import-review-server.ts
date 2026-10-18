@@ -1,3 +1,4 @@
+import { isSuppressed } from './suppression';
 import { createGovernedCrmPlan } from './governed-crm-plan';
 import { defaultCrmUpdatePolicy, isSafeContactUpdatePolicy, type CrmWritePlan, type PortableCrmContact } from './crm-workflow';
 import { isHubSpotEligible, toHubSpotSyncContact } from './hubspot-sync';
@@ -19,6 +20,9 @@ export async function safeImportWorkspaceFingerprint(workspace: SavedWorkspace):
 
 export function assertSafeImportWorkspace(workspace: SavedWorkspace): void {
   const s = workspace.state;
+  if ((s.importObject ?? 'contact') !== 'contact') {
+    throw new Error('Company and associated-company imports support local review and export only. Safe Import requires a contacts-only import.');
+  }
   if (s.importRecipe !== 'safe-update-contacts' || s.importRecordMode !== 'update-existing'
     || !['hubspot', 'salesforce'].includes(s.destinationType) || !s.crmUpdatePolicy || !isSafeContactUpdatePolicy(s.crmUpdatePolicy)) {
     throw new Error('Select and save Safe Import: Update existing contacts with a HubSpot or Salesforce destination and protected field policy.');
@@ -49,6 +53,10 @@ export async function buildSafeImportReview(workspace: SavedWorkspace, account: 
   const portable: PortableCrmContact[] = [];
   for (const row of workspace.state.contacts) {
     const base = { contactId: row.contactId, email: row.normalizedEmail || row.rawEmail };
+    if (isSuppressed(row)) {
+      rows.set(row.contactId, { ...base, status: 'skipped', reason: `Suppressed: ${(row.suppressionMatches ?? []).map((match) => `${match.listName}: ${match.reason}`).join('; ')}` });
+      continue;
+    }
     if (row.importExclusion || row.recordStatus !== 'active') {
       rows.set(row.contactId, { ...base, status: 'skipped', reason: row.importExclusion?.reason ?? 'This source row was merged or removed locally; no CRM write is scheduled.' });
     } else if (!isHubSpotEligible(row)) {

@@ -1,3 +1,4 @@
+import { readCrmJson } from './crm-read-transport';
 import type { NativeCrmRecord, PortableCrmContact } from './crm-workflow';
 
 const CONTACTS_URL = 'https://api.hubapi.com/crm/objects/2026-03/contacts';
@@ -7,16 +8,13 @@ const PROPERTIES = ['email', 'hs_additional_emails', 'firstname', 'lastname', 'c
 export async function readHubSpotRecordById(nativeId: string, accessToken: string): Promise<NativeCrmRecord | null> {
   if (!/^\d+$/.test(nativeId)) throw new Error('HubSpot lookup requires a numeric contact ID.');
   const query = new URLSearchParams({ properties: PROPERTIES.join(',') });
-  const response = await fetch(`${CONTACTS_URL}/${nativeId}?${query}`, {
-    cache: 'no-store', redirect: 'manual',
+  const { response, payload: value } = await readCrmJson(`${CONTACTS_URL}/${nativeId}?${query}`, {
     headers: { authorization: `Bearer ${accessToken}`, accept: 'application/json' },
-    signal: AbortSignal.timeout(30_000),
-  });
+  }, { provider: 'hubspot', accessToken });
   if (response.status === 404) return null;
   if (!response.ok || response.status === 207) {
     throw new Error(`HubSpot could not confirm contact identity (${response.status}).`);
   }
-  const value: unknown = await response.json();
   if (!isRecord(value) || value.id !== nativeId) {
     throw new Error('HubSpot lookup returned an unrequested contact ID.');
   }
@@ -35,11 +33,10 @@ export async function readHubSpotExisting(
   const matches = new Map<string, NativeCrmRecord[]>();
   if (!emails.size) return matches;
   const headers = { authorization: `Bearer ${accessToken}`, 'content-type': 'application/json', accept: 'application/json' };
-  const response = await fetch(`${CONTACTS_URL}/batch/read`, {
-    method: 'POST', cache: 'no-store', headers, signal: AbortSignal.timeout(30_000),
+  const { response, payload } = await readCrmJson(`${CONTACTS_URL}/batch/read`, {
+    method: 'POST', headers,
     body: JSON.stringify({ idProperty: 'email', properties: PROPERTIES, inputs: [...emails].map((id) => ({ id })) }),
-  });
-  const payload: unknown = await response.json();
+  }, { provider: 'hubspot', accessToken });
   if (!response.ok || !isRecord(payload) || payload.status !== 'COMPLETE' || !Array.isArray(payload.results)) {
     throw new Error(`HubSpot lookup returned an incomplete or invalid response (${response.status}).`);
   }
@@ -55,9 +52,7 @@ export async function readHubSpotExisting(
   for (const email of emails) {
     if (matches.get(email)?.length) continue;
     const query = new URLSearchParams({ idProperty: 'email', properties: PROPERTIES.join(',') });
-    const individual = await fetch(`${CONTACTS_URL}/${encodeURIComponent(email)}?${query}`, {
-      cache: 'no-store', headers, signal: AbortSignal.timeout(30_000),
-    });
+    const { response: individual, payload: result } = await readCrmJson(`${CONTACTS_URL}/${encodeURIComponent(email)}?${query}`, { headers }, { provider: 'hubspot', accessToken });
     if (individual.status === 404) {
       matches.set(email, []);
       continue;
@@ -65,7 +60,6 @@ export async function readHubSpotExisting(
     if (!individual.ok || individual.status === 207) {
       throw new Error(`HubSpot could not confirm contact identity (${individual.status}).`);
     }
-    const result: unknown = await individual.json();
     addMatchingRecord(result, emails, matches, email);
   }
   return matches;

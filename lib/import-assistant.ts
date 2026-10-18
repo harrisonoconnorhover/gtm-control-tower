@@ -32,7 +32,7 @@ export class NoModelImportAssistant implements ImportAssistant {
     const normalized = request.toLowerCase().replace(/[’]/g, "'");
     const suggestedMapping: CsvColumnMapping = {};
     for (const [field, aliases] of Object.entries(headerAliases)) {
-      const matches = headers.filter((header) => aliases.includes(header.toLowerCase().trim().replaceAll('_', ' ')));
+      const matches = headers.filter((header) => (aliases ?? []).includes(header.toLowerCase().trim().replaceAll('_', ' ')));
       if (matches.length === 1) suggestedMapping[field as keyof CsvColumnMapping] = matches[0];
     }
     // Negative clauses describe protections, rather than a request to perform those operations.

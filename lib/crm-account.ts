@@ -1,15 +1,14 @@
+import { readCrmJson } from './crm-read-transport';
 import type { CrmAccountIdentity } from './safe-import';
 
 /** Actual account identity, verified by HubSpot; credentials are never persisted. */
-export async function readHubSpotAccountIdentity(accessToken: string): Promise<CrmAccountIdentity> {
+export async function readHubSpotAccountIdentity(accessToken: string, signal?: AbortSignal): Promise<CrmAccountIdentity> {
   if (!accessToken.trim()) throw new Error('HubSpot credentials are required to verify the CRM account.');
   // https://developers.hubspot.com/docs/api-reference/legacy/account/account-information/guide
-  const response = await fetch('https://api.hubapi.com/account-info/v3/details', {
-    cache: 'no-store', redirect: 'manual', signal: AbortSignal.timeout(30_000),
+  const { response, payload } = await readCrmJson('https://api.hubapi.com/account-info/v3/details', {
     headers: { authorization: `Bearer ${accessToken}`, accept: 'application/json' },
-  });
+  }, { provider: 'hubspot', accessToken }, { signal });
   if (!response.ok || response.status === 207) throw new Error(`HubSpot account identity could not be verified (${response.status}).`);
-  const payload: unknown = await response.json();
   if (!payload || typeof payload !== 'object' || !('portalId' in payload)) {
     throw new Error('HubSpot did not return a verified account ID.');
   }
@@ -47,11 +46,9 @@ export async function readSalesforceAccountIdentity(apiRoot: string, headers: Re
   if (root.protocol !== 'https:' || root.username || root.password || root.search || root.hash
     || !/^\/services\/data\/v\d+\.\d+$/.test(root.pathname)) throw new Error('Salesforce requires an instance API root.');
   const query = new URLSearchParams({ q: 'SELECT Id FROM Organization LIMIT 1' });
-  const response = await fetch(`${root.href}/query?${query}`, {
-    cache: 'no-store', redirect: 'manual', signal: AbortSignal.timeout(30_000), headers,
-  });
+  const { response, payload } = await readCrmJson(`${root.href}/query?${query}`, { headers },
+    { provider: 'salesforce', accessToken: new Headers(headers).get('authorization')?.replace(/^Bearer\s+/i, '') ?? '', origin: root.origin });
   if (!response.ok || response.status === 207) throw new Error(`Salesforce account identity could not be verified (${response.status}).`);
-  const payload: unknown = await response.json();
   if (!payload || typeof payload !== 'object' || !('done' in payload) || payload.done !== true
     || !('records' in payload) || !Array.isArray(payload.records) || payload.records.length !== 1
     || ('nextRecordsUrl' in payload && payload.nextRecordsUrl != null)) throw new Error('Salesforce did not return one verified organization.');

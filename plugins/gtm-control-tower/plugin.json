@@ -1,0 +1,28 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "gtm-control-tower",
+  "version": "0.7.0",
+  "description": "Inspect GTM imports, review local fuzzy matches, manage suppression lists, check websites and prepare CRM import reviews.",
+  "author": {
+    "name": "Harrison O'Connor-Hoover"
+  },
+  "license": "MIT",
+  "extensions": {
+    "com.openai": {
+      "requires_local_executor": true,
+      "interface": {
+        "displayName": "GTM Control Tower",
+        "shortDescription": "Review imports, fuzzy matches and suppression lists",
+        "developerName": "Harrison O'Connor-Hoover",
+        "category": "Productivity",
+        "capabilities": [
+          "Read",
+          "Write"
+        ],
+        "defaultPrompt": [
+          "Show my saved Control Tower imports and their latest website checks."
+        ]
+      }
+    }
+  }
+}

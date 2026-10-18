@@ -1,3 +1,4 @@
+import { resetCrmReadTransportForTests } from '../lib/crm-read-transport';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
@@ -54,6 +55,7 @@ async function prepare(workspaceId: string) {
 }
 
 beforeEach(() => {
+  resetCrmReadTransportForTests({ minimumIntervalMs: 0, backoffBaseMs: 0 });
   portalId = 12345; writes = []; loseResponse = false; failLookup = false; snapshotStartedAt = new Date(Date.now() - 1000).toISOString();
   native = new Map(Array.from({ length: 102 }, (_, index): [string, NativeCrmRecord] => {
     const nativeId = String(1000 + index);
@@ -92,7 +94,7 @@ beforeEach(() => {
     return record ? json(providerContact(record)) : json({ category: 'OBJECT_NOT_FOUND' }, 404);
   });
 });
-afterEach(() => { vi.restoreAllMocks(); scans.latest.mockReset(); scans.records.mockReset(); });
+afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); scans.latest.mockReset(); scans.records.mockReset(); });
 afterAll(() => { vi.unstubAllEnvs(); rmSync(directory, { recursive: true, force: true }); });
 
 describe('Safe Import whole-file route with AI disabled and simulated HubSpot', () => {
@@ -176,11 +178,44 @@ describe('Safe Import whole-file route with AI disabled and simulated HubSpot', 
     const newReview = await prepare(saved.id);
     portalId = 88888;
     expect((await POST(request('approve', saved.id, newReview.id))).status).toBe(409);
-    expect((await POST(request('load', saved.id, newReview.id))).status).toBe(409);
+    expect((await POST(request('load', saved.id, newReview.id))).status).toBe(200); // Saved evidence is readable; only execution requires the current account.
     portalId = 12345;
     await saveWorkspace(saved.id, { ...saved.state, mapping: { phone: 'other_phone' } });
     expect((await POST(request('approve', saved.id, newReview.id))).status).toBe(409);
     expect(writes).toEqual([]);
+  });
+
+  it('loads durable review progress during an outage without touching the CRM or granting approval', async () => {
+    const saved = await workspace();
+    const review = await prepare(saved.id);
+    const fetchMock = vi.mocked(globalThis.fetch);
+    fetchMock.mockClear();
+    fetchMock.mockRejectedValue(new TypeError('Fictional provider outage'));
+    const response = await POST(request('load', saved.id, review.id));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ review: { id: review.id }, execution: null });
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(writes).toEqual([]);
+  });
+
+  it('holds expired unsent work locally even when the CRM is unavailable', async () => {
+    const saved = await workspace();
+    const review = await prepare(saved.id);
+    const approved = await POST(request('approve', saved.id, review.id));
+    expect(approved.status).toBe(202);
+    const writeCount = writes.length;
+    expect(writeCount).toBe(10);
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(Date.parse(review.expiresAt) + 1_000);
+    const fetchMock = vi.mocked(globalThis.fetch);
+    fetchMock.mockClear();
+    fetchMock.mockRejectedValue(new TypeError('Fictional provider outage'));
+    const response = await POST(request('continue', saved.id, review.id));
+    expect(response.status, await response.clone().text()).toBe(202);
+    const { execution } = await response.json() as { execution: SafeImportExecution };
+    expect(execution.records.some((record) => record.status === 'held' && /expired/.test(record.error ?? ''))).toBe(true);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(writes).toHaveLength(writeCount);
   });
 
   it('keeps a lost response unknown, observes approved values, and never resends on approve or recover', async () => {

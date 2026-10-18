@@ -1,3 +1,4 @@
+import { isSuppressed } from './suppression';
 import type { LiveContactState } from './live-control-tower';
 
 export type ImportExclusion = { reason: string; excludedAt: string };
@@ -44,11 +45,11 @@ export function restoreImportRow(contacts: LiveContactState[], contactId: string
 export function recomputeImportDuplicateFlags(contacts: LiveContactState[]): LiveContactState[] {
   const counts = new Map<string, number>();
   for (const contact of contacts) {
-    if (contact.recordStatus !== 'active' || contact.importExclusion || !contact.normalizedEmail) continue;
+    if (contact.recordStatus !== 'active' || contact.importExclusion || isSuppressed(contact) || !contact.normalizedEmail) continue;
     counts.set(contact.normalizedEmail, (counts.get(contact.normalizedEmail) ?? 0) + 1);
   }
   return contacts.map((contact) => {
-    if (contact.recordStatus !== 'active' || contact.importExclusion) return contact;
+    if (contact.recordStatus !== 'active' || contact.importExclusion || isSuppressed(contact)) return contact;
     const duplicate = Boolean(contact.normalizedEmail && (counts.get(contact.normalizedEmail) ?? 0) > 1);
     if (duplicate === contact.qualityFlags.includes('duplicate_identity')) return contact;
     return { ...contact, qualityFlags: duplicate

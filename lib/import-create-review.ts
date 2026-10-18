@@ -1,3 +1,4 @@
+import { isSuppressed } from './suppression';
 import { portableCrmFieldNames, type CrmCreateReviewResult, type CrmWritePlan, type PortableCrmContact } from './crm-workflow';
 import type { DuplicateScanView } from './duplicate-scan-store';
 import { toHubSpotSyncContact } from './hubspot-sync';
@@ -59,7 +60,7 @@ export function reviewImportCreates(
   if (!inputs.length) return reviews;
   const savedInputs: ImportMatchInput[] = [];
   for (const saved of workspace.state.contacts) {
-    if (saved?.recordStatus === 'merged' || saved?.importExclusion) continue;
+    if (saved?.recordStatus === 'merged' || saved?.importExclusion || (saved && isSuppressed(saved))) continue;
     const input = saved?.recordStatus === 'active' && savedById.get(saved.contactId)?.length === 1
       ? savedMatchingInput(connectorId, saved) : null;
     if (!input) return holdAll('The saved import contains an identity that could not be checked. Correct or remove unusable rows and save the workspace before creating records.');

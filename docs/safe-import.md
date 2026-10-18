@@ -114,6 +114,38 @@ any restoration must be a separate reviewed decision protecting subsequent work.
 Historical legacy run verification retains its documented current-connection
 boundary; this recipe's review and execution are separately account-bound.
 
+## Capacity limits and retry behavior
+
+Native Safe Import reads and writes share a process-local pacing gate with cohort
+and contact reads: at least 250 ms between request starts and at most two requests
+in flight for one provider/credential. Existing ten-record chunks remain in place.
+This reduces bursts from this app; it does not control another integration's load
+or repair a Salesforce flow that cannot handle its own trigger volume.
+
+A definitively rejected 429 or Salesforce `REQUEST_LIMIT_EXCEEDED` stops the
+chunk and saves a cooldown with the original approval. No later row is sent during
+that cooldown. A temporary read failure before sending also leaves the row
+pending. The worker skips that execution until eligible, and the existing monitor
+runner respects the next attempt time. The screen shows why it is waiting and
+when continuation is available. Saved progress can be loaded during an outage.
+
+After the wait, continuation rereads the account, target identity and before-values,
+checks the saved workspace, and checks the original approval deadline again after
+pacing. It does not extend approval. Expired unsent rows become held even when the
+CRM is unavailable. Permission rejection during a write holds the remaining
+unsent queue. Already accepted and unknown outcomes are preserved.
+
+Only requests known not to have been accepted can return to pending. A lost or
+5xx write response remains unknown and is reconciled by reading; it is never
+sent again automatically. Deliberate suppressions, missing consent, converted
+Leads, wrong mappings and changed CRM fields remain business/review issues.
+Retries cannot establish eligibility or justify overwriting protected values.
+
+Provider classification follows [HubSpot usage guidelines](https://developers.hubspot.com/docs/developer-tooling/platform/usage-guidelines)
+and [Salesforce REST error codes](https://developer.salesforce.com/docs/platform/api-rest/guide/errorcodes.html).
+Provider reset times are honored when supplied. A quota response without a reset
+time uses a conservative one-hour retry suggestion; it is not a known reset time.
+
 ## Storage and verification scope
 
 SQLite self-hosts initialize the new tables locally. D1 installations must apply

@@ -46,11 +46,15 @@ export async function POST(request: Request) {
       if (typeof payload.name !== 'string' || !payload.mapping || typeof payload.mapping !== 'object') {
         return Response.json({ error: 'Preset name and mapping are required.' }, { status: 400 });
       }
+      if (payload.importObject !== undefined && !['contact', 'company', 'contact_company'].includes(String(payload.importObject))) {
+        return Response.json({ error: 'Choose Contacts, Companies, or Contacts + associated companies.' }, { status: 400 });
+      }
       const presets = await saveMappingPreset(
         payload.id,
         payload.name,
         payload.mapping,
         typeof payload.presetId === 'string' ? payload.presetId : undefined,
+        payload.importObject as 'contact' | 'company' | 'contact_company' | undefined,
       );
       return Response.json({ presets });
     }

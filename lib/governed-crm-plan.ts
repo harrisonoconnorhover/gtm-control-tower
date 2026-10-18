@@ -1,3 +1,4 @@
+import { isSuppressed } from './suppression';
 import { hasPomadeOrigin } from './pomade-handoff';
 import { readHubSpotExisting } from './crm-existing-hubspot';
 import { readSalesforceExisting } from './crm-existing-salesforce';
@@ -12,6 +13,9 @@ import { importMatchSourceKey, isConfirmedImportMatch, nativeMatchTargetKey, typ
 import { readConfirmedTarget, verifyImportMatch } from './import-match-decision-server';
 
 export async function createGovernedCrmPlan(connectorId: CrmWritePlan['connectorId'], sourceFile: string, contacts: PortableCrmContact[], workspace: SavedWorkspace, updatePolicy: CrmUpdatePolicy) {
+  if ((workspace.state.importObject ?? 'contact') !== 'contact') {
+    throw new Error('Company and associated-company imports support local review and export only. CRM import is unavailable.');
+  }
   const recordMode = normalizeImportRecordMode(workspace.state.importRecordMode);
   const safeImport = workspace.state.importRecipe === 'safe-update-contacts' && recordMode === 'update-existing';
   const rowHolds = new Map<string, string>();
@@ -19,6 +23,10 @@ export async function createGovernedCrmPlan(connectorId: CrmWritePlan['connector
     const saved = workspace.state.contacts.filter((row) => row?.contactId === contact.contactId);
     if (saved.length !== 1 || saved[0].recordStatus !== 'active') {
       rowHolds.set(contact.contactId, 'This row is no longer a unique active row in the saved import. Refresh the workspace and comparison.');
+      continue;
+    }
+    if (isSuppressed(saved[0])) {
+      rowHolds.set(contact.contactId, `Suppressed: ${(saved[0].suppressionMatches ?? []).map((match) => `${match.listName}: ${match.reason}`).join('; ')}`);
       continue;
     }
     if (saved[0].importExclusion) {
@@ -68,7 +76,7 @@ async function applyConfirmedMatches(
   rowHolds: Map<string, string>,
   allowSalesforceContacts: boolean,
 ): Promise<Map<string, CrmMatchDecision>> {
-  const included = workspace.state.contacts.filter((row) => row.recordStatus === 'active' && !row.importExclusion);
+  const included = workspace.state.contacts.filter((row) => row.recordStatus === 'active' && !row.importExclusion && !isSuppressed(row));
   const includedIds = new Set(included.map((row) => row.contactId));
   const requestedIds = new Set(contacts.map((row) => row.contactId));
   const selections = new Map<string, ConfirmedImportMatch>();

@@ -1,6 +1,8 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { resetCrmReadTransportForTests } from '../lib/crm-read-transport';
+import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { readHubSpotIdentityPage, readSalesforceIdentityPage } from '../lib/crm-source';
 
+beforeEach(() => resetCrmReadTransportForTests({ minimumIntervalMs: 0, defaultBudgetMs: 20, backoffBaseMs: 1 }));
 afterEach(() => vi.restoreAllMocks());
 
 describe('CRM identity scan pagination', () => {

@@ -1,0 +1,113 @@
+{
+  "kind": "crm-evidence-result",
+  "schemaVersion": 1,
+  "requestId": "fictional-cohort-request-1",
+  "requestDigest": "f94a0d9c283c1350f11a15547807b0209cb86892274c0d1390b9244d5a4f3372",
+  "portalId": "fictional-portal",
+  "createdAt": "2026-10-13T12:00:00.000Z",
+  "contacts": [
+    {
+      "contactId": "101",
+      "fields": [
+        {
+          "field": "jobTitle",
+          "status": "supported",
+          "value": "Revenue Operations Director",
+          "rationale": "Title recorded in the contact-specific CRM note; review current employment.",
+          "evidence": [
+            {
+              "sourceId": "note-101",
+              "quote": "Maya Stone is Revenue Operations Director at Northstar Demo."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "contactId": "102",
+      "fields": [
+        {
+          "field": "jobTitle",
+          "status": "conflicting",
+          "value": null,
+          "rationale": "Notes disagree without role-effective dates.",
+          "evidence": [
+            {
+              "sourceId": "note-102-a",
+              "quote": "Devon Brooks introduced themself as Sales Operations Manager."
+            },
+            {
+              "sourceId": "note-102-b",
+              "quote": "Devon Brooks introduced themself as Revenue Operations Director."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "contactId": "103",
+      "fields": [
+        {
+          "field": "jobTitle",
+          "status": "not_run",
+          "value": null,
+          "rationale": "Extraction has not run.",
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "contactId": "104",
+      "fields": [
+        {
+          "field": "jobTitle",
+          "status": "not_run",
+          "value": null,
+          "rationale": "Extraction has not run.",
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "contactId": "105",
+      "fields": [
+        {
+          "field": "jobTitle",
+          "status": "not_run",
+          "value": null,
+          "rationale": "Extraction has not run.",
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "contactId": "106",
+      "fields": [
+        {
+          "field": "jobTitle",
+          "status": "not_found",
+          "value": null,
+          "rationale": "The company context does not identify this contact.",
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "contactId": "107",
+      "fields": [
+        {
+          "field": "jobTitle",
+          "status": "supported",
+          "value": "Operations Manager",
+          "rationale": "Title recorded in the contact-specific CRM note.",
+          "evidence": [
+            {
+              "sourceId": "note-107",
+              "quote": "Riley Chen is Operations Manager at Northstar Demo."
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

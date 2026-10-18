@@ -276,7 +276,7 @@ function usablePhone(value: string): string | null {
   return /^0+$/u.test(text.replace(/\D/gu, '')) ? null : normalizePhone(text);
 }
 
-function normalizeState(value: string): string | null {
+export function normalizeState(value: string): string | null {
   const state = usableText(value).normalize('NFKC').toLowerCase().replaceAll('.', '').replace(/\s+/gu, ' ').trim();
   return /\p{L}/u.test(state) ? usStates.get(state) ?? state : null;
 }

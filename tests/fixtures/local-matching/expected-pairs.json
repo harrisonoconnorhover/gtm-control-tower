@@ -1,0 +1,78 @@
+{
+  "title": "Fictional messy-contact local matching evaluation",
+  "version": 1,
+  "rowCount": 140,
+  "backgroundRows": 100,
+  "scope": "Static, invented people and .test email/website hosts. Microsoft/IBM/IBN are illustrative spelling strings, not real company evidence. No paid checks, DNS, mail delivery or CRM writes are needed.",
+  "mapping": {
+    "objectType": "contact",
+    "contactId": "contact_id",
+    "fullName": "full_name",
+    "rawEmail": "email",
+    "company": "company",
+    "website": "website",
+    "phone": "phone",
+    "state": "state",
+    "ownerId": "owner_id",
+    "lifecycleStage": "lifecycle_stage"
+  },
+  "suggestedDecisions": {
+    "confirm": {
+      "a": "confirm-01",
+      "b": "confirm-02",
+      "kind": "possible_duplicate"
+    },
+    "dismiss": {
+      "a": "phone-01",
+      "b": "phone-02",
+      "kind": "possible_duplicate"
+    },
+    "additionalDismiss": {
+      "a": "common-01",
+      "b": "common-02",
+      "kind": "possible_duplicate"
+    }
+  },
+  "evaluationNotes": [
+    "Ground truth labels are authored with the fixture, not inferred from matcher scores. Count only these labeled pairs; do not claim population precision or recall.",
+    "Unlabeled findings are unadjudicated and should be reported separately. All 100 background rows represent different people at different companies.",
+    "Common names intentionally generate false-positive warnings. Warning scores rank evidence and are not probabilities.",
+    "At least 100 identities remain after same-email deduplication. Rarity is local to this synthetic cohort, not population rarity.",
+    "All addresses use reserved .test domains; provider-specific Gmail alias behavior is covered by existing unit tests rather than live-address fixtures.",
+    "The common-name cohort and shared .test suffix can trigger documented candidate/group caps. Report caps and omitted labeled pairs transparently."
+  ],
+  "pairs": [
+    {"a": "common-01", "b": "common-02", "kind": "possible_duplicate", "label": "different_people", "expected": "warning_or_none", "reasonCodes": ["same_name", "common_local_name"], "notes": "These six fictional John Smiths are different people. Any duplicate suggestion is a known false positive requiring human dismissal; per-row candidate limits can omit some pairs."},
+    {"a": "common-01", "b": "common-03", "kind": "possible_duplicate", "label": "different_people", "expected": "warning_or_none", "reasonCodes": ["same_name", "common_local_name"], "notes": "These six fictional John Smiths are different people. Any duplicate suggestion is a known false positive requiring human dismissal; per-row candidate limits can omit some pairs."},
+    {"a": "common-01", "b": "common-04", "kind": "possible_duplicate", "label": "different_people", "expected": "warning_or_none", "reasonCodes": ["same_name", "common_local_name"], "notes": "These six fictional John Smiths are different people. Any duplicate suggestion is a known false positive requiring human dismissal; per-row candidate limits can omit some pairs."},
+    {"a": "common-01", "b": "common-05", "kind": "possible_duplicate", "label": "different_people", "expected": "warning_or_none", "reasonCodes": ["same_name", "common_local_name"], "notes": "These six fictional John Smiths are different people. Any duplicate suggestion is a known false positive requiring human dismissal; per-row candidate limits can omit some pairs."},
+    {"a": "common-01", "b": "common-06", "kind": "possible_duplicate", "label": "different_people", "expected": "warning_or_none", "reasonCodes": ["same_name", "common_local_name"], "notes": "These six fictional John Smiths are different people. Any duplicate suggestion is a known false positive requiring human dismissal; per-row candidate limits can omit some pairs."},
+    {"a": "common-02", "b": "common-03", "kind": "possible_duplicate", "label": "different_people", "expected": "warning_or_none", "reasonCodes": ["same_name", "common_local_name"], "notes": "These six fictional John Smiths are different people. Any duplicate suggestion is a known false positive requiring human dismissal; per-row candidate limits can omit some pairs."},
+    {"a": "common-02", "b": "common-04", "kind": "possible_duplicate", "label": "different_people", "expected": "warning_or_none", "reasonCodes": ["same_name", "common_local_name"], "notes": "These six fictional John Smiths are different people. Any duplicate suggestion is a known false positive requiring human dismissal; per-row candidate limits can omit some pairs."},
+    {"a": "common-02", "b": "common-05", "kind": "possible_duplicate", "label": "different_people", "expected": "warning_or_none", "reasonCodes": ["same_name", "common_local_name"], "notes": "These six fictional John Smiths are different people. Any duplicate suggestion is a known false positive requiring human dismissal; per-row candidate limits can omit some pairs."},
+    {"a": "common-02", "b": "common-06", "kind": "possible_duplicate", "label": "different_people", "expected": "warning_or_none", "reasonCodes": ["same_name", "common_local_name"], "notes": "These six fictional John Smiths are different people. Any duplicate suggestion is a known false positive requiring human dismissal; per-row candidate limits can omit some pairs."},
+    {"a": "common-03", "b": "common-04", "kind": "possible_duplicate", "label": "different_people", "expected": "warning_or_none", "reasonCodes": ["same_name", "common_local_name"], "notes": "These six fictional John Smiths are different people. Any duplicate suggestion is a known false positive requiring human dismissal; per-row candidate limits can omit some pairs."},
+    {"a": "common-03", "b": "common-05", "kind": "possible_duplicate", "label": "different_people", "expected": "warning_or_none", "reasonCodes": ["same_name", "common_local_name"], "notes": "These six fictional John Smiths are different people. Any duplicate suggestion is a known false positive requiring human dismissal; per-row candidate limits can omit some pairs."},
+    {"a": "common-03", "b": "common-06", "kind": "possible_duplicate", "label": "different_people", "expected": "warning_or_none", "reasonCodes": ["same_name", "common_local_name"], "notes": "These six fictional John Smiths are different people. Any duplicate suggestion is a known false positive requiring human dismissal; per-row candidate limits can omit some pairs."},
+    {"a": "common-04", "b": "common-05", "kind": "possible_duplicate", "label": "different_people", "expected": "warning_or_none", "reasonCodes": ["same_name", "common_local_name"], "notes": "These six fictional John Smiths are different people. Any duplicate suggestion is a known false positive requiring human dismissal; per-row candidate limits can omit some pairs."},
+    {"a": "common-04", "b": "common-06", "kind": "possible_duplicate", "label": "different_people", "expected": "warning_or_none", "reasonCodes": ["same_name", "common_local_name"], "notes": "These six fictional John Smiths are different people. Any duplicate suggestion is a known false positive requiring human dismissal; per-row candidate limits can omit some pairs."},
+    {"a": "common-05", "b": "common-06", "kind": "possible_duplicate", "label": "different_people", "expected": "warning_or_none", "reasonCodes": ["same_name", "common_local_name"], "notes": "These six fictional John Smiths are different people. Any duplicate suggestion is a known false positive requiring human dismissal; per-row candidate limits can omit some pairs."},
+    {"a": "rare-01", "b": "rare-02", "kind": "possible_duplicate", "label": "same_person", "expected": "warning", "reasonCodes": ["same_name", "uncommon_local_name"], "notes": "Same fictional person with a changed email and telephone; compare against common-01/common-02 under equal supporting evidence."},
+    {"a": "confirm-01", "b": "confirm-02", "kind": "possible_duplicate", "label": "same_person", "expected": "warning", "reasonCodes": ["uncommon_local_name", "same_phone"], "notes": "Recommended Confirm demonstration: same fictional person, distinct email, matching personal phone, company and domain."},
+    {"a": "company-01", "b": "company-02", "kind": "company_variant", "label": "same_company", "expected": "warning", "reasonCodes": ["company_typo", "same_website"], "notes": "Known Microsfot typo. Microsoft is used only as a spelling example; people and .test website are fictional."},
+    {"a": "initial-01", "b": "initial-02", "kind": "possible_duplicate", "label": "same_person", "expected": "warning", "reasonCodes": ["name_initial"], "notes": "First initial variant has same-company context but must stay cautious."},
+    {"a": "order-01", "b": "order-02", "kind": "possible_duplicate", "label": "same_person", "expected": "warning", "reasonCodes": ["name_order"], "notes": "Reordered full name belongs to the same fictional person."},
+    {"a": "email-01", "b": "email-02", "kind": "possible_duplicate", "label": "same_person", "expected": "warning", "reasonCodes": ["email_typo"], "notes": "Transposed letters in local part are known fixture error; no address should be silently changed."},
+    {"a": "role-01", "b": "role-02", "kind": "possible_duplicate", "label": "different_people", "expected": "no_warning", "reasonCodes": [], "notes": "Different named people use the same shared info inbox; it must not anchor personal identity."},
+    {"a": "phone-01", "b": "phone-02", "kind": "possible_duplicate", "label": "different_people", "expected": "warning", "reasonCodes": ["different_extensions"], "notes": "Recommended Dismiss demonstration: same name but two different people with different switchboard extensions."},
+    {"a": "phone-01", "b": "phone-03", "kind": "possible_duplicate", "label": "different_people", "expected": "no_warning", "reasonCodes": [], "notes": "Different names share a three-person switchboard; phone alone must not identify a person."},
+    {"a": "middle-01", "b": "middle-02", "kind": "possible_duplicate", "label": "different_people", "expected": "no_warning", "reasonCodes": [], "notes": "Conflicting full middle names should not be collapsed."},
+    {"a": "nickname-01", "b": "nickname-02", "kind": "possible_duplicate", "label": "same_person", "expected": "known_miss", "reasonCodes": [], "notes": "Known miss: Robert/Bob nickname equivalence is deliberately not inferred without an exact identity anchor."},
+    {"a": "short-01", "b": "short-02", "kind": "company_variant", "label": "different_companies", "expected": "no_warning", "reasonCodes": [], "notes": "Short acronym edit IBM/IBN is not enough to suggest the same company."},
+    {"a": "suffix-01", "b": "suffix-02", "kind": "company_variant", "label": "same_company", "expected": "warning", "reasonCodes": ["company_suffix", "same_website"], "notes": "Same fictional company, trailing legal suffix variation."},
+    {"a": "alias-01", "b": "alias-02", "kind": "possible_duplicate", "label": "same_person", "expected": "warning", "reasonCodes": ["different_emails"], "notes": "Known same person but business plus addresses are preserved; must not receive gmail_alias evidence."},
+    {"a": "accent-01", "b": "accent-02", "kind": "possible_duplicate", "label": "same_person", "expected": "warning", "reasonCodes": ["name_diacritics"], "notes": "Accented spelling remains intact; matched with company/domain context."},
+    {"a": "exact-01", "b": "exact-02", "kind": "possible_duplicate", "label": "same_person", "expected": "warning", "reasonCodes": ["same_email"], "notes": "Repeated personal email is a known duplicate; counted once for name-rarity population."},
+    {"a": "nearco-01", "b": "nearco-02", "kind": "company_variant", "label": "different_companies", "expected": "warning_or_none", "reasonCodes": [], "notes": "Two different fictional firms with similar names and different websites; warning, if emitted, is a known false positive."}
+  ]
+}

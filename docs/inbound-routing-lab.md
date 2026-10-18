@@ -32,10 +32,7 @@ and regions are consistent within the generated batch.
    assignment, restore notifications, and retry. Assignment and capacity remain
    unchanged while the unfinished notification completes.
 
-Submitted practice state is saved in this browser's local storage. Pending form
-and correction edits stay in tab memory when you visit the overview or CSV
-workspace and return; refreshing or closing the tab discards those pending edits.
-**Export session** downloads the
+State is saved in this browser's local storage. **Export session** downloads the
 synthetic CRM state, payloads, enrichment, and each attempt. **Reset practice**
 clears the session and restores the starting account/rep pool. This is a practice
 session, not a durable shared queue; multiple tabs do not coordinate writes.

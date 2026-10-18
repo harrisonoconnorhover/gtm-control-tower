@@ -171,3 +171,43 @@ it('keeps import continuations and Slack moving while a provider scan remains in
     await once(server, 'close');
   }
 }, 8000);
+
+it('honors a durable import cooldown while other runner lanes keep progressing', async () => {
+  let imports = 0;
+  let slack = 0;
+  let ready!: () => void;
+  const advanced = new Promise<void>((resolve) => { ready = resolve; });
+  const nextAttemptAt = new Date(Date.now() + 60_000).toISOString();
+  const server = createServer(async (request, response) => {
+    for await (const chunk of request) void chunk;
+    response.writeHead(200, { 'content-type': 'application/json' });
+    if (request.url === '/api/control-tower/safe-import/worker') {
+      imports++;
+      response.end(JSON.stringify({ execution: { id: 'cooldown-fixture', status: 'running', nextAttemptAt, retryReason: '429' }, queued: true, nextAttemptAt }));
+    } else if (request.url === '/api/control-tower/notifications/slack') {
+      slack++;
+      response.end(JSON.stringify({ slack: { configured: true, pending: 1, delivered: slack, failed: 0, unknown: 0 } }));
+      if (slack >= 3) ready();
+    } else response.end(JSON.stringify({ monitor: { config: { enabled: false }, nextCheckAt: null, runs: [], totals: {} } }));
+  });
+  server.listen(0, '127.0.0.1'); await once(server, 'listening');
+  const address = server.address();
+  if (!address || typeof address === 'string') throw new Error('Missing fixture port.');
+  const child = spawn(process.execPath, ['scripts/monitor.mjs'], { cwd: process.cwd(), env: { ...process.env,
+    CONTROL_TOWER_MONITOR_URL: `http://127.0.0.1:${address.port}`, CONTROL_TOWER_MONITOR_PROVIDERS: 'hubspot',
+  } });
+  child.stdout.resume(); child.stderr.resume();
+  const closed = once(child, 'close');
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([advanced, new Promise((_, reject) => { timeout = setTimeout(() => reject(new Error('Other runner lanes stopped during cooldown.')), 4500); })]);
+    expect(imports).toBe(1);
+    expect(slack).toBeGreaterThanOrEqual(3);
+    child.kill('SIGTERM');
+    expect((await closed)[0]).toBe(0);
+  } finally {
+    clearTimeout(timeout);
+    if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+    server.closeAllConnections(); server.close(); await once(server, 'close');
+  }
+}, 8000);

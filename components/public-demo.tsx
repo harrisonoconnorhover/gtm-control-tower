@@ -31,9 +31,6 @@ const preview = previewMessyLeadDemo();
 export function PublicDemo() {
   const inboundLab = useSyncExternalStore(subscribeNavigation, () => window.location.hash === '#inbound-lab', () => false);
   const csvWorkspace = useSyncExternalStore(subscribeNavigation, () => ['#clean-csv', '#audit'].includes(window.location.hash), () => false);
-  const [inboundVisited, setInboundVisited] = useState(inboundLab);
-  // Mount on the first visit, then retain pending practice corrections across views.
-  if (inboundLab && !inboundVisited) setInboundVisited(true);
   const [stage, setStage] = useState(-1);
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<DemoPipelineResult | null>(null);
@@ -97,11 +94,11 @@ export function PublicDemo() {
     }
   }
 
+  if (inboundLab) return <InboundLeadLab />;
+  if (csvWorkspace) return <BrowserCsvWorkspace />;
+
   return (
-    <>
-      <div hidden={!csvWorkspace}><BrowserCsvWorkspace active={csvWorkspace} /></div>
-      {inboundVisited && <div hidden={!inboundLab}><InboundLeadLab /></div>}
-      {!csvWorkspace && !inboundLab && <main id="top" data-capture-stage={stage} className="min-h-screen overflow-hidden bg-[#06100d] text-[#edf8f2] selection:bg-[#d8ff67] selection:text-[#06100d]">
+    <main id="top" data-capture-stage={stage} className="min-h-screen overflow-hidden bg-[#06100d] text-[#edf8f2] selection:bg-[#d8ff67] selection:text-[#06100d]">
       <div className="pointer-events-none fixed inset-x-0 top-0 h-[760px] bg-[radial-gradient(circle_at_72%_4%,rgba(205,252,84,0.15),transparent_32%),radial-gradient(circle_at_12%_12%,rgba(49,156,118,0.18),transparent_30%)]" />
       <div className="relative mx-auto max-w-[1500px] px-5 sm:px-8 lg:px-12">
         <header className="flex flex-wrap items-center justify-between gap-5 border-b border-white/10 py-5">
@@ -117,7 +114,7 @@ export function PublicDemo() {
             <a href="#clean-csv" className="rounded-full bg-[#83bcff]/10 px-4 py-2 font-semibold text-[#83bcff]">Clean your CSV</a>
             <a href="#demo" className="rounded-full bg-white/[0.06] px-4 py-2 text-[#dce9e2]">Two-minute demo</a>
             <a href="#salesforce-proof" className="rounded-full border border-[#83bcff]/20 px-4 py-2 font-semibold text-[#83bcff]">Apex proof</a>
-            <a href="https://github.com/harrisonoconnorhover/gtm-control-tower#self-host-the-full-operator-workspace" className="rounded-full border border-white/10 px-4 py-2 text-[#9fb2a8] transition hover:border-white/25 hover:text-white">Self-host setup</a>
+            <a href="https://github.com/harrisonoconnorhover/gtm-control-tower#quick-start-one-command-no-accounts-required" className="rounded-full border border-white/10 px-4 py-2 text-[#9fb2a8] transition hover:border-white/25 hover:text-white">Self-host setup</a>
             <a href="https://github.com/harrisonoconnorhover/gtm-control-tower" target="_blank" rel="noreferrer" className="rounded-full border border-[#d8ff67]/25 px-4 py-2 font-semibold text-[#d8ff67] transition hover:bg-[#d8ff67]/10">GitHub ↗</a>
           </nav>
         </header>
@@ -354,7 +351,7 @@ export function PublicDemo() {
               <p className="mt-4 max-w-xl text-sm leading-6 text-[#5d6f66]">This public demonstration runs entirely in your browser. The real operator workspace self-hosts with Docker, CSV, and SQLite; Google Sheets, HubSpot, Salesforce, and BigQuery remain optional connectors.</p>
               <p className="mt-3 max-w-xl text-sm leading-6 text-[#5d6f66]">The self-hosted import workflow also lets you skip rows with a saved reason, protect selected CRM fields, and export comparison and results CSVs. <a href="https://github.com/harrisonoconnorhover/gtm-control-tower/blob/main/docs/import-operator-controls.md" className="underline underline-offset-4">Inspect the controls and their tests.</a></p>
               <div className="mt-6 flex flex-wrap gap-3">
-                <a href="https://github.com/harrisonoconnorhover/gtm-control-tower#self-host-the-full-operator-workspace" className="rounded-full bg-[#102019] px-5 py-3 text-sm font-bold text-white">See the self-host setup</a>
+                <a href="https://github.com/harrisonoconnorhover/gtm-control-tower#quick-start-one-command-no-accounts-required" className="rounded-full bg-[#102019] px-5 py-3 text-sm font-bold text-white">See the self-host setup</a>
                 <a href="https://github.com/harrisonoconnorhover/gtm-control-tower" className="rounded-full border border-[#102019]/15 px-5 py-3 text-sm font-semibold">View source</a>
               </div>
             </div>
@@ -378,8 +375,7 @@ export function PublicDemo() {
           <p className="font-mono">BUILT FOR GTM ENGINEERING, REVOPS, AND REVENUE SYSTEMS</p>
         </footer>
       </div>
-    </main>}
-    </>
+    </main>
   );
 }
 

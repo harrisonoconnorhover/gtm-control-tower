@@ -1,6 +1,8 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { resetCrmReadTransportForTests } from '../lib/crm-read-transport';
+import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { readHubSpotAccountIdentity } from '../lib/crm-account';
 
+beforeEach(() => resetCrmReadTransportForTests({ minimumIntervalMs: 0, defaultBudgetMs: 20, backoffBaseMs: 1 }));
 afterEach(() => vi.unstubAllGlobals());
 describe('verified HubSpot account identity', () => {
   it('persists only the official portal ID and reads with a bearer token', async () => {

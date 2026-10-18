@@ -72,14 +72,17 @@ async function poll(provider) {
 
 async function continueImports() {
   let importsQueued = false;
+  let nextAttemptAt = null;
   try {
     const response = await fetch(importEndpoint, { method: 'POST', redirect: 'error', signal: AbortSignal.timeout(120_000),
       headers: process.env.CONTROL_TOWER_SYNC_KEY ? { 'x-control-tower-key': process.env.CONTROL_TOWER_SYNC_KEY } : {} });
     const result = await response.json();
     if (!response.ok) throw new Error('Approved import processing unavailable; inspect the saved execution in Control Tower.');
     importsQueued = result.queued === true;
+    nextAttemptAt = result.nextAttemptAt;
     if (result.execution) {
-      const message = JSON.stringify({ importExecution: result.execution.id, status: result.execution.status, queued: importsQueued });
+      const message = JSON.stringify({ importExecution: result.execution.id, status: result.execution.status, queued: importsQueued,
+        ...(result.execution.nextAttemptAt ? { nextAttemptAt: result.execution.nextAttemptAt, reason: result.execution.retryReason } : {}) });
       if (message !== lastImportStatus) { console.log(message); lastImportStatus = message; }
     }
   } catch {
@@ -87,7 +90,9 @@ async function continueImports() {
     if (lastImportStatus !== message) { console.error(message); lastImportStatus = message; }
     if (once) process.exitCode = 1;
   }
-  return importsQueued ? 1000 : 30_000;
+  // Recheck at least every minute so a new approved import is not starved by an older quota delay.
+  const waitMs = typeof nextAttemptAt === 'string' ? Date.parse(nextAttemptAt) - Date.now() : NaN;
+  return importsQueued ? Number.isFinite(waitMs) ? Math.min(60_000, Math.max(1000, waitMs)) : 1000 : 30_000;
 }
 
 async function deliverNotifications() {

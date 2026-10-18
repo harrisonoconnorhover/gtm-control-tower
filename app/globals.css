@@ -3,7 +3,6 @@
 @source "../components/inbound-lead-lab.tsx";
 @source "../components/salesforce-demo-intake.tsx";
 @source "../components/browser-csv-workspace.tsx";
-@source "../components/browser-csv-related-rows.tsx";
 
 :root {
   --background: #07130f;

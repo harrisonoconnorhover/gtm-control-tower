@@ -1,3 +1,6 @@
+import { applySuppressionRules } from './suppression';
+import { getSuppressionRules } from './suppression-store';
+import { recomputeImportDuplicateFlags } from './import-exclusions';
 import { ensureWorkspaceSchema, getDatabase, type DatabaseAdapter } from '@/db';
 import type { ConnectorReceipt } from './connector-contract';
 import type { ConnectorRun, ConnectorRunInput } from './connector-run';
@@ -10,6 +13,8 @@ import {
   type WorkspaceState,
 } from './workspace';
 import type { CsvColumnMapping } from './csv-control-tower';
+import { validateSavedCrmCohort } from './crm-cohort-review';
+import type { ImportObject } from './live-control-tower';
 
 const STATE_CHUNK_LENGTH = 120_000;
 const KEPT_REVISIONS = 20;
@@ -38,6 +43,24 @@ export function persistenceEnabled(): boolean {
     || (process.env.NODE_ENV !== 'production' && process.env.CONTROL_TOWER_PERSISTENCE_ENABLED !== 'false');
 }
 
+/** Metadata only: listing does not load contact data or reach connected CRMs. */
+export async function listSavedWorkspaces({ limit = 50, offset = 0 }: { limit?: number; offset?: number } = {}) {
+  if (!Number.isInteger(limit) || limit < 1 || limit > 100 || !Number.isSafeInteger(offset) || offset < 0) {
+    throw new Error('Use a limit from 1 to 100 and a non-negative integer offset.');
+  }
+  await ensureWorkspaceSchema();
+  const db = await getDatabase();
+  const count = await db.prepare('SELECT COUNT(*) AS total FROM workspaces').first<{ total: number }>();
+  const rows = await db.prepare(`SELECT id, name, revision, source_type, destination_type, created_at, updated_at
+    FROM workspaces ORDER BY updated_at DESC, id DESC LIMIT ? OFFSET ?`).bind(limit, offset).all<WorkspaceRow>();
+  const total = Number(count?.total ?? 0);
+  return {
+    workspaces: rows.results.map((row) => ({ id: row.id, name: row.name, revision: row.revision,
+      sourceType: row.source_type, destinationType: row.destination_type, createdAt: row.created_at, updatedAt: row.updated_at })),
+    pagination: { limit, offset, total, nextOffset: offset + rows.results.length < total ? offset + rows.results.length : null },
+  };
+}
+
 export async function createWorkspace(name = 'My GTM workspace'): Promise<SavedWorkspace> {
   await ensureWorkspaceSchema();
   const db = await getDatabase();
@@ -63,6 +86,7 @@ export async function getWorkspace(id: string): Promise<SavedWorkspace | null> {
     FROM workspaces WHERE id = ?`).bind(id).first<WorkspaceRow>();
   if (!row) return null;
   const state = await readRevision(db, id, row.revision);
+  state.contacts = recomputeImportDuplicateFlags(applySuppressionRules(state.contacts, await getSuppressionRules()));
   const presets = await readPresets(db, id);
   return {
     id: row.id,
@@ -79,6 +103,7 @@ export async function saveWorkspace(id: string, stateValue: unknown, reason = 'w
   await ensureWorkspaceSchema();
   const db = await getDatabase();
   const state = validateWorkspaceState(stateValue);
+  if (state.crmCohort) await validateSavedCrmCohort(state.crmCohort);
   const existing = await db.prepare('SELECT name FROM workspaces WHERE id = ?').bind(id).first<{ name: string }>();
   if (!existing) throw new Error('Workspace not found.');
   const revisionRow = await db.prepare('SELECT COALESCE(MAX(revision), -1) AS revision FROM workspace_state_chunks WHERE workspace_id = ?')
@@ -148,7 +173,9 @@ export async function saveMappingPreset(
   name: string,
   mapping: CsvColumnMapping,
   presetId?: string,
+  importObject: ImportObject = 'contact',
 ): Promise<MappingPreset[]> {
+  if (!['contact', 'company', 'contact_company'].includes(importObject)) throw new Error('Unsupported import object.');
   await ensureWorkspaceSchema();
   const db = await getDatabase();
   const exists = await db.prepare('SELECT id FROM workspaces WHERE id = ?').bind(workspaceId).first();
@@ -159,7 +186,7 @@ export async function saveMappingPreset(
     (id, workspace_id, name, mapping_json, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET name = excluded.name, mapping_json = excluded.mapping_json, updated_at = excluded.updated_at`)
-    .bind(id, workspaceId, cleanName(name), JSON.stringify(mapping), now, now).run();
+    .bind(id, workspaceId, cleanName(name), JSON.stringify({ mapping, importObject }), now, now).run();
   return readPresets(db, workspaceId);
 }
 
@@ -272,13 +299,18 @@ async function readRevision(db: DatabaseAdapter, workspaceId: string, revision: 
 async function readPresets(db: DatabaseAdapter, workspaceId: string): Promise<MappingPreset[]> {
   const result = await db.prepare(`SELECT id, name, mapping_json, created_at, updated_at FROM mapping_presets
     WHERE workspace_id = ? ORDER BY updated_at DESC`).bind(workspaceId).all<PresetRow>();
-  return result.results.map((row) => ({
-    id: row.id,
-    name: row.name,
-    mapping: JSON.parse(row.mapping_json) as CsvColumnMapping,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  }));
+  return result.results.map((row) => {
+    const saved = JSON.parse(row.mapping_json) as CsvColumnMapping | { mapping: CsvColumnMapping; importObject: ImportObject };
+    const objectAware = 'mapping' in saved;
+    return {
+      id: row.id,
+      name: row.name,
+      mapping: objectAware ? saved.mapping : saved,
+      importObject: objectAware ? saved.importObject : 'contact',
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
+  });
 }
 
 async function pruneOldRevisions(db: DatabaseAdapter, workspaceId: string): Promise<void> {

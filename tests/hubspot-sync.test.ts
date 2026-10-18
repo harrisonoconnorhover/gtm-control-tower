@@ -11,6 +11,8 @@ import {
   type HubSpotSyncBatch,
 } from '../lib/hubspot-sync';
 
+vi.mock('../lib/suppression-store', () => ({ getSuppressionRules: vi.fn(async () => []) }));
+
 const csv = `contact_id,full_name,email,normalized_email,company,region,segment,lifecycle_stage,expected_lifecycle_stage,owner_id,phone,job_title
 C-1,Alex Morgan,alex@example.com,,Example Inc,Northeast,Enterprise,customer,customer,NE-ENT,+15551234567,VP Sales
 C-2,Alex Morgan,ALEX+EVENT@EXAMPLE.COM,alex@example.com,Example Inc,Northeast,Enterprise,mql,customer,NE-ENT,,

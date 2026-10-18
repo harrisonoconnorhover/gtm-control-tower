@@ -23,10 +23,12 @@ export function ImportRowDecisions({ contacts, busy, onExclude, onRestore }: Pro
   const savingRef = useRef(false);
   const active = useMemo(() => contacts.filter((contact) => contact.recordStatus === 'active'), [contacts]);
   const skipped = active.filter((contact) => contact.importExclusion).length;
+  const suppressed = active.filter((contact) => contact.suppressionMatches?.length).length;
+  const included = active.filter((contact) => !contact.importExclusion && !contact.suppressionMatches?.length).length;
   const filtered = useMemo(() => {
     const search = query.trim().toLowerCase();
-    return active.filter((contact) => [contact.contactId, contact.fullName, contact.rawEmail, contact.company,
-      contact.importExclusion?.reason].some((value) => value?.toLowerCase().includes(search)));
+    return active.filter((contact) => [contact.contactId, contact.fullName, contact.rawEmail, contact.company, contact.associatedCompany?.name, contact.associatedCompany?.website,
+      contact.importExclusion?.reason, ...(contact.suppressionMatches ?? []).flatMap((match) => [match.reason, match.listName, match.value])].some((value) => value?.toLowerCase().includes(search)));
   }, [active, query]);
   const lastPage = Math.max(0, Math.ceil(filtered.length / pageSize) - 1);
   const currentPage = Math.min(page, lastPage);
@@ -58,19 +60,24 @@ export function ImportRowDecisions({ contacts, busy, onExclude, onRestore }: Pro
   return (
     <section aria-label="Import row decisions" className="mt-6 rounded-2xl border border-white/10 bg-black/15 p-4 sm:p-5">
       <h3 className="font-display text-xl">Choose which rows to import</h3>
-      <p className="mt-2 text-sm text-[#bdcbc4]">{active.length - skipped} included · {skipped} skipped. Skipping keeps the source row and your reason, leaves it out of writes and duplicate suggestions, and can be reversed here.</p>
+      <p className="mt-2 text-sm text-[#bdcbc4]">{included} included · {skipped} manually skipped · {suppressed} suppressed. Skipping keeps the source row and your reason, leaves it out of writes and duplicate suggestions, and can be reversed here. Suppressions come from the saved lists above.</p>
       <label className="mt-4 block text-xs font-semibold">
         Find import row
         <input type="search" value={query} onChange={(event) => { setQuery(event.target.value); setPage(0); }}
-          placeholder="ID, name, email, company, or skip reason"
+          placeholder="ID, name, email, company, or exclusion reason"
           className="mt-2 block w-full rounded-xl border border-white/20 bg-[#10271d] px-3 py-2 text-sm font-normal" />
       </label>
       {error ? <p role="alert" className="mt-3 text-sm text-[#ffbdab]">{error}</p> : null}
       <div className="mt-4 space-y-3">
         {rows.map((contact) => (
           <div key={contact.contactId} className="rounded-xl border border-white/10 p-3">
-            <p className="break-words text-sm font-semibold">{contact.fullName} <span className="font-mono text-xs font-normal text-[#a8bdb0]">{contact.contactId}</span></p>
-            <p className="mt-1 break-words text-xs text-[#a8bdb0]">{contact.rawEmail || 'No email'} · {contact.company || 'No company'}</p>
+            <p className="break-words text-sm font-semibold">{contact.importObject === 'company' ? contact.company || 'Missing company name' : contact.fullName} <span className="font-mono text-xs font-normal text-[#a8bdb0]">{contact.contactId}</span></p>
+            <p className="mt-1 break-words text-xs text-[#a8bdb0]">{contact.importObject === 'company' ? contact.website || 'No website' : `${contact.rawEmail || 'No email'} · ${contact.associatedCompany?.name || contact.company || 'No company'}`}</p>
+            {!!contact.suppressionMatches?.length && <div className="mt-2 text-sm text-[#f2d28b]">
+              <p className="font-semibold">Suppressed</p>
+              <ul className="mt-1 space-y-1">{contact.suppressionMatches.map((match) => <li key={match.ruleId} className="break-words">{match.reason} · {match.listName} · {match.type}: {match.value}</li>)}</ul>
+              <p className="mt-1 text-xs text-[#a8bdb0]">Change the matching suppression rule to include this row. Restoring a manual skip does not override suppression.</p>
+            </div>}
             {contact.importExclusion ? (
               <>
                 <p className="mt-2 break-words text-sm text-[#f2d28b]">Skipped: {contact.importExclusion.reason}</p>
@@ -85,7 +92,7 @@ export function ImportRowDecisions({ contacts, busy, onExclude, onRestore }: Pro
               </label>
             )}
             <button type="button" disabled={disabled} onClick={() => void decide(contact)} className={`${buttonClass} mt-3`}>
-              {contact.importExclusion ? 'Restore' : 'Skip'} row {contact.contactId}
+              {contact.importExclusion ? contact.suppressionMatches?.length ? 'Restore manual skip for' : 'Restore' : 'Skip'} row {contact.contactId}
             </button>
           </div>
         ))}
