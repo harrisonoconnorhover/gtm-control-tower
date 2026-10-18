@@ -1,3 +1,4 @@
+import { readCrmJson } from './crm-read-transport';
 import type { NativeCrmRecord, PortableCrmContact } from './crm-workflow';
 
 const MAX_QUERY_PAGES = 10;
@@ -28,12 +29,10 @@ export async function readSalesforceRecordById(
   const root = validatedApiRoot(apiRoot);
   const objectName = objectType === 'lead' ? 'Lead' : 'Contact';
   const query = new URLSearchParams({ fields: (objectType === 'lead' ? LEAD_FIELDS : CONTACT_FIELDS).replaceAll(' ', '') });
-  const response = await fetch(`${root.href}/sobjects/${objectName}/${nativeId}?${query}`, {
-    cache: 'no-store', redirect: 'manual', headers, signal: AbortSignal.timeout(30_000),
-  });
+  const { response, payload: value } = await readCrmJson(`${root.href}/sobjects/${objectName}/${nativeId}?${query}`, { headers },
+    { provider: 'salesforce', accessToken: new Headers(headers).get('authorization')?.replace(/^Bearer\s+/i, '') ?? '', origin: root.origin });
   if (response.status === 404) return null;
   if (!response.ok || response.status === 207) throw new Error(`Salesforce lookup returned ${response.status}`);
-  const value: unknown = await response.json();
   const record = toNativeRecord(value, objectType, true);
   if (record.nativeId !== nativeId) throw new Error('Salesforce lookup returned an unrequested record ID');
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/u.test(record.email)) {
@@ -69,14 +68,9 @@ export async function readSalesforceExisting(
     for (let page = 0; page < MAX_QUERY_PAGES; page += 1) {
       if (visitedUrls.has(nextUrl)) throw new Error('Salesforce query repeated a pagination cursor');
       visitedUrls.add(nextUrl);
-      const response = await fetch(nextUrl, {
-        cache: 'no-store',
-        redirect: 'manual',
-        headers,
-        signal: AbortSignal.timeout(30_000),
-      });
+      const { response, payload } = await readCrmJson(nextUrl, { headers },
+        { provider: 'salesforce', accessToken: new Headers(headers).get('authorization')?.replace(/^Bearer\s+/i, '') ?? '', origin: root.origin });
       if (!response.ok || response.status === 207) throw new Error(`Salesforce query returned ${response.status}`);
-      const payload: unknown = await response.json();
       if (!isRecord(payload) || !Array.isArray(payload.records) || typeof payload.done !== 'boolean') {
         throw new Error('Salesforce query returned malformed records or pagination metadata');
       }

@@ -1,6 +1,9 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { CrmReadDeferredError, resetCrmReadTransportForTests } from '../lib/crm-read-transport';
+import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { readSalesforceExisting, readSalesforceLeadById } from '../lib/crm-existing-salesforce';
 import type { PortableCrmContact } from '../lib/crm-workflow';
+
+beforeEach(() => resetCrmReadTransportForTests({ minimumIntervalMs: 0, defaultBudgetMs: 20, backoffBaseMs: 1 }));
 
 const apiRoot = 'https://synthetic.my.salesforce.com/services/data/v67.0';
 const headers = { authorization: 'Bearer synthetic-token' };
@@ -73,8 +76,8 @@ describe('Salesforce selected-Lead reads', () => {
     ['partial result', selectedLead, 207],
     ['redirect', selectedLead, 302],
   ])('rejects %s instead of establishing an update target', async (_label, payload, status) => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json(payload, { status: status as number })));
-    await expect(readSalesforceLeadById(selectedId, apiRoot, headers)).rejects.toThrow('Salesforce');
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(() => Response.json(payload, { status: status as number })));
+    await expect(readSalesforceLeadById(selectedId, apiRoot, headers)).rejects.toThrow(status === 503 ? CrmReadDeferredError : 'Salesforce');
   });
 });
 

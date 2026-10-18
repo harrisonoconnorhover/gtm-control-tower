@@ -1,3 +1,4 @@
+import { isSuppressed } from './suppression';
 import type { LiveContactState } from './live-control-tower';
 import type { PortableCrmContact } from './crm-workflow';
 import { isHubSpotEligible } from './hubspot-sync';
@@ -48,8 +49,9 @@ const blockingFlags = new Set([
 export function isSalesforceEligible(contact: LiveContactState): boolean {
   const name = splitFullName(contact.fullName);
   const lastName = contact.lastName?.trim() || name.lastName;
-  return contact.recordStatus === 'active'
-    && !contact.importExclusion
+  return (contact.importObject ?? 'contact') === 'contact'
+    && contact.recordStatus === 'active'
+    && !contact.importExclusion && !isSuppressed(contact)
     && Boolean(contact.normalizedEmail)
     && (contact.normalizedEmail?.length ?? 0) <= 80
     && Boolean(contact.company?.trim())

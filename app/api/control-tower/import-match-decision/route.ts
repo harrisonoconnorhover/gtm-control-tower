@@ -1,3 +1,4 @@
+import { isSuppressed } from '@/lib/suppression';
 import { operatorAccessError } from '@/lib/operator-auth';
 import { getWorkspace, persistenceEnabled, saveWorkspace } from '@/lib/workspace-store';
 import { getDuplicateScan, getDuplicateScanRecords } from '@/lib/duplicate-scan-store';
@@ -28,6 +29,9 @@ export async function POST(request: Request) {
   try {
     const workspace = await getWorkspace(payload.workspaceId);
     if (!workspace) return failure('Workspace not found.', 404);
+    if ((workspace.state.importObject ?? 'contact') !== 'contact') {
+      return failure('Company and associated-company imports support local review and export only. CRM match confirmation requires a contacts-only import.', 409);
+    }
     if (workspace.revision !== payload.revision) return failure('The workspace changed. Reload it before confirming a match.', 409);
     const rows = workspace.state.contacts.filter((row) => row.contactId === payload.contactId);
     if (rows.length !== 1) return failure('Choose a unique saved import row.', 409);
@@ -37,7 +41,7 @@ export async function POST(request: Request) {
     if (payload.action === 'clear') {
       delete decisions[connectorId];
     } else {
-      if (row.recordStatus !== 'active' || row.importExclusion) return failure('Restore this active import row before confirming a match.', 409);
+      if (row.recordStatus !== 'active' || row.importExclusion || isSuppressed(row)) return failure('Restore this active import row and resolve suppression before confirming a match.', 409);
       if (payload.sourceKey !== importMatchSourceKey(row)) return failure('The import row changed. Refresh its suggestions before confirming.', 409);
       if (typeof payload.reason !== 'string' || !payload.reason.trim() || payload.reason.trim().length > 500
         || typeof payload.scanId !== 'string' || !payload.scanId || payload.scanId.length > 120

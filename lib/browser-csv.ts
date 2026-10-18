@@ -25,16 +25,6 @@ export type BrowserCsvCleanupProposal = {
   reason: string;
 };
 
-export type BrowserCsvReviewGroup = {
-  kind: 'repeated-row' | 'repeated-email';
-  rowIds: number[];
-};
-
-export type BrowserCsvReview = {
-  issues: Map<number, string[]>;
-  groups: BrowserCsvReviewGroup[];
-};
-
 export const browserCsvSample = `Record ID,First name,Last name,Email,Company,Phone,Notes
 00123, Ada ,Lovelace,Ada+event@EXAMPLE.COM, Northstar ,+44 20 7946 0123,"Met at a conference, follow up next week"
 00124,Ada,Lovelace,Ada+event@example.com,Northstar,,Possible repeat — review before excluding
@@ -42,13 +32,6 @@ export const browserCsvSample = `Record ID,First name,Last name,Email,Company,Ph
 00126,Mina,Chen,mina.example.com,Orbit,,Needs an email correction
 00127,Sam,Reed,, Willow ,,Email not supplied
 00128,Alex,Morgan,Alex@example.com,Harbor,,All rows stay unless you exclude them`;
-
-/** Display source columns unambiguously; exported headers are never renamed. */
-export function browserCsvColumnLabel(headers: string[], column: number): string {
-  const label = headers[column].trim() || `Column ${column + 1}`;
-  const ambiguous = headers.some((header, index) => index !== column && (header.trim() || `Column ${index + 1}`) === label);
-  return ambiguous ? `${label} (column ${column + 1})` : label;
-}
 
 /** Keep source cells as strings. Column indices also support repeated header names. */
 export function parseBrowserCsv(text: string): BrowserCsv {
@@ -138,10 +121,9 @@ export function toggleBrowserRow(document: BrowserCsv, rowId: number): BrowserCs
   };
 }
 
-/** Review notes and related-row groups come from the same comparisons. */
-export function browserCsvReview(document: BrowserCsv): BrowserCsvReview {
+/** Empty rows and repeated values are review hints, never instructions to remove rows. */
+export function browserCsvIssues(document: BrowserCsv): Map<number, string[]> {
   const issues = new Map<number, string[]>();
-  const groups: BrowserCsvReviewGroup[] = [];
   const addIssue = (id: number, issue: string) => issues.set(id, [...(issues.get(id) ?? []), issue]);
   const activeRows = document.rows.filter((row) => !row.excluded);
   const repeatedRows = new Map<string, number[]>();
@@ -157,33 +139,26 @@ export function browserCsvReview(document: BrowserCsv): BrowserCsvReview {
   }
   for (const group of repeatedRows.values()) {
     if (group.length < 2) continue;
-    groups.push({ kind: 'repeated-row', rowIds: group });
     for (const id of group) addIssue(id, 'Repeated row: all column values match; review before excluding');
   }
-  if (document.emailColumn === null) return { issues, groups };
-  const emailGroups = new Map<string, number[]>();
+  if (document.emailColumn === null) return issues;
+  const groups = new Map<string, number[]>();
   for (const row of activeRows) {
     const raw = row.values[document.emailColumn] ?? '';
     const email = normalizedEmail(raw);
     if (!raw.trim()) addIssue(row.id, 'Missing email');
     else if (!email) addIssue(row.id, 'Check email format');
     else {
-      const group = emailGroups.get(email) ?? [];
+      const group = groups.get(email) ?? [];
       group.push(row.id);
-      emailGroups.set(email, group);
+      groups.set(email, group);
     }
   }
-  for (const group of emailGroups.values()) {
+  for (const group of groups.values()) {
     if (group.length < 2) continue;
-    groups.push({ kind: 'repeated-email', rowIds: group });
     for (const id of group) addIssue(id, 'Repeated email: review these rows before removing any');
   }
-  return { issues, groups };
-}
-
-/** Empty rows and repeated values are review hints, never instructions to remove rows. */
-export function browserCsvIssues(document: BrowserCsv): Map<number, string[]> {
-  return browserCsvReview(document).issues;
+  return issues;
 }
 
 export function exportBrowserCsv(document: BrowserCsv): { csv: string; escapedCells: number; rowCount: number } {
@@ -195,10 +170,7 @@ export function exportBrowserCsv(document: BrowserCsv): { csv: string; escapedCe
     const formulaLike = /^\s*[=+\-@]/u.test(source);
     if (formulaLike) escapedCells += 1;
     const value = formulaLike ? `'${source}` : source;
-    // An unquoted empty value at the end of a one-column file looks like a
-    // trailing line separator, so quote it to retain the final source row.
-    const needsQuotes = (row.length === 1 && value === '') || /[",\r\n]/u.test(value);
-    return needsQuotes ? `"${value.replaceAll('"', '""')}"` : value;
+    return /[",\r\n]/u.test(value) ? `"${value.replaceAll('"', '""')}"` : value;
   }).join(',')).join('\r\n');
   return { csv, escapedCells, rowCount: activeRows.length };
 }
@@ -263,14 +235,14 @@ function parseRecords(input: string): string[][] {
       state = 'quoted';
       recordStarted = true;
     } else if (char === '"' || state === 'closed') {
-      throw new Error(`CSV row ${records.length + 1}, column ${row.length + 1} has invalid quoting. Enclose the whole value in quotes and double any quote inside it.`);
+      throw new Error(`CSV row ${records.length + 1} has invalid quoting. Enclose the whole value in quotes and double any quote inside it.`);
     } else {
       cell += char;
       state = 'unquoted';
       recordStarted = true;
     }
   }
-  if (state === 'quoted') throw new Error(`CSV row ${records.length + 1}, column ${row.length + 1} has an unmatched quote.`);
+  if (state === 'quoted') throw new Error(`CSV row ${records.length + 1} has an unmatched quote.`);
   if (recordStarted) finishRecord();
   return records;
 }

@@ -2,9 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { IdentityRecord } from '../lib/identity-resolution';
 import type { ImportMatchReport } from '../lib/import-match';
 
-const store = vi.hoisted(() => ({ getDuplicateScan: vi.fn(), getDuplicateScanRecords: vi.fn() }));
+const store = vi.hoisted(() => ({ getDuplicateScan: vi.fn(), getDuplicateScanRecords: vi.fn(), getWorkspace: vi.fn() }));
 vi.mock('../lib/duplicate-scan-store', () => store);
-vi.mock('../lib/workspace-store', () => ({ persistenceEnabled: () => true }));
+vi.mock('../lib/workspace-store', () => ({ persistenceEnabled: () => true, getWorkspace: store.getWorkspace }));
 import { POST } from '../app/api/control-tower/import-matches/route';
 
 const input = { contactId: 'CSV-1', fullName: 'Alex Example', email: 'new@example.test', phone: '2025550123', state: 'TX', company: 'Example' };
@@ -23,6 +23,7 @@ const request = (overrides = {}, headers = {}) => new Request('http://localhost/
 
 beforeEach(() => {
   vi.stubEnv('NODE_ENV', 'test'); vi.stubEnv('CONTROL_TOWER_SYNC_KEY', '');
+  store.getWorkspace.mockResolvedValue({ state: { contacts: [] } });
   store.getDuplicateScan.mockResolvedValue(scan); store.getDuplicateScanRecords.mockResolvedValue([crm]);
 });
 afterEach(() => { vi.clearAllMocks(); vi.unstubAllEnvs(); });
@@ -73,4 +74,15 @@ describe('read-only approximate import comparison', () => {
     expect(store.getDuplicateScan).not.toHaveBeenCalled();
     expect((await POST(request({}, { 'x-control-tower-key': 'local-test-key' }))).status).toBe(200);
   });
+});
+
+
+it('refuses matching rows suppressed by current saved rules before reading CRM snapshot records', async () => {
+  store.getWorkspace.mockResolvedValue({ state: { contacts: [{ ...input,
+    suppressionMatches: [{ ruleId: 'vendor', listName: 'Vendors', type: 'email', value: input.email, reason: 'Vendor' }],
+  }] } });
+  const response = await POST(request());
+  expect(response.status).toBe(409);
+  expect(await response.json()).toMatchObject({ error: expect.stringContaining('Suppressed rows') });
+  expect(store.getDuplicateScanRecords).not.toHaveBeenCalled();
 });

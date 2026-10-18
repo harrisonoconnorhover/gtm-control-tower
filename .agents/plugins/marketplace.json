@@ -1,0 +1,10 @@
+{
+  "name": "gtm-control-tower-local",
+  "interface": { "displayName": "GTM Control Tower (local)" },
+  "plugins": [{
+    "name": "gtm-control-tower",
+    "source": { "source": "local", "path": "./plugins/gtm-control-tower" },
+    "policy": { "installation": "AVAILABLE", "authentication": "ON_INSTALL" },
+    "category": "Productivity"
+  }]
+}

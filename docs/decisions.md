@@ -1,5 +1,44 @@
 # Decisions
 
+## October 16, 2026: local Codex plugin for import review
+
+Package a portable desktop plugin with an import-review skill and a thin stdio
+launcher. Keep credentials in the existing operator-key boundary and store only
+checkout/env-file paths in private local plugin settings. The installed package
+uses the maintained MCP script and dependencies from the operator's checkout.
+
+Expose seven fixed tools for setup, workspace discovery/inspection, Safe Import
+preparation/loading and website checks. Add a small authenticated workspace
+metadata listing so CSV-lab workspaces are discoverable. Reuse existing APIs for
+all other operations; page contact/review results. Do not expose arbitrary paths,
+CRM approval/execution, or Inbox receipt creation that could notify Slack.
+
+Distribute through a local repository marketplace. Public submission, remote
+authentication and automatic cross-product result exchange remain separate.
+
+## October 13, 2026: CRM-only cohorts share context through manual files
+
+Control Tower owns HubSpot cohort definitions, native identities, eligibility,
+coverage, and final review. Pomade extracts requested missing facts from the
+selected CRM snapshot using its existing context-only helper or manual outcomes.
+The applications reuse their saved workspaces/tables and exchange separate
+version 1 evidence request/result files. The original Pomade handoff is unchanged.
+
+The initial surface is `/app/cohort`, reached from the lab. A saved cohort uses
+native pipeline/stage/property identifiers and a confirmed meaningful-contact
+date. Reads cover selected properties and linked notes, with explicit population
+and per-contact coverage. They do not substitute incomplete email/activity
+coverage for complete relationship history. Returned results receive fresh reads
+by saved native IDs; updated values and incomplete eligibility remain held.
+
+The fictional example uses the same saved review/file path and is visibly
+separate from native mode. Optional model execution sends selected evidence to
+the existing helper with browsing/tools disabled; unavailable extraction remains
+manual, without external enrichment fallback. Accepting a proposal affects only
+the review. CRM writes, sender integration, scheduled runs, and automatic transfer
+into the existing write workflow are outside this first slice. Native/model
+qualification must be reported separately from mocked or fictional checks.
+
 ## September 27, 2026: make connector setup reproducible
 
 Docker setup documents Compose's default `.env` loading and the explicit
@@ -918,33 +957,125 @@ restore an automatic suggestion. A source maps to one destination at a time;
 reassigning a destination clears its previous source. Apply presets only where
 their source headers exist without conflicting assignments in the current file.
 
-## October 10, 2026 — Preserve browser edits and compare related source rows
 
-Keep the browser CSV workspace mounted when navigating within the public site,
-so a view change cannot discard the file. Pending row edits become part of the
-working file when switching rows, closing the editor, downloading, or applying
-another action. Keep explicit Save and Discard controls plus ten-action Undo;
-refreshing or closing the tab still requires a download to retain the work.
+## October 13, 2026 — Pace CRM work and resume only known-safe operations
 
-Retain the Inbound Routing Lab after its first visit too, preserving pending
-practice corrections across internal navigation. Keep its initialization lazy so
-opening the cleaner alone does not start the lab's storage or connection check.
+Separate capacity failures from eligibility and mapping problems. Reuse native
+CRM adapters and the existing Safe Import queue; share a conservative,
+process-local gate keyed by provider/origin/credential. Retry allowlisted reads
+with bounded time, jitter and full Retry-After support. Keep failed cohort pages
+unsaved so the existing cursor remains the recovery point. Do not add a new
+scheduler or claim account-wide coordination across separate processes.
 
-Use the existing exact-row and normalized-email comparisons to show related
-source rows together, including records on other pages. Show differences first
-and keep every original column available. Never infer a winning record or merge
-rows; exclusion stays an explicit, reversible choice. Distinguish duplicate
-column labels by position without renaming source headers in the export.
+Persist cooldown on the existing Safe Import execution. A definite rate-limit
+rejection leaves unsent work pending, while uncertain writes retain their original
+receipt and read-only reconciliation. Continue under the same account, saved
+workspace, native before-values and original approval deadline. Never infer
+consent, routing eligibility or ownership changes from a retry success.
 
-Add a UTF-8 BOM only at the browser download boundary so ordinary Excel opening
-recognizes accented text. Keep model exports unchanged and verify reimport strips
-the marker from the first header. This does not change spreadsheet type inference;
-IDs and phone numbers may still need import-as-text settings.
+Pomade status recovery follows its saved hosted job handle and original supplied
+CRM evidence, including across reloads. Status checks never resubmit extraction;
+an initial submission with no recoverable handle needs manual review. Verify the
+file loop and failure handling with fictional CRM/model responses before native
+qualification. Keep the private source transcript outside version control.
 
-## October 10, 2026 — Find formatting columns in wide files
+## October 15, 2026 — Qualify the loop with explicitly approved test records
 
-Let users find formatting columns by source name or position while retaining
-hidden selections. Keep bulk selection and clearing scoped to all source columns,
-including hidden ones, with the selected email column still included in email
-formatting. Column selections update the formatting preview; applying the changes
-remains an explicit action.
+The user's new authorization permits three new development HubSpot contact/deal/
+note triples; it does not permit changing existing records or sending messages.
+Use explicit test labels, omit contact emails, and link only the new objects.
+Retain a private setup ledger and reconcile returned IDs before retrying creates.
+Keep the subsequent evidence loop read-only and preserve review holds. Report
+actual development API/helper execution separately from general extraction
+accuracy and production outcomes; see the [test report](crm-cohort-native-check.md).
+
+## October 16, 2026 — Keep website reachability in the self-hosted import review
+
+Use HTTP GET first and a fresh local Playwright/Chromium fallback for inconclusive
+pages. Save observations by workspace and normalized URL in a small SQLite table
+outside workspace revisions: checking a website must not invalidate a CRM approval
+or be erased by an older browser autosave. Recheck explicitly; retain the time and
+method rather than presenting an old result as current. Keep the public CSV
+preview unchanged. Company identity, ICP fit and email deliverability belong to
+Pomade and are not inferred from website reachability. Bound public-network
+requests, including browser subrequests, because imported URLs are untrusted.
+
+## October 16, 2026 — Connect Pomade qualification to the saved import review
+
+Use a server-to-server local API connection with a dedicated Pomade read/run key.
+Sending prepares a deterministic saved table from included rows and explicit ICP;
+it does not execute providers. Reuse Pomade's existing recipes and run confirmation,
+then explicitly refresh bound observations into Control Tower. Store the link and
+results outside workspace revisions so autosave cannot erase them. Relevant input
+changes mark results stale; observations neither overwrite source fields nor
+authorize CRM writes. Keep the earlier CRM-only file exchange separate.
+
+## 2026-10-16 — Run qualification from Control Tower
+
+Expose the existing Pomade run preview and persisted background worker through
+qualification-specific API calls. Control Tower shows provider readiness and
+maximum submissions, requires explicit confirmation, then polls progress and
+saves observations automatically. Preserve the existing 50-submission/100-row
+background limits without silently splitting a larger approval into more jobs.
+Request counts are not monetary credit estimates. Persist one request ID before
+starting and reconcile that same ID after uncertainty; reload only polls.
+Cancellation cannot undo submitted requests. Keep CRM permissions and write
+paths outside this flow, and keep changed input/recipe evidence stale.
+
+## 2026-10-16 — Derived import readiness
+
+Derive Ready to import, Needs review and Excluded from saved website/Pomade
+observations and existing local destination holds. Do not persist a second
+decision or alter source values, exclusions, CRM plans or approval rules. Reuse
+the existing missing-owner/company/email/duplicate/stage holds conservatively.
+Require affirmative bound observations; missing/stale/loading/error or unresolved
+selected runs remain review. Cached observations do not acquire an invented age
+expiry. Show readiness as advisory, with CRM matching, field policies and approval
+remaining separate. Share website observation state between the existing panels
+and use the same pure rule helper for the UI and local API/plugin readback.
+
+## 2026-10-16 — Reusable local suppression lists
+
+Save suppression rules separately from workspace revisions and apply them across
+this self-hosted installation, so vendor/competitor/do-not-contact lists also
+cover future imports. Keep matches derived and distinct from manual row skips;
+disable/delete must not erase a manual decision or cached qualification evidence.
+Use five deterministic match types (email, email domain, website domain, either
+domain, exact normalized company name), required reasons and opt-in subdomains.
+Do not add fuzzy names, arbitrary expressions or global contact-ID rules because
+import IDs can repeat between lists. Enforce current matches on server import
+paths as well as in the review. Keep full CSV exports as audit exports with
+suppression metadata. Suppression changes never execute providers or write CRM.
+
+## 2026-10-16 — Explainable local matching suggestions
+
+Add a separate advisory review using saved import rows, suppression rules and
+available saved CRM snapshots. Combine conservative spelling/name variants and
+corroborating identifiers with conflicting evidence; use bounded local name
+frequency weighting only when the sample is sufficient. Retain weak same-name
+warnings without lowering existing CRM identity or create-guard thresholds.
+Scores rank review work and are not calibrated probabilities. Show source dates,
+missing context, ambiguous alternatives and comparison limits.
+
+Persist Confirm/Dismiss separately from workspace revisions, keyed to the
+suggestion and compared evidence. Allow undo; changed evidence reopens review.
+Confirm records an assessment only, with explicit UI text. Corrections, merges,
+suppression changes, CRM target selection and import approvals remain existing
+separate actions. This avoids quietly promoting a spelling guess into identity
+or a CRM write. Keep the implementation dependency-free and local; no external
+name-frequency dataset, LLM, paid provider, live CRM read or write is needed.
+
+## 2026-10-16 — Explicit contact and associated-company mapping
+
+Support the user's chosen one-file Contact + associated Company setup, alongside
+Contact-only and Company-only modes. Keep separate fields and object-aware presets;
+old data defaults to Contact. Company associations are local proposals grouped by
+an explicit ID or exact website hostname, never fuzzy or name-only joins. Keep
+conflicting IDs separate and disclose name/domain conflicts. Combined CSV export
+preserves the two objects independently.
+
+Limit new company modes to local review/export. Existing CRM and Pomade execution
+paths remain Contact-only until a separate company/association integration is
+implemented. Use 140 fictional contacts with authored positive/negative labels to
+exercise name frequency, typos, false positives and review decisions. Document
+known misses and candidate caps; do not turn fixture scores into accuracy claims.

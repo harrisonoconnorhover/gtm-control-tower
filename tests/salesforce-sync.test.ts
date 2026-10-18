@@ -10,6 +10,8 @@ import {
   type SalesforceSyncReceipt,
 } from '../lib/salesforce-sync';
 
+vi.mock('../lib/suppression-store', () => ({ getSuppressionRules: vi.fn(async () => []) }));
+
 const lead = (contactId: string, email = 'alex@example.com') => ({
   contactId, email, firstName: 'Test', lastName: 'Person', company: 'Synthetic Lab',
   phone: null, jobTitle: null, website: null,

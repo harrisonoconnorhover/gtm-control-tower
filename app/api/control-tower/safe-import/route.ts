@@ -4,6 +4,7 @@ import { readCrmAccountIdentity, sameCrmAccount } from '@/lib/crm-account';
 import { buildSafeImportReview, safeImportEvidenceFingerprint, safeImportWorkspaceFingerprint } from '@/lib/safe-import-review-server';
 import { getSafeImportReview, getLatestSafeImportReview, saveSafeImportReview, getSafeImportExecution } from '@/lib/safe-import-store';
 import { executeSafeImportReview, reconcileSafeImportExecution, continueSafeImportExecution } from '@/lib/safe-import-execution';
+import { isCrmReadDeferredError } from '@/lib/crm-read-transport';
 
 const noStore = { 'Cache-Control': 'no-store' };
 const respond = (value: unknown, status = 200) => Response.json(value, { status, headers: noStore });
@@ -27,8 +28,8 @@ export async function POST(request: Request) {
     if (!workspace) return respond({ error: 'Saved workspace not found.' }, 404);
     const connectorId = workspace.state.destinationType;
     if (connectorId !== 'hubspot' && connectorId !== 'salesforce') return respond({ error: 'Select a HubSpot or Salesforce destination for Safe Import.' }, 409);
-    const account = await readCrmAccountIdentity(connectorId);
     if (payload.action === 'prepare') {
+      const account = await readCrmAccountIdentity(connectorId);
       const review = await buildSafeImportReview(workspace, account);
       const latest = await getWorkspace(workspace.id);
       if (!latest || review.workspaceFingerprint !== await safeImportWorkspaceFingerprint(latest)
@@ -43,16 +44,23 @@ export async function POST(request: Request) {
       ? await getSafeImportReview(workspace.id, payload.reviewId) : await getLatestSafeImportReview(workspace.id);
     if (!review && payload.action === 'load') return respond({ review: null, execution: null });
     if (!review) return respond({ error: 'Saved review not found for this workspace.' }, 404);
-    if (!sameCrmAccount(review.account, account)) return respond({ error: 'The configured CRM account differs from this review. Execution and verification are unavailable until that account is restored.' }, 409);
     const execution = await getSafeImportExecution(workspace.id, review.id);
+    // Saved progress remains available during a provider outage. Reading it cannot authorize a write.
     if (payload.action === 'load') return respond({ review, execution });
+    if (payload.action === 'approve' && execution) return respond({ review, execution }, 202);
+    if (payload.action === 'continue' && execution?.nextAttemptAt
+      && Date.parse(execution.nextAttemptAt) > Date.now() && Date.parse(review.expiresAt) > Date.now()) return respond({ review, execution }, 202);
+    if (payload.action === 'continue') {
+      if (!execution) return respond({ error: 'A saved approval is required before continuation.' }, 409);
+      // The executor checks expiry locally and verifies the account before native work.
+      // An unavailable CRM must not prevent expired, unsent rows becoming held.
+      return respond({ review, execution: await continueSafeImportExecution(review) }, 202);
+    }
+    const account = await readCrmAccountIdentity(connectorId);
+    if (!sameCrmAccount(review.account, account)) return respond({ error: 'The configured CRM account differs from this review. Execution and verification are unavailable until that account is restored.' }, 409);
     if (payload.action === 'recover') {
       if (!execution) return respond({ error: 'No execution was started for this review. Prepare or approve a current review.' }, 409);
       return respond({ review, execution: await reconcileSafeImportExecution(review, execution) });
-    }
-    if (payload.action === 'continue') {
-      if (!execution) return respond({ error: 'A saved approval is required before continuation.' }, 409);
-      return respond({ review, execution: await continueSafeImportExecution(review) }, 202);
     }
     // A duplicate click returns durable progress even after expiry or workspace edits.
     // Only the separate bounded worker continues pending rows under this approval.
@@ -69,6 +77,10 @@ export async function POST(request: Request) {
     }
     return respond({ review, execution: await executeSafeImportReview(review) }, 202);
   } catch (error) {
+    if (isCrmReadDeferredError(error)) return Response.json({ error: error.message, retryable: true, retryAt: error.retryAt,
+      guidance: 'Wait for the CRM cooldown, then load saved progress before continuing. An approval or write is never replayed automatically by this endpoint.' }, {
+      status: 503, headers: { ...noStore, 'Retry-After': new Date(error.retryAt).toUTCString() },
+    });
     return respond({ error: error instanceof Error ? error.message : 'Safe Import could not complete. Load the saved review to inspect durable execution before making another decision.' }, 409);
   }
 }

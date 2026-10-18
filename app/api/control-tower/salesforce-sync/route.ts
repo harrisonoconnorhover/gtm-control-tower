@@ -1,3 +1,4 @@
+import { assertNoSuppressedContacts } from '@/lib/suppression-enforcement-server';
 import { isPomadeContactId } from '@/lib/pomade-handoff';
 import { NextResponse } from 'next/server';
 import { readSalesforceExisting } from '../../../../lib/crm-existing-salesforce';
@@ -65,8 +66,8 @@ export async function POST(request: Request) {
   } catch (error) {
     console.error('Control Tower Salesforce sync failed', error);
     return NextResponse.json(
-      { error: 'Salesforce did not return a valid sync receipt.' },
-      { status: 502, headers: { 'Cache-Control': 'no-store' } },
+      { error: error instanceof Error && error.message.startsWith('Suppressed rows') ? error.message : 'Salesforce did not return a valid sync receipt.' },
+      { status: error instanceof Error && error.message.startsWith('Suppressed rows') ? 409 : 502, headers: { 'Cache-Control': 'no-store' } },
     );
   }
 }
@@ -77,6 +78,7 @@ export async function syncDirectlyToSalesforce(
   accessToken: string,
   apiVersion: string,
 ): Promise<SalesforceSyncReceipt> {
+  await assertNoSuppressedContacts(batch.leads);
   const headers = {
     authorization: `Bearer ${accessToken}`,
     'content-type': 'application/json',
@@ -122,6 +124,7 @@ export async function syncDirectlyToSalesforce(
   }
 
   if (creates.length) {
+    await assertNoSuppressedContacts(creates);
     const results = await writeLeadCollection('POST', creates.map(toCreateRecord), apiRoot, headers);
     creates.forEach((lead, index) => recordsByContact.set(
       lead.contactId,
@@ -129,6 +132,7 @@ export async function syncDirectlyToSalesforce(
     ));
   }
   if (updates.length) {
+    await assertNoSuppressedContacts(updates.map(({ lead }) => lead));
     const results = await writeLeadCollection('PATCH', updates.map(({ lead, id }) => toUpdateRecord(lead, id)), apiRoot, headers);
     updates.forEach(({ lead, id }, index) => recordsByContact.set(
       lead.contactId,

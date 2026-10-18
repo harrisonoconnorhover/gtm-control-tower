@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { CrmReadDeferredError, resetCrmReadTransportForTests } from '../lib/crm-read-transport';
+import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { readHubSpotExisting, readHubSpotRecordById } from '../lib/crm-existing-hubspot';
 import type { PortableCrmContact } from '../lib/crm-workflow';
 
@@ -11,6 +12,7 @@ const native = (email = 'primary@example.com', aliases = 'secondary@example.com;
 });
 const batchResponse = (results: unknown[], extra = {}, status = 200) => Response.json({ status: 'COMPLETE', results, ...extra }, { status });
 
+beforeEach(() => resetCrmReadTransportForTests({ minimumIntervalMs: 0, defaultBudgetMs: 20, backoffBaseMs: 1 }));
 afterEach(() => vi.unstubAllGlobals());
 
 describe('HubSpot selected-record reads', () => {
@@ -56,8 +58,8 @@ describe('HubSpot selected-record reads', () => {
     ['partial result', native(), 207],
     ['redirect', native(), 302],
   ])('rejects %s instead of establishing an update target', async (_label, payload, status) => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json(payload, { status: status as number })));
-    await expect(readHubSpotRecordById('123', 'test-token')).rejects.toThrow('HubSpot');
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(() => Response.json(payload, { status: status as number })));
+    await expect(readHubSpotRecordById('123', 'test-token')).rejects.toThrow(status === 503 ? CrmReadDeferredError : 'HubSpot');
   });
 });
 
@@ -121,10 +123,11 @@ describe('HubSpot exact-email lookup', () => {
     ['malformed alias value', { ...native(), properties: { email: 'primary@example.com', hs_additional_emails: ['secondary@example.com'] } }, 200],
   ])('rejects an individual %s instead of approving a create', async (_label, payload, status) => {
     const fetchMock = vi.fn().mockResolvedValueOnce(batchResponse([]))
-      .mockResolvedValueOnce(Response.json(payload, { status: status as number }));
+      .mockImplementation(() => Response.json(payload, { status: status as number }));
     vi.stubGlobal('fetch', fetchMock);
-    await expect(readHubSpotExisting([contact('secondary@example.com')], 'test-token')).rejects.toThrow('HubSpot');
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    await expect(readHubSpotExisting([contact('secondary@example.com')], 'test-token')).rejects.toThrow(status === 503 ? CrmReadDeferredError : 'HubSpot');
+    if (status === 503) expect(fetchMock.mock.calls.length).toBeGreaterThan(2);
+    else expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it('keeps multiple native matches visible for the planner to hold', async () => {

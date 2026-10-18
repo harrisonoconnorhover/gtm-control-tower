@@ -1,3 +1,4 @@
+import { assertNoSuppressedContacts } from '@/lib/suppression-enforcement-server';
 import { isPomadeContactId } from '@/lib/pomade-handoff';
 import { NextResponse } from 'next/server';
 import { readHubSpotExisting } from '@/lib/crm-existing-hubspot';
@@ -64,13 +65,14 @@ export async function POST(request: Request) {
   } catch (error) {
     console.error('Control Tower HubSpot sync failed', error);
     return NextResponse.json(
-      { error: 'HubSpot did not return a valid sync receipt.' },
-      { status: 502, headers: { 'Cache-Control': 'no-store' } },
+      { error: error instanceof Error && error.message.startsWith('Suppressed rows') ? error.message : 'HubSpot did not return a valid sync receipt.' },
+      { status: error instanceof Error && error.message.startsWith('Suppressed rows') ? 409 : 502, headers: { 'Cache-Control': 'no-store' } },
     );
   }
 }
 
 async function syncThroughN8n(batch: HubSpotSyncBatch, webhookUrl: string): Promise<unknown> {
+  await assertNoSuppressedContacts(batch.contacts);
   const response = await fetch(webhookUrl, {
     method: 'POST',
     cache: 'no-store',
@@ -87,6 +89,7 @@ export async function syncDirectlyToHubSpot(
   accessToken: string,
 ): Promise<HubSpotSyncReceipt> {
   if (!isHubSpotSyncBatch(batch)) throw new Error('The HubSpot batch contains invalid or duplicate contact identities.');
+  await assertNoSuppressedContacts(batch.contacts);
   const existing = await readHubSpotExisting(batch.contacts, accessToken);
   const targetCounts = new Map<string, number>();
   for (const contact of batch.contacts) {
@@ -132,6 +135,7 @@ async function writeHubSpotBatch(
   operation: 'create' | 'update',
   nativeIds = new Map<string, string>(),
 ): Promise<HubSpotSyncReceipt> {
+  await assertNoSuppressedContacts(batch.contacts);
   const response = await fetch(`https://api.hubapi.com/crm/objects/2026-03/contacts/batch/${operation}`, {
     method: 'POST',
     cache: 'no-store',

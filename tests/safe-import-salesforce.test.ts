@@ -1,3 +1,4 @@
+import { resetCrmReadTransportForTests } from '../lib/crm-read-transport';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -62,6 +63,7 @@ async function prepare(workspaceId: string) {
 }
 
 beforeEach(() => {
+  resetCrmReadTransportForTests({ minimumIntervalMs: 0, backoffBaseMs: 0 });
   organization = orgId; writes = []; loseResponse = false; convertOnRead = false;
   native = new Map(([['contact', contactId], ['lead', leadId]] as const).map(([objectType, nativeId]) => [nativeId, {
     nativeId, objectType, email: `${objectType}@example.com`, ...(objectType === 'lead' ? { isConverted: false } : {}),
@@ -209,6 +211,21 @@ describe('Salesforce native response contracts', () => {
       new Date(), undefined, defaultCrmUpdatePolicy(), undefined, undefined, 'update-existing', true);
     vi.mocked(fetch).mockResolvedValueOnce(new Response(null, { status }));
     expect((await writeSalesforceSafeImportRecord(plan.records[0], apiRoot, headers)).status).toBe('unknown');
+  });
+
+  it.each([
+    { errorCode: 'REQUEST_LIMIT_EXCEEDED', status: 'pending' },
+    { errorCode: 'INSUFFICIENT_ACCESS_OR_READONLY', status: 'failed' },
+  ])('distinguishes Salesforce 403 $errorCode from a replayable write', async ({ errorCode, status }) => {
+    const imported: PortableCrmContact = { contactId: 'row', email: 'contact@example.com', firstName: 'Nina', lastName: 'Person',
+      company: null, phone: '2125550104', jobTitle: null, website: null };
+    const plan = buildCrmWritePlan('salesforce', 'file.csv', [imported], new Map([[imported.email, [native.get(contactId)!]]]),
+      new Date(), undefined, defaultCrmUpdatePolicy(), undefined, undefined, 'update-existing', true);
+    vi.mocked(fetch).mockResolvedValueOnce(Response.json([{ errorCode }], { status: 403, headers: { 'Retry-After': '60' } }));
+    const outcome = await writeSalesforceSafeImportRecord(plan.records[0], apiRoot, headers);
+    expect(outcome.status).toBe(status);
+    if (status === 'pending') expect(outcome).toMatchObject({ reason: 'quota', retryAt: expect.any(String) });
+    expect(fetch).toHaveBeenCalledTimes(1);
   });
 
   it.each([

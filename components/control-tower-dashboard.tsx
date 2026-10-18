@@ -28,10 +28,15 @@ import { SelfHostConsole } from '@/components/self-host-console';
 import { ImportMatchReview, type ImportMatchDecisionAction } from '@/components/import-match-review';
 import { UnsavedRuns } from '@/components/unsaved-runs';
 import { ImportRowDecisions } from '@/components/import-row-decisions';
+import { ImportQualificationReview } from '@/components/import-qualification-review';
+import { SuppressionReview, type SuppressionSnapshot } from '@/components/suppression-review';
+import { LocalMatchReview } from '@/components/local-match-review';
+import { applySuppressionRules } from '@/lib/suppression';
+import { deriveCompanyAssociations } from '@/lib/company-associations';
 import { CrmUpdatePolicyControls } from '@/components/crm-update-policy';
 import { SafeImportRecipeSelector, SafeImportReview } from '@/components/safe-import-review';
 import { SAFE_IMPORT_RECIPE } from '@/lib/safe-import';
-import { excludeImportRow, restoreImportRow } from '@/lib/import-exclusions';
+import { excludeImportRow, restoreImportRow, recomputeImportDuplicateFlags } from '@/lib/import-exclusions';
 import { downloadCrmReviewCsv } from '@/lib/crm-review-export';
 import { PomadeSourceContext } from '@/components/pomade-source-context';
 import type { PomadeHandoffImport, PomadeOrigin } from '@/lib/pomade-handoff';
@@ -57,6 +62,7 @@ import {
   isSeedReceipt,
   type LiveControlTowerState,
   type LiveContactState,
+  type ImportObject,
   type RepairReceipt,
   type RepairRun,
   type SeedReceipt,
@@ -188,7 +194,10 @@ export function ControlTowerDashboard() {
   const [seedReceipt, setSeedReceipt] = useState<SeedReceipt | null>(null);
   const [seedError, setSeedError] = useState<string | null>(null);
   const [dataMode, setDataMode] = useState<'warehouse' | 'csv'>('csv');
-  const [csvContacts, setCsvContacts] = useState<LiveContactState[]>([]);
+  const [rawCsvContacts, setCsvContacts] = useState<LiveContactState[]>([]);
+  const [suppressions, setSuppressions] = useState<SuppressionSnapshot>({ rules: [], state: 'loading' });
+  const suppressionSignature = useRef('');
+  const csvContacts = useMemo(() => recomputeImportDuplicateFlags(applySuppressionRules(rawCsvContacts, suppressions.rules)), [rawCsvContacts, suppressions.rules]);
   const [originalCsvContacts, setOriginalCsvContacts] = useState<LiveContactState[]>([]);
   const [correctionHistory, setCorrectionHistory] = useState<CsvContactCorrection[]>([]);
   const [reviewEpoch, setReviewEpoch] = useState(0);
@@ -211,6 +220,9 @@ export function ControlTowerDashboard() {
   const [salesforceSyncKey, setSalesforceSyncKey] = useState(() => typeof window === 'undefined' ? '' : window.sessionStorage.getItem('gtm-control-tower-operator-key') ?? '');
   const [salesforcePlan, setSalesforcePlan] = useState<CrmWritePlan | null>(null);
   const [connectorCatalog, setConnectorCatalog] = useState<ConnectorCatalog | null>(null);
+  const [importObject, setImportObject] = useState<ImportObject>('contact');
+  const companyImport = importObject === 'company';
+  const contactImport = importObject === 'contact';
   const [sourceType, setSourceType] = useState<ConnectorId>('csv');
   const [sourceLabel, setSourceLabel] = useState<string | undefined>();
   const [destinationType, setDestinationType] = useState<ConnectorId>('csv');
@@ -230,11 +242,23 @@ export function ControlTowerDashboard() {
   const [workspaceRevision, setWorkspaceRevision] = useState<number | null>(null);
   const [mappingPresets, setMappingPresets] = useState<MappingPreset[]>([]);
   const [persistenceStatus, setPersistenceStatus] = useState<'loading' | 'saved' | 'saving' | 'disabled' | 'error'>('loading');
+  const suppressionBlocked = Boolean(connectorCatalog?.persistenceEnabled && suppressions.state !== 'ready');
+  const acceptSuppressions = useCallback((snapshot: SuppressionSnapshot) => {
+    setSuppressions(snapshot);
+    if (snapshot.state !== 'ready') return;
+    const signature = JSON.stringify(snapshot.rules);
+    if (suppressionSignature.current !== signature && (suppressionSignature.current || snapshot.rules.length)) {
+      setHubSpotPlan(null); setSalesforcePlan(null); setInitialReviewId(undefined);
+      setSafeReviewEpoch((epoch) => epoch + 1);
+      if (workspaceId) window.localStorage.removeItem(`gtm-control-tower-safe-import-${workspaceId}`);
+    }
+    suppressionSignature.current = signature;
+  }, [workspaceId]);
   const crmRequestInFlight = useRef(false);
   const crmRequestPending = hubSpotSyncStatus === 'sending' || salesforceSyncStatus === 'sending';
   const workspaceBusy = pomadeLoading || correctionSaving || persistenceStatus === 'loading' || persistenceStatus === 'saving'
     || repairStatus === 'sending' || crmRequestPending || safeImportBusy;
-  const hubSpotEligibleContacts = useMemo(() => csvContacts.filter(isHubSpotEligible), [csvContacts]);
+  const hubSpotEligibleContacts = useMemo(() => suppressionBlocked ? [] : csvContacts.filter(isHubSpotEligible), [csvContacts, suppressionBlocked]);
   const syncedHubSpotContactIds = useMemo(
     () => new Set([
       ...(hubSpotSyncReceipt?.records.filter((record) => record.status === 'synced').map((record) => record.contactId) ?? []),
@@ -246,7 +270,7 @@ export function ControlTowerDashboard() {
     () => hubSpotEligibleContacts.filter((contact) => !syncedHubSpotContactIds.has(contact.contactId)),
     [hubSpotEligibleContacts, syncedHubSpotContactIds],
   );
-  const salesforceEligibleContacts = useMemo(() => csvContacts.filter(isSalesforceEligible), [csvContacts]);
+  const salesforceEligibleContacts = useMemo(() => suppressionBlocked ? [] : csvContacts.filter(isSalesforceEligible), [csvContacts, suppressionBlocked]);
   const syncedSalesforceContactIds = useMemo(
     () => new Set([
       ...(salesforceSyncReceipt?.records.filter((record) => record.status !== 'failed').map((record) => record.contactId) ?? []),
@@ -271,6 +295,7 @@ export function ControlTowerDashboard() {
   const pomadeImport = csvContacts.some((contact) => contact.sourceOrigins?.length);
   const safeImport = importRecipe === SAFE_IMPORT_RECIPE;
   function rememberOperatorKey(value: string) {
+    if (value !== hubSpotSyncKey) setSuppressions((previous) => ({ ...previous, state: 'loading' }));
     setHubSpotSyncKey(value);
     setSalesforceSyncKey(value);
     if (value) window.sessionStorage.setItem('gtm-control-tower-operator-key', value);
@@ -374,6 +399,7 @@ export function ControlTowerDashboard() {
     setWorkspaceId(workspace.id);
     setWorkspaceRevision(workspace.revision);
     setMappingPresets(workspace.presets);
+    setImportObject(workspace.state.importObject ?? 'contact');
     setSourceType(workspace.state.sourceType);
     setSourceLabel(workspace.state.sourceLabel);
     setDestinationType(workspace.state.destinationType);
@@ -422,6 +448,7 @@ export function ControlTowerDashboard() {
       const id = await ensureWorkspace();
       if (!id) throw new Error('Workspace persistence is unavailable.');
       const state: WorkspaceState = {
+        importObject: overrides.importObject ?? importObject,
         contacts: overrides.contacts ?? csvContacts,
         originalContacts: overrides.originalContacts ?? originalCsvContacts,
         repairHistory: overrides.repairHistory ?? csvRepairHistory,
@@ -461,19 +488,23 @@ export function ControlTowerDashboard() {
     mapping: CsvColumnMapping = {},
     importedSource: ConnectorId = 'csv',
     startWalkthrough = false,
+    object: ImportObject = 'contact',
   ) {
     if (workspaceBusy) throw new Error('Wait for the current workspace operation to finish before loading a file.');
+    if (object !== 'contact' && importedSource !== 'csv') throw new Error('Company review uses a local CSV source.');
     if (safeImport && importedSource !== 'csv') throw new Error('Safe Import uses a CSV source and a direct HubSpot or Salesforce connector.');
     const sourceDigest = await globalThis.crypto.subtle.digest('SHA-256', new TextEncoder().encode(source));
     const hash = Array.from(new Uint8Array(sourceDigest), (byte) => byte.toString(16).padStart(2, '0')).join('');
-    const imported = importContactsCsv(source, mapping);
+    const imported = importContactsCsv(source, mapping, object);
     const snapshot = imported.contacts.map((contact) => ({ ...contact, qualityFlags: [...contact.qualityFlags] }));
     const receipt: ConnectorReceipt = {
       id: globalThis.crypto.randomUUID(), connectorId: importedSource, phase: 'validate', status: 'executed',
-      summary: `Validated ${snapshot.length} mapped contacts.`, recordsRead: snapshot.length,
+      summary: `Validated ${snapshot.length} mapped ${object === 'company' ? 'companies' : 'contacts'}.`, recordsRead: snapshot.length,
       createdAt: new Date().toISOString(), undoAvailable: false,
     };
     const receipts = [receipt, ...connectorReceipts].slice(0, 30);
+    setImportObject(object);
+    if (object !== 'contact') { setDestinationType('csv'); setImportRecipe(undefined); }
     setCsvContacts(snapshot);
     setOriginalCsvContacts(snapshot.map((contact) => ({ ...contact, qualityFlags: [...contact.qualityFlags] })));
     setCsvRepairHistory([]);
@@ -497,6 +528,8 @@ export function ControlTowerDashboard() {
     setDemoStage(startWalkthrough ? 0 : demoStages.length - 1);
     setDemoRunning(startWalkthrough);
     await persistWorkspace('import_validated', {
+      importObject: object,
+      ...(object !== 'contact' ? { destinationType: 'csv', importRecipe: undefined } : {}),
       contacts: snapshot,
       originalContacts: snapshot.map((contact) => ({ ...contact, qualityFlags: [...contact.qualityFlags] })),
       repairHistory: [], correctionHistory: [], receipts, mapping, fileName, sourceType: importedSource, sourceLabel: fileName, sourceFileHash: hash,
@@ -513,7 +546,7 @@ export function ControlTowerDashboard() {
       recordsRead: snapshot.length, createdAt: new Date().toISOString(), undoAvailable: false,
     };
     const state: WorkspaceState = {
-      contacts: snapshot, originalContacts: structuredClone(snapshot), repairHistory: [], correctionHistory: [],
+      importObject: 'contact', contacts: snapshot, originalContacts: structuredClone(snapshot), repairHistory: [], correctionHistory: [],
       receipts: [receipt], mapping: {}, fileName, sourceType: 'csv', sourceLabel: label,
       destinationType: connectorCatalog?.connectors.some((connector) => connector.id === imported.destination.provider && connector.configured)
         ? imported.destination.provider : 'csv',
@@ -740,7 +773,7 @@ export function ControlTowerDashboard() {
   }
 
   function exportCsvWorkspace() {
-    const blob = new Blob([exportContactsCsv(csvContacts)], { type: 'text/csv;charset=utf-8' });
+    const blob = new Blob([exportContactsCsv(csvContacts, importObject)], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
@@ -749,7 +782,7 @@ export function ControlTowerDashboard() {
     URL.revokeObjectURL(url);
     const receipt: ConnectorReceipt = {
       id: globalThis.crypto.randomUUID(), connectorId: 'csv', phase: 'export', status: 'executed',
-      summary: `Exported ${csvContacts.length} contacts as CSV.`, recordsWritten: csvContacts.length,
+      summary: `Exported ${csvContacts.length} ${companyImport ? 'companies' : 'contacts'} as CSV.`, recordsWritten: csvContacts.length,
       createdAt: new Date().toISOString(), undoAvailable: false,
     };
     void recordConnectorReceipt(receipt);
@@ -792,12 +825,12 @@ export function ControlTowerDashboard() {
     }
   }
 
-  async function saveMappingPreset(name: string, mapping: CsvColumnMapping) {
+  async function saveMappingPreset(name: string, mapping: CsvColumnMapping, object: ImportObject) {
     const id = await ensureWorkspace();
     if (!id) throw new Error('Persistent workspaces are disabled.');
     const response = await fetch('/api/control-tower/workspace', {
       method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ action: 'save-preset', id, name, mapping }),
+      body: JSON.stringify({ action: 'save-preset', id, name, mapping, importObject: object }),
     });
     if (!response.ok) throw new Error('Mapping preset could not be saved.');
     const result = await response.json() as { presets: MappingPreset[] };
@@ -806,6 +839,7 @@ export function ControlTowerDashboard() {
 
   function changeSourceType(next: ConnectorId) {
     if (workspaceBusy) return;
+    if (!contactImport && next !== 'csv') return;
     if (safeImport && next !== 'csv') { setPolicyError('Safe Import uses a CSV source. Choose ordinary import to use another source.'); return; }
     invalidateCrmReview();
     setSourceType(next);
@@ -814,7 +848,7 @@ export function ControlTowerDashboard() {
   }
 
   async function changeDestinationType(next: ConnectorId) {
-    if (crmRequestInFlight.current || workspaceBusy) return;
+    if (crmRequestInFlight.current || workspaceBusy || (!contactImport && next !== 'csv')) return;
     if (safeImport && next !== 'hubspot' && next !== 'salesforce') { setPolicyError('Safe Import updates existing HubSpot Contacts or Salesforce Leads and Contacts. Choose ordinary import to use another destination.'); return; }
     crmRequestInFlight.current = true;
     setCorrectionSaving(true);
@@ -890,7 +924,7 @@ export function ControlTowerDashboard() {
   }
 
   async function previewCrmWriteback(connectorId: 'hubspot' | 'salesforce') {
-    if (safeImport) return;
+    if (safeImport || suppressionBlocked) return;
     if (crmRequestInFlight.current || workspaceBusy) return;
     const source = connectorId === 'hubspot' ? pendingHubSpotContacts : pendingSalesforceContacts;
     const contacts = source.slice(0, 100).map((contact) => connectorId === 'hubspot' ? toHubSpotSyncContact(contact) : toSalesforceSyncLead(contact));
@@ -917,7 +951,7 @@ export function ControlTowerDashboard() {
   }
 
   async function executeCrmWriteback(connectorId: 'hubspot' | 'salesforce') {
-    if (safeImport) return;
+    if (safeImport || suppressionBlocked) return;
     if (crmRequestInFlight.current || workspaceBusy) return;
     const plan = connectorId === 'hubspot' ? hubSpotPlan : salesforcePlan;
     if (!plan) return;
@@ -1110,7 +1144,7 @@ export function ControlTowerDashboard() {
               Open source · GitHub ↗
             </a>
             <span className="rounded-full border border-[#cdfc54]/20 bg-[#cdfc54]/[0.07] px-3 py-2 font-mono text-[10px] uppercase tracking-wider text-[#cdfc54]">Self-hosted · MIT</span>
-            <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 font-mono text-[10px] uppercase tracking-wider text-[#9db1a7]">{dataMode === 'csv' ? pomadeImport ? 'Pomade proposal workspace' : 'CSV workspace' : 'Synthetic warehouse demo'}</span>
+            <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 font-mono text-[10px] uppercase tracking-wider text-[#9db1a7]">{dataMode === 'csv' ? pomadeImport ? 'Pomade proposal workspace' : companyImport ? 'Company CSV workspace' : importObject === 'contact_company' ? 'Contacts + companies workspace' : 'Contact CSV workspace' : 'Synthetic warehouse demo'}</span>
           </div>
         </header>
 
@@ -1118,13 +1152,13 @@ export function ControlTowerDashboard() {
           <div>
             <div className="mb-4 flex items-center gap-2 font-mono text-xs uppercase tracking-[0.2em] text-[#cdfc54]">
               <span className={`h-2 w-2 rounded-full ${demoRunning ? 'animate-pulse bg-[#cdfc54]' : 'bg-[#4fa782]'}`} />
-              {demoRunning ? `Processing · ${demoStages[Math.max(demoStage, 0)].label}` : dataMode === 'csv' ? pomadeImport ? 'Pomade handoff review' : 'CSV cleanup lab' : 'Synthetic warehouse walkthrough'}
+              {demoRunning ? `Processing · ${demoStages[Math.max(demoStage, 0)].label}` : dataMode === 'csv' ? pomadeImport ? 'Pomade handoff review' : !contactImport ? 'Local object review' : 'CSV cleanup lab' : 'Synthetic warehouse walkthrough'}
             </div>
             <h2 className="max-w-[980px] text-4xl font-semibold leading-[0.98] tracking-[-0.05em] sm:text-6xl lg:text-[72px]">
-              {dataMode === 'csv' ? pomadeImport ? 'Review proposed updates before comparing them with your CRM.' : 'Inspect and repair your CSV before choosing a destination.' : 'Review the synthetic warehouse batch.'}
+              {dataMode === 'csv' ? pomadeImport ? 'Review proposed updates before comparing them with your CRM.' : companyImport ? 'Review company identities and export your company list.' : importObject === 'contact_company' ? 'Review contacts and their associated companies together.' : 'Inspect and repair your CSV before choosing a destination.' : 'Review the synthetic warehouse batch.'}
             </h2>
             <p className="mt-6 max-w-2xl text-base leading-7 text-[#9cb0a7] sm:text-lg">
-              {dataMode === 'csv' ? 'Import a file or try the sample, map its columns, inspect quality flags, run local repairs, and export the result. No CRM connection is required for this workflow.' : 'Load the configured BigQuery snapshot and inspect returned repair receipts. The illustrative walkthrough below explains the architecture; its example counters are not current execution results.'}
+              {dataMode === 'csv' ? !contactImport ? 'Map each field to its object, inspect local matching suggestions, review associations and exclusions, and export the mapped records. This workspace is local review and export only.' : 'Import a file or try the sample, map its columns, inspect quality flags, run local repairs, and export the result. No CRM connection is required for this workflow.' : 'Load the configured BigQuery snapshot and inspect returned repair receipts. The illustrative walkthrough below explains the architecture; its example counters are not current execution results.'}
             </p>
             <div className="mt-7 flex flex-wrap gap-3">
               {dataMode === 'csv' ? <a href="#workspace-console" className="rounded-full bg-[#cdfc54] px-6 py-3 text-sm font-bold text-[#07130f] shadow-[0_12px_40px_rgba(205,252,84,0.16)] transition hover:-translate-y-0.5 hover:bg-[#dcff83] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#cdfc54]">Import a CSV or try the sample</a> : <button
@@ -1135,14 +1169,14 @@ export function ControlTowerDashboard() {
               >
                 {seedStatus === 'sending' ? 'Loading funky CRM data…' : demoRunning ? 'Batch running…' : demoStage >= 0 ? 'Reset + replay messy batch' : 'Run messy lead batch'}
               </button>}
-              <button
+              {contactImport && <button
                 data-testid="chaos-trigger"
                 onClick={triggerChaos}
                 disabled={dataMode === 'csv' && csvContacts.length === 0}
                 className="rounded-full border border-white/15 bg-white/[0.04] px-6 py-3 text-sm font-semibold text-[#c9d8d0] transition hover:-translate-y-0.5 hover:border-white/25 hover:bg-white/[0.08] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#c9d8d0] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {dataMode === 'csv' ? 'Review a repair scenario' : 'Test another failure'}
-              </button>
+              </button>}
             </div>
           </div>
           <article className="rounded-[30px] border border-white/10 bg-[#0c1d17]/90 p-5 shadow-[0_30px_90px_rgba(0,0,0,0.28)] backdrop-blur sm:p-6">
@@ -1163,13 +1197,15 @@ export function ControlTowerDashboard() {
         </section>
 
         <div id="workspace-console" className="scroll-mt-6">
-        <SafeImportRecipeSelector active={safeImport} disabled={workspaceBusy} destinationType={destinationType === 'salesforce' ? 'salesforce' : 'hubspot'}
-          onAdopt={() => selectImportRecipe(true)} onOrdinary={() => selectImportRecipe(false)} />
+        {contactImport && <SafeImportRecipeSelector active={safeImport} disabled={workspaceBusy} destinationType={destinationType === 'salesforce' ? 'salesforce' : 'hubspot'}
+          onAdopt={() => selectImportRecipe(true)} onOrdinary={() => selectImportRecipe(false)} />}
         {crmRequestPending && <p role="status" className="mb-4 rounded-2xl border border-[#cdfc54]/20 bg-[#cdfc54]/[0.07] px-4 py-3 text-sm text-[#cdfc54]">
           CRM request in progress. Workspace controls unlock after the result and any receipt saving finish.
         </p>}
         <fieldset disabled={workspaceBusy} className="min-w-0">
         <SelfHostConsole
+          key={`${workspaceId}-${importObject}`}
+          importObject={importObject}
           catalog={connectorCatalog}
           contacts={csvContacts}
           sourceType={sourceType}
@@ -1181,7 +1217,7 @@ export function ControlTowerDashboard() {
           lastReceipt={connectorReceipts[0] ?? null}
           operatorKey={hubSpotSyncKey}
           onOperatorKeyChange={rememberOperatorKey}
-          onMappedImport={(csv, fileName, mapping, source) => loadCsvWorkspace(csv, fileName, mapping, source)}
+          onMappedImport={(csv, fileName, mapping, source, object) => loadCsvWorkspace(csv, fileName, mapping, source, false, object)}
           onPomadeImport={loadPomadeWorkspace}
           onSourceChange={changeSourceType}
           onDestinationChange={changeDestinationType}
@@ -1198,9 +1234,20 @@ export function ControlTowerDashboard() {
         {receiptSaveWarning && <p role="alert" className="mb-4 rounded-2xl border border-[#e6bd68]/30 bg-[#e6bd68]/5 p-4 text-sm text-[#e6bd68]">{receiptSaveWarning}</p>}
         <UnsavedRuns runs={unsavedRuns} onSaved={(receiptId) => setUnsavedRuns((current) => current.filter((pending) => pending.run.receipt.id !== receiptId))} />
 
+        {connectorCatalog?.persistenceEnabled && <SuppressionReview key={hubSpotSyncKey} contacts={csvContacts} accessKey={hubSpotSyncKey}
+          busy={workspaceBusy} onSnapshot={acceptSuppressions} />}
+
+        {dataMode === 'csv' && csvContacts.length > 0 && connectorCatalog?.persistenceEnabled && <LocalMatchReview
+          workspaceId={workspaceId} workspaceRevision={workspaceRevision} contacts={csvContacts} importObject={importObject} accessKey={hubSpotSyncKey}
+          disabled={workspaceBusy || persistenceStatus !== 'saved' || suppressionBlocked}
+          suppressionRulesRevision={JSON.stringify(suppressions.rules)} />}
+
+        {dataMode === 'csv' && companyImport && <CompanyRows contacts={csvContacts} onExport={exportCsvWorkspace} />}
+        {dataMode === 'csv' && importObject === 'contact_company' && <CompanyAssociations contacts={csvContacts} onExport={exportCsvWorkspace} />}
+
         {bigQueryConfigured && <LiveWarehouseCard state={liveState} status={liveStatus} onRefresh={refreshLiveState} />}
 
-        {dataMode === 'csv' && !safeImport && <HeldContactReview
+        {dataMode === 'csv' && contactImport && !safeImport && <HeldContactReview
           key={reviewEpoch}
           contacts={csvContacts}
           history={correctionHistory}
@@ -1209,13 +1256,17 @@ export function ControlTowerDashboard() {
         />}
 
         {dataMode === 'csv' && csvContacts.length > 0 && <details className="mb-6 rounded-3xl border border-white/10 bg-[#0c1d17] p-5">
-          <summary className="cursor-pointer text-sm font-semibold text-[#b8d8ff]">Choose rows to import · {csvContacts.filter((contact) => contact.importExclusion).length} skipped</summary>
+          <summary className="cursor-pointer text-sm font-semibold text-[#b8d8ff]">Choose rows to import · {csvContacts.filter((contact) => contact.importExclusion).length} skipped · {csvContacts.filter((contact) => contact.suppressionMatches?.length).length} suppressed</summary>
           <ImportRowDecisions contacts={csvContacts} busy={workspaceBusy}
             onExclude={(contactId, reason) => changeImportSelection(contactId, reason)}
             onRestore={(contactId) => changeImportSelection(contactId)} />
         </details>}
 
-        {dataMode === 'csv' && !safeImport && csvContacts.length > 0
+        {dataMode === 'csv' && contactImport && csvContacts.length > 0 && connectorCatalog?.persistenceEnabled && <ImportQualificationReview
+          contacts={csvContacts} workspaceId={workspaceId} accessKey={hubSpotSyncKey} suppressionState={suppressions.state}
+          disabled={workspaceBusy || persistenceStatus !== 'saved'} />}
+
+        {dataMode === 'csv' && contactImport && !safeImport && csvContacts.length > 0
           && ((destinationType === 'hubspot' && hubSpotSafeWriteback) || (destinationType === 'salesforce' && salesforceSafeWriteback))
           && <div className="mb-6 rounded-3xl border border-white/10 bg-[#0c1d17] p-5">
             <CrmUpdatePolicyControls value={updatePolicy} onChange={(value) => void changeUpdatePolicy(value)} disabled={workspaceBusy} />
@@ -1223,25 +1274,25 @@ export function ControlTowerDashboard() {
             {policyError && <p role="alert" className="mt-3 text-sm text-[#ff9d7f]">{policyError}</p>}
           </div>}
 
-        {dataMode === 'csv' && !safeImport && csvContacts.length > 0
+        {dataMode === 'csv' && contactImport && !safeImport && csvContacts.length > 0
           && ((destinationType === 'hubspot' && hubSpotSafeWriteback) || (destinationType === 'salesforce' && salesforceSafeWriteback))
           && <ImportMatchReview
             contacts={csvContacts}
             connectorId={destinationType as 'hubspot' | 'salesforce'}
             workspaceId={workspaceId}
             accessKey={destinationType === 'hubspot' ? hubSpotSyncKey : salesforceSyncKey}
-            disabled={persistenceStatus !== 'saved' || workspaceBusy}
+            disabled={persistenceStatus !== 'saved' || workspaceBusy || suppressionBlocked}
             onDecision={changeImportMatchDecision}
           />}
 
-        {dataMode === 'csv' && safeImport && csvContacts.length > 0 && <SafeImportReview
+        {dataMode === 'csv' && contactImport && safeImport && csvContacts.length > 0 && <SafeImportReview
           key={`${workspaceId}-${safeReviewEpoch}`} workspaceId={workspaceId} contacts={csvContacts}
           workspaceRevision={workspaceRevision} initialReviewId={initialReviewId} destinationType={destinationType === 'salesforce' ? 'salesforce' : 'hubspot'}
-          accessKey={hubSpotSyncKey} disabled={workspaceBusy || persistenceStatus !== 'saved' || (destinationType === 'salesforce' ? !salesforceConfigured || !salesforceSafeWriteback : !hubSpotConfigured || !hubSpotSafeWriteback)}
+          accessKey={hubSpotSyncKey} disabled={workspaceBusy || suppressionBlocked || persistenceStatus !== 'saved' || (destinationType === 'salesforce' ? !salesforceConfigured || !salesforceSafeWriteback : !hubSpotConfigured || !hubSpotSafeWriteback)}
           onBusyChange={setSafeImportBusy} onDecision={changeImportMatchDecision}
           onSkip={(contactId, reason) => changeImportSelection(contactId, reason)} />}
 
-        {!safeImport && <FunkyCrmLab
+        {contactImport && !safeImport && <FunkyCrmLab
           mode={dataMode}
           contacts={dataMode === 'csv' ? csvContacts : liveState?.contacts ?? []}
           repairHistory={dataMode === 'csv' ? csvRepairHistory : liveState?.repairHistory ?? []}
@@ -1345,7 +1396,7 @@ export function ControlTowerDashboard() {
           ))}
         </section>
 
-        <section className="mt-6 grid gap-5 xl:grid-cols-[1.18fr_0.82fr]">
+        {contactImport && <section className="mt-6 grid gap-5 xl:grid-cols-[1.18fr_0.82fr]">
           <FunnelCard funnel={funnel} source={dataMode === 'csv' ? 'csv' : !visibleScenario && liveState ? 'warehouse' : 'simulation'} />
           <IncidentCard
             activeScenario={visibleScenario}
@@ -1357,7 +1408,7 @@ export function ControlTowerDashboard() {
             candidateCount={dataMode === 'csv' && visibleScenario ? countCsvRepairCandidates(csvContacts, visibleScenario) : null}
             onApproveRepair={approveRepair}
           />
-        </section>
+        </section>}
 
         <section className="mt-6 overflow-hidden rounded-[28px] border border-white/10 bg-[#0c1d17]">
           <div className="border-b border-white/10 px-5 py-4 sm:px-6">
@@ -1423,6 +1474,53 @@ export function ControlTowerDashboard() {
       </fieldset>
     </main>
   );
+}
+
+function CompanyAssociations({ contacts, onExport }: { contacts: LiveContactState[]; onExport: () => void }) {
+  const preview = useMemo(() => deriveCompanyAssociations(contacts), [contacts]);
+  const contactsById = useMemo(() => new Map(contacts.map((contact) => [contact.contactId, contact])), [contacts]);
+  const [query, setQuery] = useState('');
+  const [page, setPage] = useState(0);
+  const search = query.trim().toLowerCase();
+  const groups = preview.groups.filter((group) => [group.company.name, group.company.website, group.company.recordId,
+    ...group.companyNames, ...group.contactIds.flatMap((id) => { const contact = contactsById.get(id); return [id, contact?.fullName, contact?.rawEmail]; })]
+    .some((value) => value?.toLowerCase().includes(search)));
+  const lastPage = Math.max(0, Math.ceil(groups.length / 20) - 1);
+  const currentPage = Math.min(page, lastPage);
+  return <section aria-label="Proposed company associations" className="mb-6 rounded-3xl border border-white/10 bg-[#0c1d17] p-5">
+    <div className="flex flex-wrap items-center justify-between gap-3"><h3 className="font-display text-xl">Contacts + associated companies</h3><button onClick={onExport} className="rounded-full border border-[#cdfc54]/25 px-4 py-2 text-xs font-semibold text-[#cdfc54]">Export contacts + companies CSV</button></div>
+    <p className="mt-2 text-sm text-[#bdcbc4]">{preview.counts.contacts} contacts · {preview.counts.companies} proposed company groups · {preview.counts.linkedContacts} proposed links · {preview.counts.reviewGroups} groups need review · {preview.counts.unlinkedContacts} unlinked contacts.</p>
+    <p className="mt-2 text-xs leading-5 text-[#9db1a7]">These are local proposals based on an explicit company record ID or exact website hostname. Similar names alone never create an association. Contact fields and Company fields remain separate. No companies, contacts, or associations have been created in your CRM.</p>
+    <label className="mt-4 block text-xs">Find proposed company association<input value={query} onChange={(event) => { setQuery(event.target.value); setPage(0); }} type="search" placeholder="Company, website, contact name, email, or ID" className="mt-1 block w-full rounded-xl border border-white/20 bg-[#071710] px-3 py-2 text-sm" /></label>
+    <div className="mt-4 space-y-3">{groups.slice(currentPage * 20, (currentPage + 1) * 20).map((group) => <article key={group.key} className="rounded-xl border border-white/10 p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0"><h4 className="break-words text-sm font-semibold">{group.company.name || 'Company name not provided'}</h4><p className="mt-1 break-all text-xs text-[#9db1a7]">Company website: {group.company.website || 'Not provided'} · Company record ID: {group.company.recordId || 'Not provided'}</p></div><span className={`rounded-full px-3 py-1 text-xs ${group.status === 'needs_review' ? 'bg-[#e6bd68]/10 text-[#e6bd68]' : 'bg-[#83bcff]/10 text-[#83bcff]'}`}>{group.status === 'needs_review' ? 'Needs review' : 'Proposed association'}</span></div>
+      <p className="mt-2 text-xs text-[#9db1a7]">Company phone: {group.company.phone || 'Not provided'} · Company state: {group.company.state || 'Not provided'}</p>
+      {group.companyNames.length > 1 && <p className="mt-2 break-words text-xs text-[#e6bd68]">Imported company names: {group.companyNames.join(' · ')}</p>}
+      {group.websites.length > 1 && <p className="mt-2 break-all text-xs text-[#e6bd68]">Imported websites: {group.websites.join(' · ')}</p>}
+      <ul className="mt-2 space-y-1 text-xs leading-5 text-[#bdcbc4]">{group.reasons.map((reason, index) => <li key={index}>{reason}</li>)}</ul>
+      <details className="mt-3 rounded-lg border border-white/10 p-3"><summary className="cursor-pointer text-xs font-semibold">{group.contactIds.length} associated contact{group.contactIds.length === 1 ? '' : 's'} · inspect Contact fields</summary>
+        <div className="mt-3 overflow-x-auto"><table className="w-full min-w-[520px] text-left text-xs"><thead className="text-[#9db1a7]"><tr><th className="p-2">Contact</th><th className="p-2">Contact email</th><th className="p-2">Contact phone</th><th className="p-2">Row status</th></tr></thead><tbody>{group.contactIds.map((id) => { const contact = contactsById.get(id); return <tr key={id} className="border-t border-white/10"><td className="p-2">{contact?.fullName || 'Name not provided'}<p className="mt-1 text-[#9db1a7]">{id}</p></td><td className="break-all p-2">{contact?.rawEmail || 'Not provided'}</td><td className="p-2">{contact?.phone || 'Not provided'}</td><td className="p-2">{contact?.suppressionMatches?.length ? 'Suppressed' : contact?.importExclusion ? 'Skipped' : contact?.qualityFlags.length ? contact.qualityFlags.map((flag) => flag.replaceAll('_', ' ')).join('; ') : 'Available for local review'}</td></tr>; })}</tbody></table></div>
+      </details>
+    </article>)}</div>
+    {!groups.length && <p className="mt-4 text-sm text-[#9db1a7]">No proposed company groups match this search.</p>}
+    <div className="mt-4 flex flex-wrap items-center gap-3 text-xs text-[#9db1a7]"><span>{groups.length ? `${currentPage * 20 + 1}–${Math.min((currentPage + 1) * 20, groups.length)} of ${groups.length} company groups` : '0 groups'}</span><button disabled={currentPage === 0} onClick={() => setPage(currentPage - 1)} className="rounded-full border border-white/20 px-4 py-2 disabled:opacity-40">Previous company groups</button><button disabled={currentPage === lastPage} onClick={() => setPage(currentPage + 1)} className="rounded-full border border-white/20 px-4 py-2 disabled:opacity-40">Next company groups</button></div>
+    {preview.unlinked.length > 0 && <details className="mt-4 rounded-xl border border-[#e6bd68]/20 p-3"><summary className="cursor-pointer text-xs font-semibold text-[#e6bd68]">{preview.unlinked.length} contacts without a proposed company link</summary><ul className="mt-3 space-y-2 text-xs leading-5 text-[#bdcbc4]">{preview.unlinked.map((row) => <li key={row.contactId}><strong>{contactsById.get(row.contactId)?.fullName || row.contactId}</strong> · {row.contactId}: {row.reason}</li>)}</ul></details>}
+  </section>;
+}
+
+function CompanyRows({ contacts, onExport }: { contacts: LiveContactState[]; onExport: () => void }) {
+  const [query, setQuery] = useState('');
+  const [page, setPage] = useState(0);
+  const filtered = contacts.filter((row) => [row.contactId, row.company, row.website, row.phone, row.state, row.ownerId].some((value) => value?.toLowerCase().includes(query.trim().toLowerCase())));
+  const lastPage = Math.max(0, Math.ceil(filtered.length / 50) - 1);
+  const currentPage = Math.min(page, lastPage);
+  return <section aria-label="Company review" className="mb-6 rounded-3xl border border-white/10 bg-[#0c1d17] p-5">
+    <div className="flex flex-wrap items-center justify-between gap-3"><h3 className="font-display text-xl">Company review</h3><button onClick={onExport} className="rounded-full border border-[#cdfc54]/25 px-4 py-2 text-xs font-semibold text-[#cdfc54]">Export companies CSV</button></div>
+    <p className="mt-2 text-sm text-[#bdcbc4]">{contacts.length} company rows. Company review/export only; CRM Company/Account import is not available. No person names or email addresses are required.</p>
+    <label className="mt-4 block text-xs">Find company<input value={query} onChange={(event) => { setQuery(event.target.value); setPage(0); }} type="search" className="mt-1 block w-full rounded-xl border border-white/20 bg-[#071710] px-3 py-2 text-sm" /></label>
+    <div className="mt-4 overflow-x-auto"><table className="w-full min-w-[850px] text-left text-xs"><thead className="text-[#9db1a7]"><tr>{['Company', 'Website', 'Phone', 'State / region', 'Owner', 'Review status'].map((label) => <th key={label} className="p-3">{label}</th>)}</tr></thead><tbody>{filtered.slice(currentPage * 50, (currentPage + 1) * 50).map((row) => <tr key={row.contactId} className="border-t border-white/10"><td className="p-3">{row.company || 'Missing company name'}<p className="mt-1 text-[#9db1a7]">{row.contactId}</p></td><td className="break-all p-3">{row.website || 'Not provided'}</td><td className="p-3">{row.phone || 'Not provided'}</td><td className="p-3">{row.state || row.region || 'Not provided'}</td><td className="p-3">{row.ownerId || 'Not assigned'}</td><td className="p-3">{row.suppressionMatches?.length ? `Suppressed: ${row.suppressionMatches.map((match) => match.reason).join('; ')}` : row.importExclusion ? `Skipped: ${row.importExclusion.reason}` : row.qualityFlags.length ? row.qualityFlags.map((flag) => flag.replaceAll('_', ' ')).join('; ') : 'Available for local review/export'}</td></tr>)}</tbody></table></div>
+    <div className="mt-4 flex flex-wrap items-center gap-3 text-xs text-[#9db1a7]"><span>{filtered.length ? `${currentPage * 50 + 1}–${Math.min((currentPage + 1) * 50, filtered.length)} of ${filtered.length} companies` : 'No companies match'}</span><button disabled={currentPage === 0} onClick={() => setPage(currentPage - 1)} className="rounded-full border border-white/20 px-4 py-2 disabled:opacity-40">Previous companies</button><button disabled={currentPage === lastPage} onClick={() => setPage(currentPage + 1)} className="rounded-full border border-white/20 px-4 py-2 disabled:opacity-40">Next companies</button></div>
+  </section>;
 }
 
 function LiveWarehouseCard({

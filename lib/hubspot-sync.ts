@@ -1,3 +1,4 @@
+import { isSuppressed } from './suppression';
 import type { LiveContactState } from './live-control-tower';
 
 export type HubSpotSyncContact = {
@@ -44,8 +45,9 @@ const blockingFlags = new Set([
 ]);
 
 export function isHubSpotEligible(contact: LiveContactState): boolean {
-  return contact.recordStatus === 'active'
-    && !contact.importExclusion
+  return (contact.importObject ?? 'contact') === 'contact'
+    && contact.recordStatus === 'active'
+    && !contact.importExclusion && !isSuppressed(contact)
     && Boolean(contact.normalizedEmail)
     && !contact.qualityFlags.some((flag) => blockingFlags.has(flag));
 }

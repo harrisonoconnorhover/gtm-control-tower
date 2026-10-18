@@ -11,7 +11,11 @@ FROM node:22.22.0-bookworm-slim AS runtime
 
 ENV NODE_ENV=production \
     PORT=3000 \
-    CONTROL_TOWER_PERSISTENCE_ENABLED=true
+    CONTROL_TOWER_PERSISTENCE_ENABLED=true \
+    CONTROL_TOWER_BROWSER_EXECUTABLE_PATH=/usr/bin/chromium
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends chromium ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=build /app/dist/standalone /app
 COPY --from=build /app/node_modules/better-sqlite3 /app/node_modules/better-sqlite3
@@ -24,6 +28,7 @@ COPY --from=build /app/node_modules/scheduler /app/node_modules/scheduler
 COPY --from=build /app/node_modules/acorn-loose /app/node_modules/acorn-loose
 COPY --from=build /app/node_modules/neo-async /app/node_modules/neo-async
 COPY --from=build /app/node_modules/webpack-sources /app/node_modules/webpack-sources
+COPY --from=build /app/node_modules/playwright-core /app/node_modules/playwright-core
 COPY --from=build /app/scripts/monitor.mjs /app/scripts/monitor.mjs
 COPY --from=build /app/scripts/subscribe-salesforce-cdc.mjs /app/scripts/subscribe-salesforce-cdc.mjs
 COPY --from=build /app/scripts/relay-salesforce-cdc.mjs /app/scripts/relay-salesforce-cdc.mjs

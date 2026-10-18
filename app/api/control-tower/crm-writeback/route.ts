@@ -1,3 +1,4 @@
+import { assertNoSuppressedContacts } from '@/lib/suppression-enforcement-server';
 import { createGovernedCrmPlan, readExisting } from '@/lib/governed-crm-plan';
 import { createHubSpotContacts } from '@/app/api/control-tower/hubspot-sync/route';
 import {
@@ -63,6 +64,8 @@ export async function POST(request: Request) {
 
 async function executePlan(plan: CrmWritePlan, contacts: PortableCrmContact[]): Promise<CrmWritebackReceipt> {
   if (plan.recordMode === 'update-existing' && plan.records.some((row) => row.operation === 'create')) throw new Error('Update-only imports cannot create CRM records.');
+  const actionableIds = new Set(plan.records.filter((row) => row.operation === 'create' || row.operation === 'update').map((row) => row.contactId));
+  await assertNoSuppressedContacts(contacts.filter((row) => actionableIds.has(row.contactId)));
   const runId = crypto.randomUUID();
   const contactById = new Map(contacts.map((contact) => [contact.contactId, contact]));
   const providerRecords = plan.connectorId === 'hubspot'

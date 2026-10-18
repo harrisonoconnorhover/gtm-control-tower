@@ -1,4 +1,5 @@
-import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
+import { CrmReadDeferredError, resetCrmReadTransportForTests } from '../lib/crm-read-transport';
+import { beforeEach, afterAll, afterEach, describe, expect, it, vi } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -277,6 +278,145 @@ describe('saved safe import execution', () => {
     expect(writeRecord).toHaveBeenCalledTimes(21);
   });
 
+  it('pauses a 200-row burst on a definitely rejected write and resumes only unsent rows after fresh checks', async () => {
+    const { review, deps, current, writeRecord } = await setup(200);
+    let now = new Date(SAFE_IMPORT_TEST_NOW);
+    const retryAt = new Date(now.getTime() + 120_000).toISOString();
+    let limited = true;
+    const attempts: string[] = [];
+    const write: SafeImportExecutionDependencies['writeRecord'] = async (record) => {
+      attempts.push(record.nativeId!);
+      if (record.nativeId === '4' && limited) {
+        limited = false;
+        return { status: 'pending', error: '429: wait for CRM capacity', retryAt, reason: 'rate_limit' };
+      }
+      return writeRecord(record);
+    };
+    const controls = { ...deps, now: () => now, writeRecord: write };
+    const initial = await executeSafeImportReview(review, controls);
+    expect(attempts).toEqual(['1', '2', '3', '4']);
+    expect(initial).toMatchObject({ status: 'running', nextAttemptAt: retryAt, retryReason: expect.stringContaining('429') });
+    expect(initial.records.filter((record) => record.status === 'pending')).toHaveLength(197);
+    const saved = await getSafeImportExecution(review.workspaceId, review.id);
+    expect(saved?.nextAttemptAt).toBe(retryAt);
+    expect((await continueSafeImportExecution(review, controls)).nextAttemptAt).toBe(retryAt);
+    expect(attempts).toHaveLength(4);
+    // A CRM edit during the cooldown must block this originally approved row.
+    current.get('4')!.fields.phone = 'Updated by another integration during cooldown';
+    now = new Date(retryAt);
+    const resumed = await continueSafeImportExecution(review, controls);
+    expect(resumed.records[3]).toMatchObject({ status: 'held', error: expect.stringContaining('changed after review') });
+    expect(resumed.nextAttemptAt).toBeUndefined();
+    const completed = await finish(review, controls, resumed);
+    expect(completed.records.filter((record) => record.status === 'accepted')).toHaveLength(199);
+    expect(completed.records.filter((record) => record.status === 'held')).toHaveLength(1);
+    expect(completed.approvedAt).toBe(initial.approvedAt);
+    expect(attempts).toHaveLength(200);
+    expect(new Set(attempts).size).toBe(200);
+  });
+
+  it('makes a rejected row retryable after cooldown while preserving approval and accepted rows', async () => {
+    const { review, deps, writeRecord } = await setup(2);
+    let now = new Date(SAFE_IMPORT_TEST_NOW);
+    const retryAt = new Date(now.getTime() + 5_000).toISOString();
+    let limited = true;
+    const write: SafeImportExecutionDependencies['writeRecord'] = async (record) => {
+      if (record.nativeId === '2' && limited) { limited = false; return { status: 'pending', error: '429', retryAt, reason: 'rate_limit' }; }
+      return writeRecord(record);
+    };
+    const controls = { ...deps, now: () => now, writeRecord: write };
+    const initial = await executeSafeImportReview(review, controls);
+    expect(initial.records.map((record) => record.status)).toEqual(['accepted', 'pending']);
+    now = new Date(retryAt);
+    const completed = await continueSafeImportExecution(review, controls);
+    expect(completed.records.map((record) => record.status)).toEqual(['accepted', 'accepted']);
+    expect(writeRecord).toHaveBeenCalledTimes(2);
+    expect(completed.approvedAt).toBe(initial.approvedAt);
+  });
+
+  it('persists transient precheck delays instead of holding unsent rows, and wakes at the original expiry', async () => {
+    const { review, deps, writeRecord } = await setup(12);
+    const initial = await executeSafeImportReview(review, deps);
+    const retryAt = new Date(Date.parse(review.expiresAt) + 60_000).toISOString();
+    const readRecord = vi.fn().mockRejectedValue(new CrmReadDeferredError('transient', Date.parse(retryAt), 503));
+    const waiting = await continueSafeImportExecution(review, { ...deps, readRecord });
+    expect(waiting.records.slice(10).every((record) => record.status === 'pending')).toBe(true);
+    expect(waiting.nextAttemptAt).toBe(retryAt);
+    const expired = await continueSafeImportExecution(review, { ...deps, now: () => new Date(review.expiresAt) });
+    expect(expired.records.slice(10).every((record) => record.status === 'held' && record.error?.includes('expired'))).toBe(true);
+    expect(expired.approvedAt).toBe(initial.approvedAt);
+    expect(writeRecord).toHaveBeenCalledTimes(10);
+  });
+
+  it('defers readback without replaying an accepted write', async () => {
+    const { review, deps, writeRecord } = await setup();
+    let now = new Date(SAFE_IMPORT_TEST_NOW);
+    const retryAt = now.getTime() + 5_000;
+    let reads = 0;
+    const controls = { ...deps, now: () => now, readRecord: async (id: string) => {
+      if (++reads === 2) throw new CrmReadDeferredError('rate_limit', retryAt, 429);
+      return deps.readRecord(id);
+    } };
+    const waiting = await executeSafeImportReview(review, controls);
+    expect(waiting.records[0]).toMatchObject({ status: 'accepted' });
+    expect(waiting.records[0].verification).toBeUndefined();
+    now = new Date(retryAt);
+    const result = await continueSafeImportExecution(review, controls);
+    expect(result.records[0].verification?.status).toBe('verified');
+    expect(writeRecord).toHaveBeenCalledTimes(1);
+  });
+
+  it('holds all remaining unsent rows after definitive permission rejection and preserves unknown and accepted receipts', async () => {
+    const { review, deps, writeRecord } = await setup(200);
+    const stopReason = 'HubSpot rejected access. Correct permissions and prepare a new review.';
+    const attempts = vi.fn(async (record) => {
+      if (record.nativeId === '1') { await writeRecord(record); throw new Error('Lost response'); }
+      if (record.nativeId === '3') return { status: 'failed' as const, error: '403', stopReason };
+      return writeRecord(record);
+    });
+    const execution = await executeSafeImportReview(review, { ...deps, writeRecord: attempts });
+    expect(execution.records.slice(0, 3).map((record) => record.status)).toEqual(['unknown', 'accepted', 'failed']);
+    expect(execution.records.slice(3).every((record) => record.status === 'held' && record.error === stopReason)).toBe(true);
+    expect(execution.status).toBe('reconciliation-required');
+    expect(attempts).toHaveBeenCalledTimes(3);
+    expect(await getSafeImportExecution(review.workspaceId, review.id)).toEqual(execution);
+    await continueSafeImportExecution(review, { ...deps, writeRecord: attempts });
+    expect(attempts).toHaveBeenCalledTimes(3);
+    const { getDatabase } = await import('../db');
+    const db = await getDatabase();
+    const receipts = await db.prepare('SELECT COUNT(*) AS count FROM safe_import_execution_records WHERE execution_id = ?').bind(execution.id).first<{ count: number }>();
+    expect(receipts?.count).toBe(3);
+    const resumed = (await getSafeImportExecution(review.workspaceId, review.id))!;
+    await expect(updateSafeImportExecution({ ...resumed, unsentHoldReason: undefined }, resumed)).rejects.toThrow('cannot change');
+  });
+
+  it('classifies actual 429 rejection as pending, but a permanent 403 and ambiguous 503 never become retryable writes', async () => {
+    const record = safeImportReviewFixture().plans[0].records[0];
+    const fetchMock = vi.fn().mockResolvedValueOnce(Response.json({}, { status: 429, headers: { 'Retry-After': '120' } }));
+    vi.stubGlobal('fetch', fetchMock);
+    const cooldown = await writeHubSpotSafeImportRecord(record, 'limited-token');
+    expect(cooldown).toMatchObject({ status: 'pending', reason: 'rate_limit' });
+    expect(Date.parse('retryAt' in cooldown ? cooldown.retryAt : '')).toBeGreaterThan(Date.now() + 119_000);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    // The second attempt is gated before dispatch, not automatically repeated.
+    expect(await writeHubSpotSafeImportRecord(record, 'limited-token')).toMatchObject({ status: 'pending' });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    fetchMock.mockResolvedValueOnce(Response.json({}, { status: 403 }));
+    expect(await writeHubSpotSafeImportRecord(record, 'other-token')).toMatchObject({ status: 'failed' });
+    fetchMock.mockResolvedValueOnce(Response.json({}, { status: 503 }));
+    expect(await writeHubSpotSafeImportRecord(record, 'other-token')).toMatchObject({ status: 'unknown' });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it('checks authorization after waiting for a write slot, before dispatch', async () => {
+    const record = safeImportReviewFixture().plans[0].records[0];
+    const fetchMock = vi.fn(); vi.stubGlobal('fetch', fetchMock);
+    const beforeSend = vi.fn().mockRejectedValue(new Error('The original approval expired while waiting'));
+    expect(await writeHubSpotSafeImportRecord(record, 'test-token', beforeSend)).toMatchObject({ status: 'held', error: expect.stringContaining('expired') });
+    expect(beforeSend).toHaveBeenCalledTimes(1);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it('uses only native-ID PATCH with approved field names and excludes primary email', async () => {
     const review = safeImportReviewFixture();
     const fetchMock = vi.fn().mockResolvedValue(Response.json({ id: '1', archived: false }));
@@ -287,3 +427,5 @@ describe('saved safe import execution', () => {
     expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ properties: { phone: '2125550000' } });
   });
 });
+
+beforeEach(() => resetCrmReadTransportForTests({ minimumIntervalMs: 0, backoffBaseMs: 0 }));

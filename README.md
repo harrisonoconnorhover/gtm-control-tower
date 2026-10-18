@@ -6,7 +6,7 @@
 **[Clean a CSV in your browser](https://gtm-control-tower.pages.dev/#clean-csv)** ·
 **[Try the synthetic cleanup](https://gtm-control-tower.pages.dev/#decisions)** ·
 **[Follow a real CRM import](https://gtm-control-tower.pages.dev/enterprise-import-walkthrough.html)** ·
-**[Self-host the operator workspace](#self-host-the-full-operator-workspace)**
+**[Self-host the operator workspace](#quick-start-one-command-no-accounts-required)**
 
 A browser CSV cleaner and self-hosted revenue-systems lab. Start by uploading,
 reviewing, and downloading a CSV without installing anything or creating an
@@ -15,6 +15,9 @@ trusted funnel metrics, and receipted CRM repairs.
 
 Teams can add HubSpot, Salesforce, n8n, BigQuery, and dbt without putting
 credentials or organization-specific IDs in the repository.
+
+Use the [Codex plugin](docs/codex-plugin.md) to inspect saved imports, check
+websites, and prepare CRM change reviews from a local Codex chat.
 
 ## Review the work in two minutes
 
@@ -42,6 +45,7 @@ That original run used advisory approximate review. A later [native follow-up](d
   and optional verified company/job-title whitespace repairs. A separate runner
   continues with the browser closed. Requires the self-hosted SQLite app.
 - Groups unusual changes into [incidents](docs/incidents.md) at `/app/incidents`: field clearing, repeated reversals, broken relationships, deadlines and coverage failures. Retains native change events, separates evidence from possible causes, and pauses recurring repairs. Optional model explanations have no write authority.
+- Audits [HubSpot-to-Salesforce handoffs](docs/handoff-audits.md) at `/app/handoff-audits`: preserves the source cohort and eligibility, accounts for delayed, failed, excluded and unexplained records, and checks routing separately. Uses imported evidence or saved Monitor observations without CRM calls or writes.
 - Replays [2,900 generated messy records](docs/incident-stress-results.md) through the actual monitor with `npm run qualify:incidents`, producing inspectable data, expected outcomes and a local HTML report.
 - Combines incoming CSV lists, incidents and CRM Monitor findings in the [Operations Inbox](docs/operations-inbox.md)
   at `/app/work`, with saved ownership, exact-review links, and verified outcomes.
@@ -57,6 +61,10 @@ That original run used advisory approximate review. A later [native follow-up](d
 - Previews any CSV, lets the operator map arbitrary headers, saves reusable
   mapping presets, and diagnoses duplicate
   identity, missing fields, bad email, owner gaps, and lifecycle regression.
+- Checks [company website reachability](docs/website-checks.md) from the saved
+  self-hosted import review using HTTP GET first and a local Chromium fallback.
+  Results survive reload and show content, redirects, blocks and failures separately.
+  Company identity, ICP fit and email deliverability remain Pomade responsibilities.
 - Optionally imports a [Pomade JSON handoff](docs/pomade-handoff.md) into a new
   saved review workspace, retaining original proposals and source context.
   These files permit existing-record updates only; ordinary CSV imports retain
@@ -156,38 +164,19 @@ source.
 
 <a id="public-demonstration"></a>
 
-<a id="quick-start-one-command-no-accounts-required"></a>
-
 ## Clean a CSV in your browser
 
 Open **[Clean a CSV](https://gtm-control-tower.pages.dev/#clean-csv)**. No install,
-account, or CRM connection is required.
-
-1. **Open a file.** Choose your CSV (up to 10 MB and 10,000 data rows), or click
-   **Try sample CSV** to start with six fictional contacts.
-2. **Review and clean.** Preview the suggested formatting, then apply the changes
-   you want. Open a row to edit its cells or compare related rows before excluding
-   anything. Search formatting columns by name or number when working with a wide file.
-3. **Download your CSV.** Every original column and every included row is retained.
-   Review warnings do not block the download.
-
-No email or name column is required. Formatting choices open automatically when
-no email or cleanup columns are recognized.
-
-[![Browser CSV workspace with a file chooser and sample file option](docs/images/browser-csv.jpg)](https://gtm-control-tower.pages.dev/#clean-csv)
-
-Pending row edits stay when you download, switch rows, or close the editor.
-**Discard edits** cancels the current draft; **Undo** first cancels that draft,
-then can reverse the last ten saved actions. Formatting changes require an
-explicit **Apply formatting changes** click.
+account, or CRM connection is required. Choose a CSV up to 10 MB and 10,000 data
+rows, select the email and whitespace-cleanup columns, then preview changes
+before applying them. You can also edit cells, exclude or restore rows, and
+undo your last edit. Download the cleaned CSV when you are ready.
 
 The file and edits stay in tab memory: there is no source-data upload, browser
-storage of your CSV, or operator API call. You can visit the overview or Inbound
-Routing Lab and return in the same tab without losing work. Download before
-refreshing, closing the tab, opening another file, or leaving for another site.
-Original headers, column order, custom columns, and row order remain; only
-explicitly excluded rows are omitted. Unresolved warnings do not prevent
-download or remove rows automatically.
+storage, or operator API call. Refreshing or leaving loses the session, so
+download before you close it. Original headers, column order, custom columns,
+and row order remain; only explicitly excluded rows are omitted. Unresolved
+email warnings do not prevent download or remove rows automatically.
 
 Formula-like cells are prefixed with an apostrophe on export, with a count shown
 before download. Spreadsheet programs may still change types such as leading-zero
@@ -208,6 +197,8 @@ primary email stay protected. Identity holds require review, and unmatched rows
 never create contacts. Approval is bound to the saved review and actual CRM
 account, with durable execution and automatic readback. No AI model is required.
 See the [workflow, recovery, and verification guide](docs/safe-import.md).
+
+<a id="quick-start-one-command-no-accounts-required"></a>
 
 ## Self-host the full operator workspace
 

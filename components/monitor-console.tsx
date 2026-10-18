@@ -140,7 +140,7 @@ export function MonitorConsole() {
       <div className="relative mx-auto max-w-[1500px] px-5 pb-12 sm:px-8 lg:px-12">
         <header className="flex flex-wrap items-center justify-between gap-5 border-b border-white/10 py-5">
           <Link href="/app" className="flex items-center gap-3"><span className="grid h-10 w-10 place-items-center rounded-xl bg-[#d8ff67] font-mono text-xs font-black text-[#06100d]">GT</span><span><span className="block font-mono text-[9px] uppercase tracking-[0.22em] text-[#8ca397]">GTM Control Tower</span><span className="font-semibold">CRM Monitor</span></span></Link>
-          <nav aria-label="Operator navigation" className="flex flex-wrap gap-2 text-xs"><Link href="/app/incidents" className={secondaryButton}>Incidents</Link><Link href="/app/work" className={secondaryButton}>Operations Inbox</Link><Link href="/app" className={secondaryButton}>Duplicate audit</Link><Link href="/app/lab" className={secondaryButton}>CSV cleanup lab</Link><Link href="/setup" className={secondaryButton}>Setup</Link></nav>
+          <nav aria-label="Operator navigation" className="flex flex-wrap gap-2 text-xs"><Link href="/app/incidents" className={secondaryButton}>Incidents</Link><Link href="/app/handoff-audits" className={secondaryButton}>Handoff audit</Link><Link href="/app/work" className={secondaryButton}>Operations Inbox</Link><Link href="/app" className={secondaryButton}>Duplicate audit</Link><Link href="/app/lab" className={secondaryButton}>CSV cleanup lab</Link><Link href="/setup" className={secondaryButton}>Setup</Link></nav>
         </header>
 
         <section className="grid gap-6 py-9 lg:grid-cols-[1fr_auto] lg:items-end">

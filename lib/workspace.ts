@@ -1,10 +1,11 @@
 import type { CsvColumnMapping, CsvContactCorrection } from './csv-control-tower';
 import type { ConnectorId, ConnectorReceipt } from './connector-contract';
-import type { LiveContactState, RepairRun } from './live-control-tower';
+import type { ImportObject, LiveContactState, RepairRun } from './live-control-tower';
 import { defaultCrmUpdatePolicy, isSafeContactUpdatePolicy, normalizeCrmUpdatePolicy, normalizeImportRecordMode, type CrmUpdatePolicy, type ImportRecordMode, type ImportRecipe } from './crm-workflow';
 import { validImportMatchDecisions } from './import-match-decision';
 import { validPomadeOrigins } from './pomade-handoff';
 import { isImportExclusion } from './import-exclusions';
+import { validateCrmCohortWorkspace, type CrmCohortWorkspace } from './crm-cohort-review';
 
 export const MAX_PERSISTED_CONTACTS = 5_000;
 export const MAX_WORKSPACE_BYTES = 8 * 1024 * 1024;
@@ -13,11 +14,13 @@ export type MappingPreset = {
   id: string;
   name: string;
   mapping: CsvColumnMapping;
+  importObject?: ImportObject;
   createdAt: string;
   updatedAt: string;
 };
 
 export type WorkspaceState = {
+  importObject?: ImportObject;
   contacts: LiveContactState[];
   originalContacts: LiveContactState[];
   repairHistory: RepairRun[];
@@ -32,6 +35,7 @@ export type WorkspaceState = {
   importRecordMode?: ImportRecordMode;
   importRecipe?: ImportRecipe;
   sourceFileHash?: string;
+  crmCohort?: CrmCohortWorkspace;
 };
 
 export type SavedWorkspace = {
@@ -46,6 +50,7 @@ export type SavedWorkspace = {
 
 export function emptyWorkspaceState(): WorkspaceState {
   return {
+    importObject: 'contact',
     contacts: [],
     originalContacts: [],
     repairHistory: [],
@@ -63,6 +68,8 @@ export function emptyWorkspaceState(): WorkspaceState {
 export function validateWorkspaceState(value: unknown): WorkspaceState {
   if (!value || typeof value !== 'object') throw new Error('Workspace state is required.');
   const state = value as Partial<WorkspaceState>;
+  const importObject = state.importObject ?? 'contact';
+  if (!['contact', 'company', 'contact_company'].includes(importObject)) throw new Error('Unsupported import object. Choose contacts, companies, or contacts with associated companies.');
   if (!Array.isArray(state.contacts) || !Array.isArray(state.originalContacts)) {
     throw new Error('Workspace contacts are invalid.');
   }
@@ -70,6 +77,25 @@ export function validateWorkspaceState(value: unknown): WorkspaceState {
     throw new Error(`A saved workspace can contain at most ${MAX_PERSISTED_CONTACTS.toLocaleString()} contacts.`);
   }
   for (const row of [...state.contacts, ...state.originalContacts]) {
+    if (!row || typeof row !== 'object' || (row.importObject ?? 'contact') !== importObject) {
+      throw new Error('Every row must use the workspace import object. Reload the source to change objects.');
+    }
+    if (importObject === 'contact_company') {
+      const company = row.associatedCompany;
+      if (!company || typeof company !== 'object'
+        || (company.recordId !== null && (typeof company.recordId !== 'string' || company.recordId.length > 300))
+        || typeof company.name !== 'string' || company.name.length > 1_000
+        || typeof company.website !== 'string' || company.website.length > 2_048
+        || typeof company.phone !== 'string' || company.phone.length > 200
+        || typeof company.state !== 'string' || company.state.length > 300) {
+        throw new Error('Associated company fields are invalid or exceed their supported lengths.');
+      }
+    } else if (row.associatedCompany !== undefined) {
+      throw new Error('Associated company fields require the contacts with associated companies import object.');
+    }
+    if (importObject === 'company' && (row.rawEmail !== '' || row.normalizedEmail !== null || row.firstName || row.lastName || row.jobTitle)) {
+      throw new Error('Company rows cannot contain person names, email addresses or job titles.');
+    }
     if (row && typeof row === 'object' && !validPomadeOrigins(row.sourceOrigins)) {
       throw new Error('Pomade source context is invalid or exceeds its bounded updates-only format.');
     }
@@ -83,6 +109,9 @@ export function validateWorkspaceState(value: unknown): WorkspaceState {
   }
   const sourceType = state.sourceType ?? 'csv';
   const destinationType = state.destinationType ?? 'csv';
+  if (importObject !== 'contact' && (sourceType !== 'csv' || destinationType !== 'csv' || state.importRecipe !== undefined || state.crmCohort !== undefined)) {
+    throw new Error('Company and associated-company imports support local CSV review and export only.');
+  }
   const importRecordMode = normalizeImportRecordMode(state.importRecordMode);
   const crmUpdatePolicy = normalizeCrmUpdatePolicy(state.crmUpdatePolicy);
   if (state.importRecipe !== undefined && state.importRecipe !== 'safe-update-contacts') throw new Error('Unsupported import recipe.');
@@ -98,8 +127,9 @@ export function validateWorkspaceState(value: unknown): WorkspaceState {
     throw new Error('This workspace is too large to save. Export the repaired CSV and start a smaller workspace.');
   }
   return {
-    contacts: state.contacts as LiveContactState[],
-    originalContacts: state.originalContacts as LiveContactState[],
+    importObject,
+    contacts: state.contacts.map((row) => withoutDerivedSuppressions({ ...row, importObject })),
+    originalContacts: state.originalContacts.map((row) => withoutDerivedSuppressions({ ...row, importObject })),
     repairHistory: Array.isArray(state.repairHistory) ? state.repairHistory as RepairRun[] : [],
     correctionHistory: Array.isArray(state.correctionHistory) ? state.correctionHistory as CsvContactCorrection[] : [],
     receipts: Array.isArray(state.receipts) ? state.receipts as ConnectorReceipt[] : [],
@@ -112,5 +142,13 @@ export function validateWorkspaceState(value: unknown): WorkspaceState {
     importRecordMode,
     ...(state.importRecipe ? { importRecipe: state.importRecipe } : {}),
     ...(state.sourceFileHash ? { sourceFileHash: state.sourceFileHash } : {}),
+    ...(state.crmCohort ? { crmCohort: validateCrmCohortWorkspace(state.crmCohort) } : {}),
   };
+}
+
+// Matches are derived from the current saved rules; client snapshots cannot override them.
+function withoutDerivedSuppressions(row: LiveContactState): LiveContactState {
+  const clean = { ...row };
+  delete clean.suppressionMatches;
+  return clean;
 }

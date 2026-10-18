@@ -44,6 +44,7 @@ describe('workspace correction history', () => {
     const { createWorkspace, saveWorkspace, getWorkspace, undoWorkspace } = await import('../lib/workspace-store');
     const workspace = await createWorkspace('Reviewed contact correction');
     const before: LiveContactState = {
+      importObject: 'contact',
       contactId: 'held-1', fullName: 'Ada Example', rawEmail: 'ada.example', normalizedEmail: null,
       company: 'Example', region: 'West', segment: 'SMB', lifecycleStage: 'Lead', expectedLifecycleStage: 'Lead',
       ownerId: 'owner-1', canonicalContactId: null, recordStatus: 'active', lastAction: 'imported',
@@ -180,4 +181,32 @@ it('saves and reloads Pomade source context separately from writable contact val
   expect(reloaded?.state).toEqual(saved.state);
   expect(reloaded?.state.contacts[0].sourceOrigins![0]).toMatchObject({ allowCreate: false, proposedFields: { jobTitle: 'Director' }, evidence: [{ field: 'jobTitle' }] });
   expect(reloaded?.state.contacts[0].importExclusion?.reason).toContain('Review title');
+});
+
+
+it('derives current global suppressions on load without saving them into source snapshots or undo history', async () => {
+  const { createWorkspace, saveWorkspace, getWorkspace } = await import('../lib/workspace-store');
+  const { saveSuppressionRule, deleteSuppressionRule } = await import('../lib/suppression-store');
+  const { getDatabase } = await import('../db');
+  const created = await createWorkspace('Global suppression fixture');
+  const contacts = importContactsCsv('contact_id,full_name,email,company,owner_id\nGLOBAL,Sample Person,person@vendor.example,Vendor,owner').contacts;
+  const manual = { reason: 'Operator decision', excludedAt: '2026-10-16T12:00:00.000Z' };
+  contacts[0].importExclusion = manual;
+  const saved = await saveWorkspace(created.id, { ...created.state, contacts, originalContacts: structuredClone(contacts) });
+  const rule = (await saveSuppressionRule({ listName: 'Fixture vendors', type: 'email_domain', value: 'vendor.example', reason: 'Current vendor' })).find((entry) => entry.listName === 'Fixture vendors')!;
+  try {
+    const effective = (await getWorkspace(saved.id))!;
+    expect(effective.state.contacts[0].suppressionMatches).toMatchObject([{ ruleId: rule.id, reason: 'Current vendor' }]);
+    expect(effective.state.originalContacts).toEqual(saved.state.originalContacts);
+    const savedAgain = await saveWorkspace(saved.id, effective.state);
+    const db = await getDatabase();
+    const chunks = await db.prepare('SELECT payload FROM workspace_state_chunks WHERE workspace_id = ? AND revision = ? ORDER BY chunk_index')
+      .bind(saved.id, savedAgain.revision).all<{ payload: string }>();
+    expect(chunks.results.map((row) => row.payload).join('')).not.toContain('suppressionMatches');
+    expect(savedAgain.state.contacts[0].suppressionMatches).toHaveLength(1);
+  } finally { await deleteSuppressionRule(rule.id); }
+  const restored = (await getWorkspace(saved.id))!;
+  expect(restored.state.contacts[0].suppressionMatches).toBeUndefined();
+  expect(restored.state.contacts[0].importExclusion).toEqual(manual);
+  expect(restored.state.originalContacts).toEqual(saved.state.originalContacts);
 });

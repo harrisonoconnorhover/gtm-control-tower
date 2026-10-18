@@ -1,6 +1,7 @@
+import { isSuppressed } from './suppression';
 import type { ScenarioKey } from './control-tower';
 import { isImportExclusion, recomputeImportDuplicateFlags } from './import-exclusions';
-import type { LiveContactState, RepairReceipt, RepairRun } from './live-control-tower';
+import type { ImportObject, LiveContactState, RepairReceipt, RepairRun } from './live-control-tower';
 
 export type CsvImportResult = {
   contacts: LiveContactState[];
@@ -9,7 +10,7 @@ export type CsvImportResult = {
   expectedStageMapped: boolean;
 };
 
-export type CsvFieldKey = keyof typeof fieldAliases;
+export type CsvFieldKey = keyof typeof fieldAliases | keyof typeof associatedCompanyAliases;
 export type CsvColumnMapping = Partial<Record<CsvFieldKey, string>>;
 export type CsvPreview = {
   headers: string[];
@@ -67,6 +68,14 @@ const fieldAliases = {
   importExcludedAt: ['import_skipped_at'],
 } as const;
 
+const associatedCompanyAliases = {
+  associatedCompanyId: ['associated_company_id', 'company_id', 'account_id'],
+  associatedCompanyName: ['associated_company_name', 'company', 'company_name', 'account', 'account_name', 'organization_name'],
+  associatedCompanyWebsite: ['associated_company_website', 'website', 'domain', 'website_url', 'company_website', 'company_domain', 'account_website', 'account_domain'],
+  associatedCompanyPhone: ['associated_company_phone', 'company_phone', 'account_phone'],
+  associatedCompanyState: ['associated_company_state', 'company_state', 'account_state'],
+} as const;
+
 export const csvFieldLabels: Record<CsvFieldKey, string> = {
   contactId: 'Contact ID',
   fullName: 'Full name',
@@ -90,7 +99,38 @@ export const csvFieldLabels: Record<CsvFieldKey, string> = {
   qualityFlags: 'Quality flags',
   importExclusionReason: 'Import skip reason',
   importExcludedAt: 'Import skipped at',
+  associatedCompanyId: 'Associated company ID',
+  associatedCompanyName: 'Associated company name',
+  associatedCompanyWebsite: 'Associated company website',
+  associatedCompanyPhone: 'Associated company phone',
+  associatedCompanyState: 'Associated company state',
 };
+
+const companyFieldAliases: Partial<Record<CsvFieldKey, readonly string[]>> = {
+  contactId: ['company_id', 'account_id', 'id', 'record_id', 'hs_object_id'],
+  company: ['company', 'company_name', 'account', 'account_name', 'organization_name', 'name'],
+  website: [...fieldAliases.website, 'domain', 'company_domain', 'account_domain'],
+  phone: ['phone', 'phone_number', 'business_phone', 'company_phone', 'account_phone'],
+  state: ['state', 'state_province', 'billing_state', 'billing_state_province', 'province'],
+  region: fieldAliases.region,
+  segment: fieldAliases.segment,
+  ownerId: ['owner_id', 'hubspot_owner_id', 'company_owner_id', 'account_owner_id', 'sales_owner_id', 'sales_owner'],
+  canonicalContactId: ['canonical_company_id', 'canonical_account_id', 'canonical_id', 'merged_into'],
+  recordStatus: fieldAliases.recordStatus,
+  lastAction: fieldAliases.lastAction,
+  qualityFlags: fieldAliases.qualityFlags,
+  importExclusionReason: fieldAliases.importExclusionReason,
+  importExcludedAt: fieldAliases.importExcludedAt,
+};
+
+export function csvFieldLabelsForObject(importObject: ImportObject = 'contact'): Partial<Record<CsvFieldKey, string>> {
+  if (importObject === 'contact') return Object.fromEntries(Object.keys(fieldAliases).map((key) => [key, csvFieldLabels[key as CsvFieldKey]]));
+  if (importObject === 'contact_company') return { ...csvFieldLabels, company: 'Contact company context', website: 'Contact company website context' };
+  return Object.fromEntries(Object.keys(companyFieldAliases).map((key) => [key,
+    key === 'contactId' ? 'Company ID' : key === 'company' ? 'Company name'
+      : key === 'canonicalContactId' ? 'Canonical company ID' : csvFieldLabels[key as CsvFieldKey],
+  ]));
+}
 
 const stageRank: Record<string, number> = {
   lead: 1,
@@ -116,16 +156,16 @@ export function destinationHoldFlags(contact: LiveContactState): string[] {
 }
 
 export function isDestinationReadyContact(contact: LiveContactState): boolean {
-  return contact.recordStatus === 'active' && !contact.importExclusion && destinationHoldFlags(contact).length === 0;
+  return (contact.importObject ?? 'contact') === 'contact' && contact.recordStatus === 'active' && !contact.importExclusion && !isSuppressed(contact) && destinationHoldFlags(contact).length === 0;
 }
 
-export function previewContactsCsv(csv: string): CsvPreview {
+export function previewContactsCsv(csv: string, importObject: ImportObject = 'contact'): CsvPreview {
   const rows = parseCsv(csv);
-  if (rows.length < 2) throw new Error('The CSV needs a header row and at least one contact.');
+  if (rows.length < 2) throw new Error(`The CSV needs a header row and at least one ${importObject}.`);
 
   const originalHeaders = validatedCsvHeaders(rows[0]);
   const dataRows = rows.slice(1).filter((row) => row.some((cell) => cell.trim() !== ''));
-  const suggestedMapping = suggestCsvMapping(originalHeaders);
+  const suggestedMapping = suggestCsvMapping(originalHeaders, importObject);
   return {
     headers: originalHeaders,
     sampleRows: dataRows.slice(0, 5).map((cells) => Object.fromEntries(
@@ -136,14 +176,20 @@ export function previewContactsCsv(csv: string): CsvPreview {
   };
 }
 
-export function suggestCsvMapping(headers: string[]): CsvColumnMapping {
+export function suggestCsvMapping(headers: string[], importObject: ImportObject = 'contact'): CsvColumnMapping {
   // Matching tolerates CRM label/API spelling differences without changing the
   // parser's header validation or the original source labels used by mappings.
   const matchingKey = (value: string) => normalizeHeader(value).replaceAll('_', '');
   const normalizedHeaders = headers.map((header) => ({ original: header, normalized: matchingKey(header) }));
+  const aliasesForObject = importObject === 'company' ? companyFieldAliases : importObject === 'contact_company'
+    ? { ...fieldAliases, company: ['contact_company'], website: ['contact_company_website'], ...associatedCompanyAliases }
+    : fieldAliases;
   return Object.fromEntries(
-    Object.entries(fieldAliases).flatMap(([field, aliases]) => {
-      const canonicalKeys = new Set([matchingKey(field), matchingKey(csvFieldLabels[field as CsvFieldKey])]);
+    Object.entries(aliasesForObject).flatMap(([field, aliases]) => {
+      // Shared storage keys such as contactId must not make contact-specific
+      // source columns look like company IDs when the object is a company.
+      const label = csvFieldLabelsForObject(importObject)[field as CsvFieldKey]!;
+      const canonicalKeys = new Set([matchingKey(label), ...(importObject === 'contact' ? [matchingKey(field)] : [])]);
       const aliasKeys = new Set(aliases.map(matchingKey));
       const canonicalMatches = normalizedHeaders.filter((header) => canonicalKeys.has(header.normalized));
       const matches = canonicalMatches.length
@@ -156,15 +202,24 @@ export function suggestCsvMapping(headers: string[]): CsvColumnMapping {
   ) as CsvColumnMapping;
 }
 
-export function importContactsCsv(csv: string, mapping: CsvColumnMapping = {}): CsvImportResult {
+export function importContactsCsv(csv: string, mapping: CsvColumnMapping = {}, importObject: ImportObject = 'contact'): CsvImportResult {
   const rows = parseCsv(csv);
-  if (rows.length < 2) throw new Error('The CSV needs a header row and at least one contact.');
+  if (rows.length < 2) throw new Error(`The CSV needs a header row and at least one ${importObject}.`);
 
   const originalHeaders = validatedCsvHeaders(rows[0]);
   const headers = originalHeaders.map(normalizeHeader);
-  const effectiveMapping = { ...suggestCsvMapping(originalHeaders), ...mapping };
-  if (!effectiveMapping.rawEmail && !effectiveMapping.fullName && !effectiveMapping.firstName && !effectiveMapping.lastName) {
+  const effectiveMapping = { ...suggestCsvMapping(originalHeaders, importObject), ...mapping };
+  if (Object.entries(mapping).some(([field, value]) => value && !Object.hasOwn(csvFieldLabelsForObject(importObject), field))) {
+    throw new Error('This mapping includes fields for another import object. Choose fields for the selected object.');
+  }
+  if (importObject === 'company' && !effectiveMapping.company && !effectiveMapping.website) {
+    throw new Error('Add a company name or website column so companies can be identified.');
+  }
+  if (importObject !== 'company' && !effectiveMapping.rawEmail && !effectiveMapping.fullName && !effectiveMapping.firstName && !effectiveMapping.lastName) {
     throw new Error('Add an email or full_name column so contacts can be identified.');
+  }
+  if (importObject === 'contact_company' && !effectiveMapping.associatedCompanyId && !effectiveMapping.associatedCompanyName && !effectiveMapping.associatedCompanyWebsite) {
+    throw new Error('Map an associated company name, website or company ID as well as the contact fields.');
   }
 
   const now = new Date().toISOString();
@@ -179,7 +234,7 @@ export function importContactsCsv(csv: string, mapping: CsvColumnMapping = {}): 
     const contactId = readField('contactId') || `CSV-${String(index + 1).padStart(3, '0')}`;
     const firstRow = contactIdRows.get(contactId);
     if (firstRow !== undefined) {
-      throw new Error(`CSV row ${rowNumber} has duplicate contact ID "${contactId}" (first used on row ${firstRow}). Give each source record a unique contact ID and try again.`);
+      throw new Error(`CSV row ${rowNumber} has duplicate ${importObject} ID "${contactId}" (first used on row ${firstRow}). Give each source record a unique ${importObject} ID and try again.`);
     }
     contactIdRows.set(contactId, rowNumber);
     const firstName = readField('firstName');
@@ -205,19 +260,56 @@ export function importContactsCsv(csv: string, mapping: CsvColumnMapping = {}): 
       throw new Error(`CSV row ${rowNumber} has invalid skip metadata. Use an active row, a reason of 1–500 characters, and an ISO UTC timestamp such as 2026-09-27T22:00:00.000Z in import_skipped_at.`);
     }
     const qualityFlags = new Set(splitFlags(readField('qualityFlags')));
+    if (importObject === 'company') {
+      for (const flag of ['invalid_email', 'missing_owner', 'stage_regression', 'duplicate_identity', 'plus_address_present', 'unicode_domain_present', 'missing_company']) qualityFlags.delete(flag);
+      const website = nullable(readField('website'));
+      if (!company) qualityFlags.add('missing_company_name');
+      if (!website) qualityFlags.add('missing_website');
+      return {
+        importObject,
+        contactId,
+        fullName: company || website || contactId,
+        rawEmail: '',
+        normalizedEmail: null,
+        company,
+        phone: nullable(readField('phone')),
+        website,
+        state: nullable(readField('state')),
+        region,
+        segment,
+        lifecycleStage: '',
+        expectedLifecycleStage: '',
+        ownerId,
+        canonicalContactId,
+        recordStatus,
+        ...(importExclusion ? { importExclusion } : {}),
+        lastAction: readField('lastAction') || 'csv_imported',
+        qualityFlags: [...qualityFlags],
+        updatedAt: now,
+      } satisfies LiveContactState;
+    }
     if (recordStatus === 'active'
       && !importExclusion
       && Object.hasOwn(stageRank, suppliedLifecycleStage)
       && Object.hasOwn(stageRank, suppliedExpectedLifecycleStage)) lifecycleComparedRows += 1;
 
     if (!normalizedEmail) qualityFlags.add('invalid_email');
-    if (!company) qualityFlags.add('missing_company');
+    const associatedCompany = importObject === 'contact_company' ? {
+      recordId: nullable(readField('associatedCompanyId')),
+      name: readField('associatedCompanyName'),
+      website: readField('associatedCompanyWebsite'),
+      phone: readField('associatedCompanyPhone'),
+      state: readField('associatedCompanyState'),
+    } : undefined;
+    if (!company && !associatedCompany?.name && !associatedCompany?.website && !associatedCompany?.recordId) qualityFlags.add('missing_company');
     if (!ownerId) qualityFlags.add('missing_owner');
     if (rawEmail.split('@')[0]?.includes('+')) qualityFlags.add('plus_address_present');
     if (containsNonAscii(rawEmail.split('@')[1] ?? '')) qualityFlags.add('unicode_domain_present');
     if (isStageRegression(lifecycleStage, expectedLifecycleStage)) qualityFlags.add('stage_regression');
 
     return {
+      importObject,
+      ...(associatedCompany ? { associatedCompany } : {}),
       contactId,
       fullName,
       firstName,
@@ -244,7 +336,7 @@ export function importContactsCsv(csv: string, mapping: CsvColumnMapping = {}): 
   });
 
   return {
-    contacts: recomputeImportDuplicateFlags(contacts),
+    contacts: importObject === 'company' ? contacts : recomputeImportDuplicateFlags(contacts),
     sourceRows: dataRows.length,
     lifecycleComparedRows,
     expectedStageMapped: Boolean(effectiveMapping.expectedLifecycleStage)
@@ -261,6 +353,7 @@ export function correctCsvContact(
   const matching = contacts.filter((contact) => contact.contactId === contactId);
   if (matching.length !== 1) throw new Error('Choose one uniquely identified contact to correct.');
   const original = matching[0];
+  if ((original.importObject ?? 'contact') !== 'contact') throw new Error('Contact corrections do not apply to company or associated-company imports. Update the source CSV and reload it.');
   if (original.importExclusion) throw new Error('Restore this skipped import row before correcting its fields.');
   if (original.recordStatus !== 'active' || isDestinationReadyContact(original)) {
     throw new Error('Only active held contacts can be corrected.');
@@ -304,7 +397,7 @@ export function correctCsvContact(
     const duplicateEmails = new Set([...groupActiveByEmail(nextContacts)]
       .filter(([, group]) => group.length > 1).map(([email]) => email));
     for (const contact of nextContacts) {
-      if (contact.recordStatus !== 'active' || contact.importExclusion) continue;
+      if (contact.recordStatus !== 'active' || contact.importExclusion || isSuppressed(contact)) continue;
       const duplicate = Boolean(contact.normalizedEmail && duplicateEmails.has(contact.normalizedEmail));
       if (duplicate === contact.qualityFlags.includes('duplicate_identity')) continue;
       contact.qualityFlags = duplicate
@@ -337,6 +430,7 @@ export function executeCsvRepair(
   contacts: LiveContactState[],
   scenario: ScenarioKey,
 ): CsvRepairResult {
+  if (contacts.some((contact) => (contact.importObject ?? 'contact') !== 'contact')) throw new Error('Contact repair actions do not apply to company or associated-company imports.');
   const timestamp = new Date().toISOString();
   const requestId = globalThis.crypto.randomUUID();
   let affectedRecords = 0;
@@ -379,7 +473,7 @@ export function executeCsvRepair(
   if (scenario === 'routing-overload') {
     nextContacts = nextContacts.map((contact) => {
       const shouldReroute = contact.recordStatus === 'active'
-        && !contact.importExclusion
+        && !contact.importExclusion && !isSuppressed(contact)
         && contact.region.trim().toLowerCase() === 'northeast'
         && contact.segment.trim().toLowerCase() === 'enterprise'
         && contact.ownerId !== 'CE-ENT-OVERFLOW';
@@ -398,7 +492,7 @@ export function executeCsvRepair(
   if (scenario === 'stage-regression') {
     nextContacts = nextContacts.map((contact) => {
       const shouldReplay = contact.recordStatus === 'active'
-        && !contact.importExclusion
+        && !contact.importExclusion && !isSuppressed(contact)
         && contact.qualityFlags.includes('stage_regression');
       if (!shouldReplay) return contact;
       affectedRecords += 1;
@@ -437,6 +531,7 @@ export function countCsvRepairCandidates(
   contacts: LiveContactState[],
   scenario: ScenarioKey,
 ): number {
+  contacts = contacts.filter((contact) => (contact.importObject ?? 'contact') === 'contact');
   if (scenario === 'duplicate-surge') {
     return [...groupActiveByEmail(contacts).values()]
       .filter((group) => group.length > 1)
@@ -444,24 +539,44 @@ export function countCsvRepairCandidates(
   }
   if (scenario === 'routing-overload') {
     return contacts.filter((contact) => contact.recordStatus === 'active'
-      && !contact.importExclusion
+      && !contact.importExclusion && !isSuppressed(contact)
       && contact.region.trim().toLowerCase() === 'northeast'
       && contact.segment.trim().toLowerCase() === 'enterprise'
       && contact.ownerId !== 'CE-ENT-OVERFLOW').length;
   }
   return contacts.filter((contact) => contact.recordStatus === 'active'
-    && !contact.importExclusion
+    && !contact.importExclusion && !isSuppressed(contact)
     && contact.qualityFlags.includes('stage_regression')).length;
 }
 
-export function exportContactsCsv(contacts: LiveContactState[]): string {
+export function exportContactsCsv(contacts: LiveContactState[], importObject: ImportObject = contacts[0]?.importObject ?? 'contact'): string {
+  if (contacts.some((contact) => (contact.importObject ?? 'contact') !== importObject)) throw new Error('Export one import object at a time.');
+  if (importObject === 'company') {
+    const headers = ['company_id', 'company_name', 'website', 'phone', 'state', 'region', 'segment', 'owner_id',
+      'canonical_company_id', 'record_status', 'last_action', 'quality_flags', 'import_skip_reason', 'import_skipped_at',
+      'suppressed', 'suppression_lists', 'suppression_reasons', 'suppression_rules'];
+    const rows = contacts.map((company) => [company.contactId, company.company ?? '', company.website ?? '', company.phone ?? '',
+      company.state ?? '', company.region, company.segment, company.ownerId ?? '', company.canonicalContactId ?? '',
+      company.recordStatus, company.lastAction, company.qualityFlags.join('|'), company.importExclusion?.reason ?? '',
+      company.importExclusion?.excludedAt ?? '', isSuppressed(company) ? 'true' : 'false',
+      (company.suppressionMatches ?? []).map((match) => match.listName).join('; '),
+      (company.suppressionMatches ?? []).map((match) => match.reason).join('; '),
+      (company.suppressionMatches ?? []).map((match) => `${match.type}: ${match.value}`).join('; '),
+    ]);
+    return [headers, ...rows].map((row) => row.map(escapeCsvCell).join(',')).join('\n');
+  }
   const headers = [
     'contact_id', 'full_name', 'first_name', 'last_name', 'email', 'normalized_email',
     'company', 'phone', 'job_title', 'website', 'state', 'region',
     'segment', 'lifecycle_stage', 'expected_lifecycle_stage', 'owner_id',
     'canonical_contact_id', 'record_status', 'last_action', 'quality_flags',
-    'import_skip_reason', 'import_skipped_at',
+    'import_skip_reason', 'import_skipped_at', 'suppressed', 'suppression_lists', 'suppression_reasons', 'suppression_rules',
   ];
+  if (importObject === 'contact_company') {
+    headers[headers.indexOf('company')] = 'contact_company';
+    headers[headers.indexOf('website')] = 'contact_company_website';
+    headers.push('associated_company_id', 'associated_company_name', 'associated_company_website', 'associated_company_phone', 'associated_company_state');
+  }
   const rows = contacts.map((contact) => [
     contact.contactId,
     contact.fullName,
@@ -485,6 +600,12 @@ export function exportContactsCsv(contacts: LiveContactState[]): string {
     contact.qualityFlags.join('|'),
     contact.importExclusion?.reason ?? '',
     contact.importExclusion?.excludedAt ?? '',
+    isSuppressed(contact) ? 'true' : 'false',
+    (contact.suppressionMatches ?? []).map((match) => match.listName).join('; '),
+    (contact.suppressionMatches ?? []).map((match) => match.reason).join('; '),
+    (contact.suppressionMatches ?? []).map((match) => `${match.type}: ${match.value}`).join('; '),
+    ...(importObject === 'contact_company' ? [contact.associatedCompany?.recordId ?? '', contact.associatedCompany?.name ?? '',
+      contact.associatedCompany?.website ?? '', contact.associatedCompany?.phone ?? '', contact.associatedCompany?.state ?? ''] : []),
   ]);
   return [headers, ...rows].map((row) => row.map(escapeCsvCell).join(',')).join('\n');
 }
@@ -591,7 +712,7 @@ function splitFlags(value: string): string[] {
 function groupActiveByEmail(contacts: LiveContactState[]): Map<string, LiveContactState[]> {
   const groups = new Map<string, LiveContactState[]>();
   for (const contact of contacts) {
-    if (contact.recordStatus !== 'active' || contact.importExclusion || !contact.normalizedEmail) continue;
+    if (contact.recordStatus !== 'active' || contact.importExclusion || isSuppressed(contact) || !contact.normalizedEmail) continue;
     const group = groups.get(contact.normalizedEmail) ?? [];
     group.push(contact);
     groups.set(contact.normalizedEmail, group);

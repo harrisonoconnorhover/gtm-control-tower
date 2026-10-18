@@ -60,6 +60,11 @@ export type SafeImportExecution = {
   /** Durable worker ownership; never changes the scope or deadline of approval. */
   lease?: { token: string; expiresAt: string };
   reconciliationCursor?: number;
+  /** Provider backpressure survives restarts; the original review expiry still applies. */
+  nextAttemptAt?: string;
+  retryReason?: string;
+  /** A definitive permission failure or expired approval permanently holds all still-unsent rows. */
+  unsentHoldReason?: string;
   records: SafeImportExecutionRecord[];
 };
 

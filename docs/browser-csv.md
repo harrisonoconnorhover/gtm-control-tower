@@ -5,7 +5,9 @@ review, and download a file without installation, an account, or a CRM connectio
 The existing `#audit` link opens the same workflow.
 
 No email, name, or record ID column is required. Company exports, deal exports,
-and other tables open with every original column and row available.
+and other tables open with every original column and row available. If you see
+the older “Add an email or full_name column” error, refresh the page or reopen
+the link above to load the current workspace.
 
 ## Upload, review, download
 
@@ -13,37 +15,13 @@ and other tables open with every original column and row available.
    rows. Original headers, column order, custom columns, and row order are retained.
 2. Check the selected email column and columns to trim. Preview the proposed
    changes and apply them explicitly. Common name, company, and job-title columns
-   are selected for whitespace cleanup by default. If no email or cleanup columns
-   are recognized, the formatting rules open automatically so you can choose.
+   are selected for whitespace cleanup by default.
 3. Review empty rows and exact repeated rows, plus missing, malformed, or repeated
-   emails when an email column is selected. Open a row to edit its cells or compare
-   it with related rows, including rows on other pages. Inspect differing values
-   or show every column before deciding whether to exclude a row.
+   emails when an email column is selected. Edit individual cells as needed;
+   explicitly exclude a row only when you want to omit it. You can restore excluded
+   rows and undo your last edit.
 4. Download the cleaned CSV. Every included row is exported, even if it still has
-   a warning. Current row edits are included without a separate **Save row** click;
-   suggested formatting changes still need to be applied explicitly. For example,
-   `contacts.csv` becomes `contacts-cleaned.csv` in your browser's Downloads list.
-
-## Editing and review
-
-Your edits stay when you switch rows, close the row editor, download, or apply
-another action such as formatting or exclusion. **Save row** updates the formatting
-preview, search results, review notes, and related-row comparison immediately. **Discard edits** returns the open
-row to its last saved values.
-
-**Undo** first discards any unsaved edits in the open row. After that, it can undo
-the last ten saved actions, including formatting, column choices, and exclusions.
-When one of these actions also saves pending edits, Undo reverses the action first
-and the saved edits on the next step.
-Opening another CSV starts a new history. Excluded rows remain available in the
-**Excluded** view and can be restored; no rows are merged or removed automatically.
-
-For wide files, **Find a column** narrows the editor by column name or number.
-When a row search matches a value in a later column, the editor identifies the
-matching fields. Choose a field to jump to its column without losing your edits.
-**Previous row** and **Next row** follow your current row filter and search, keeping
-pending edits as you move. Duplicate or unnamed columns show their source position;
-these display labels are not written into your CSV headers.
+   a warning. Download before refreshing or leaving the page.
 
 ## What cleanup changes
 
@@ -51,14 +29,6 @@ Whitespace cleanup trims the beginning and end of selected cells. Email cleanup
 trims surrounding whitespace and normalizes the domain to lowercase ASCII using
 IDNA for internationalized domains. It preserves the email's local-part case,
 plus tags, and dots. Review the before/after values before applying changes.
-
-For wide files, **Find a formatting column** filters the choices by name or column
-number without changing hidden selections. **Select all** includes every source
-column in whitespace cleanup.
-**Clear all** clears those choices; with an email column selected, **Clear other
-columns** keeps its required email formatting. Both bulk controls also affect
-columns hidden by the search. These choices update the preview; values change
-only after **Apply formatting changes**.
 
 Email warnings invite review; they do not establish that two rows are the same
 person. The cleaner never merges or removes rows automatically and does not guess
@@ -75,20 +45,12 @@ may be intentional, so it remains in the download unless you exclude it.
 
 Your source file and edits stay in the current tab's memory. The CSV workflow
 does not upload source rows, call an operator API, or save them in browser storage.
-You can visit the site's overview or Inbound Routing Lab and return to the cleaner
-in the same tab without losing your file or pending edits. Download before
-refreshing, closing the tab, opening another file, or navigating to another site.
-The download is your saved copy; the browser session is not permanent storage.
+Refreshing, closing, or leaving the page loses the session. A download saves the
+included data to your computer; it is the way to keep your work.
 
-Downloads use UTF-8 with an encoding marker (BOM), which helps Excel open accented
-names correctly without an import wizard; see [Microsoft's guidance](https://support.microsoft.com/en-gb/excel/opening-csv-utf-8-files-correctly-in-excel).
-CSV tools that do not recognize this marker may treat it as part of the first
-header. The cleaner removes it when reopening a downloaded file.
-
-Formula-like cells, including column headers, receive a leading apostrophe on
-export so spreadsheet software does not treat them as formulas. The download area
-shows how many cells will be protected. This is an export change; the in-memory
-values remain unchanged.
+Formula-like cells receive a leading apostrophe on export so spreadsheet software
+does not treat them as formulas. The download area shows how many cells will be
+protected. This is an export change; the in-memory values remain unchanged.
 Spreadsheet software may still convert dates, numbers, or leading-zero IDs when
 opening a CSV. Import columns as text in your spreadsheet when those exact values
 matter.

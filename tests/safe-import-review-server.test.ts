@@ -1,8 +1,9 @@
-import { describe, expect, it, vi } from 'vitest';
+import { resetCrmReadTransportForTests } from '../lib/crm-read-transport';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { buildCrmWritePlan, defaultCrmUpdatePolicy, type NativeCrmRecord, type PortableCrmContact } from '../lib/crm-workflow';
 import type { createGovernedCrmPlan } from '../lib/governed-crm-plan';
 import type { LiveContactState } from '../lib/live-control-tower';
-import { buildSafeImportReview } from '../lib/safe-import-review-server';
+import { buildSafeImportReview, safeImportWorkspaceFingerprint } from '../lib/safe-import-review-server';
 import { emptyWorkspaceState, type SavedWorkspace } from '../lib/workspace';
 
 const now = new Date('2026-10-06T18:00:00.000Z');
@@ -118,4 +119,24 @@ describe('whole-file Safe Import review', () => {
     }
     expect(lookup).not.toHaveBeenCalled();
   });
+});
+
+beforeEach(() => resetCrmReadTransportForTests({ minimumIntervalMs: 0, backoffBaseMs: 0 }));
+
+
+it('excludes suppressed rows from CRM lookup and invalidates approval when effective suppressions change', async () => {
+  const saved = workspace(2);
+  const fingerprint = await safeImportWorkspaceFingerprint(saved);
+  const original = structuredClone(saved.state.originalContacts);
+  saved.state.contacts[0].suppressionMatches = [
+    { ruleId: 'vendor', listName: 'Vendors', type: 'email', value: 'person1@example.com', reason: 'Current vendor' },
+  ];
+  const plan = vi.fn(createPlan);
+  const review = await buildSafeImportReview(saved, account, { createPlan: plan, now: () => now });
+  expect(review.rows.find((row) => row.contactId === 'row-1')).toMatchObject({ status: 'skipped', reason: 'Suppressed: Vendors: Current vendor' });
+  expect(plan.mock.calls.flatMap((call) => call[2].map((row) => row.contactId))).toEqual(['row-2']);
+  expect(await safeImportWorkspaceFingerprint(saved)).not.toBe(fingerprint);
+  expect(saved.state.originalContacts).toEqual(original);
+  delete saved.state.contacts[0].suppressionMatches;
+  expect(await safeImportWorkspaceFingerprint(saved)).toBe(fingerprint);
 });

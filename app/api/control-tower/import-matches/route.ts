@@ -1,7 +1,8 @@
+import { isSuppressed } from '@/lib/suppression';
 import { compareImportedContacts, type ImportMatchInput, type MatchField } from '@/lib/import-match';
 import { getDuplicateScan, getDuplicateScanRecords } from '@/lib/duplicate-scan-store';
 import { operatorAccessError } from '@/lib/operator-auth';
-import { persistenceEnabled } from '@/lib/workspace-store';
+import { getWorkspace, persistenceEnabled } from '@/lib/workspace-store';
 
 const allowedFields = new Set<MatchField>(['name', 'email', 'phone', 'state', 'company']);
 const inputLimits = { contactId: 120, fullName: 512, email: 254, phone: 100, state: 100, company: 255 } as const;
@@ -29,6 +30,12 @@ export async function POST(request: Request) {
       return Response.json({ error: 'CRM snapshot not found for this workspace and connector.' }, { status: 404 });
     }
     if (!scan.complete) return Response.json({ error: 'Finish the CRM scan before comparing imported rows.' }, { status: 409 });
+    const workspace = await getWorkspace(payload.workspaceId);
+    if (!workspace) return Response.json({ error: 'Workspace not found.' }, { status: 404 });
+    const suppressedIds = new Set(workspace.state.contacts.filter(isSuppressed).map((row) => row.contactId));
+    if (payload.contacts.some((contact) => suppressedIds.has(contact.contactId))) {
+      return Response.json({ error: 'Suppressed rows are excluded from import matching. Refresh the review before comparing rows.' }, { status: 409 });
+    }
     const records = await getDuplicateScanRecords(scan.id);
     const report = compareImportedContacts(payload.contacts, records, payload.fields as MatchField[]);
     return Response.json({

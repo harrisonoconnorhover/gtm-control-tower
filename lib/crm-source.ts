@@ -1,3 +1,4 @@
+import { readCrmJson } from './crm-read-transport';
 import type { IdentityRecord } from './identity-resolution';
 
 export type CrmSourceContact = {
@@ -39,7 +40,7 @@ export async function readHubSpotIdentityPage(
   url.searchParams.set('limit', '100');
   url.searchParams.set('properties', properties.join(','));
   if (cursor.after) url.searchParams.set('after', cursor.after);
-  const { response, payload } = await fetchJsonWithRetry(url, { headers: hubSpotHeaders(accessToken) });
+  const { response, payload } = await readCrmJson(url, { headers: hubSpotHeaders(accessToken) }, { provider: 'hubspot', accessToken });
   if (!response.ok) throw new Error(`HubSpot source returned ${response.status}`);
   if (!isRecord(payload) || !Array.isArray(payload.results)) throw new Error('HubSpot source returned malformed records');
   let after: string | null = null;
@@ -74,13 +75,13 @@ export async function readSalesforceIdentityPage(
   const url = cursor.nextRecordsUrl
     ? salesforceCursorUrl(cursor.nextRecordsUrl, apiRoot)
     : new URL(`${apiRoot}/query?q=${encodeURIComponent(query)}`);
-  const { response, payload } = await fetchJsonWithRetry(url, {
+  const { response, payload } = await readCrmJson(url, {
     headers: {
       authorization: `Bearer ${accessToken}`,
       accept: 'application/json',
       'sforce-query-options': 'batchSize=200',
     },
-  });
+  }, { provider: 'salesforce', accessToken, origin: instanceUrl });
   if (!response.ok) throw new Error(`Salesforce ${cursor.objectType} source returned ${response.status}`);
   if (!isRecord(payload) || !Array.isArray(payload.records) || typeof payload.done !== 'boolean') {
     throw new Error('Salesforce source returned malformed records or pagination');
@@ -132,10 +133,9 @@ export async function readSalesforceLeads(
   limit: number,
 ): Promise<CrmSourceContact[]> {
   const query = `SELECT Id, FirstName, LastName, Email, Company, Phone, Title, Website FROM Lead WHERE IsConverted = FALSE ORDER BY LastModifiedDate DESC LIMIT ${limit}`;
-  const response = await fetch(`${instanceUrl}/services/data/v${apiVersion}/query?q=${encodeURIComponent(query)}`, {
-    cache: 'no-store', headers: { authorization: `Bearer ${accessToken}`, accept: 'application/json' }, signal: AbortSignal.timeout(30_000),
-  });
-  const payload: unknown = await response.json();
+  const { response, payload } = await readCrmJson(`${instanceUrl}/services/data/v${apiVersion}/query?q=${encodeURIComponent(query)}`, {
+    headers: { authorization: `Bearer ${accessToken}`, accept: 'application/json' },
+  }, { provider: 'salesforce', accessToken, origin: instanceUrl });
   if (!response.ok || !isRecord(payload) || !Array.isArray(payload.records)) throw new Error(`Salesforce source returned ${response.status}`);
   return payload.records.filter(isRecord).flatMap((record): CrmSourceContact[] => {
     const nativeId = stringValue(record.Id);
@@ -266,21 +266,6 @@ function identityToSourceContact(record: IdentityRecord): CrmSourceContact {
 
 function hubSpotHeaders(accessToken: string) {
   return { authorization: `Bearer ${accessToken}`, accept: 'application/json' };
-}
-
-async function fetchJsonWithRetry(url: URL, init: RequestInit): Promise<{ response: Response; payload: unknown }> {
-  let lastResponse: Response | null = null;
-  for (let attempt = 0; attempt < 4; attempt += 1) {
-    const response = await fetch(url, { ...init, cache: 'no-store', redirect: 'manual', signal: AbortSignal.timeout(30_000) });
-    lastResponse = response;
-    const payload: unknown = await response.json().catch(() => null);
-    if (response.status !== 429 && response.status < 500) return { response, payload };
-    if (attempt === 3) return { response, payload };
-    const retryAfter = Number(response.headers.get('retry-after') ?? 0);
-    const delay = retryAfter > 0 ? Math.min(retryAfter * 1000, 10_000) : 250 * 2 ** attempt;
-    await new Promise((resolve) => setTimeout(resolve, delay));
-  }
-  throw new Error(`CRM source returned ${lastResponse?.status ?? 'no response'}`);
 }
 
 function nullableDate(value: unknown): string | null {

@@ -57,7 +57,7 @@ type Props = {
   onBusyChange: (busy: boolean) => void; onDecision: (action: ImportMatchDecisionAction) => Promise<void>;
   onSkip: (contactId: string, reason: string) => Promise<void>;
 };
-type Response = { review: SafeImportReview | null; execution?: SafeImportExecution | null; error?: string };
+type Response = { review: SafeImportReview | null; execution?: SafeImportExecution | null; error?: string; retryAt?: string };
 
 export function SafeImportReview({ workspaceId, workspaceRevision, destinationType = 'hubspot', initialReviewId, contacts, accessKey, disabled, onBusyChange, onDecision, onSkip }: Props) {
   const [review, setReview] = useState<SafeImportReview | null>(null);
@@ -70,6 +70,12 @@ export function SafeImportReview({ workspaceId, workspaceRevision, destinationTy
   const [rowQuery, setRowQuery] = useState('');
   const [rowFilter, setRowFilter] = useState('all');
   const [rowPage, setRowPage] = useState(0);
+  const [clock, setClock] = useState(() => Date.now());
+  useEffect(() => {
+    if (!execution?.nextAttemptAt) return;
+    const timer = window.setInterval(() => setClock(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [execution?.nextAttemptAt]);
   const requestLock = useRef(false);
   const connectorId = review?.connectorId ?? destinationType;
   const providerLabel = connectorId === 'salesforce' ? 'Salesforce' : 'HubSpot';
@@ -100,7 +106,7 @@ export function SafeImportReview({ workspaceId, workspaceRevision, destinationTy
       body: JSON.stringify({ action, workspaceId, ...(reviewId ? { reviewId } : {}) }), cache: 'no-store',
     });
     const result = await response.json() as Response;
-    if (!response.ok || (action !== 'load' && !result.review)) throw new Error(result.error ?? 'Safe Import could not return the saved review.');
+    if (!response.ok || (action !== 'load' && !result.review)) throw new Error(`${result.error ?? 'Safe Import could not return the saved review.'}${result.retryAt ? ` Retry after ${new Date(result.retryAt).toLocaleString()}; your saved progress is retained.` : ''}`);
     return result;
   }
 
@@ -125,7 +131,8 @@ export function SafeImportReview({ workspaceId, workspaceRevision, destinationTy
       if (action === 'approve') setUncertain(true);
     } finally { requestLock.current = false; setPending(null); onBusyChange(false); }
   }
-  const expired = review ? Date.parse(review.expiresAt) <= Date.now() : false;
+  const expired = review ? Date.parse(review.expiresAt) <= Math.max(clock, Date.now()) : false;
+  const waiting = !expired && Boolean(execution?.nextAttemptAt && Date.parse(execution.nextAttemptAt) > Math.max(clock, Date.now()));
   const outdated = review ? review.workspaceRevision !== workspaceRevision : false;
   const fullyChecked = review?.complete && review.counts.unresolved === 0 && review.rows.every((row) => row.status !== 'unresolved');
   const canApprove = fullyChecked && !outdated && !expired && !execution && !uncertain && review.counts['proposed-update'] > 0;
@@ -150,7 +157,8 @@ export function SafeImportReview({ workspaceId, workspaceRevision, destinationTy
       {outdated && <p className="mt-3 text-sm text-[#e6bd68]">The saved workspace changed after this review. Prepare a new review before approving any updates.</p>}
       {expired && !execution && <p className="mt-3 text-sm text-[#e6bd68]">This review expired. Prepare a new review before approving.</p>}
       <div className="mt-4 flex flex-wrap gap-2"><button type="button" className={secondary} onClick={() => download('json', review, execution)}>Download whole review (JSON)</button><button type="button" className={secondary} onClick={() => download('csv', review, execution)}>Download field decisions (CSV)</button><button type="button" className={secondary} disabled={Boolean(pending)} onClick={() => void run('load')}>Reload saved execution</button>{(uncertain || execution) && <button type="button" className={secondary} disabled={Boolean(pending)} onClick={() => void run('recover')}>{pending === 'recover' ? 'Reading native values…' : 'Reconcile and verify (read-only)'}</button>}</div>
-      {execution?.records.some((record) => record.status === 'pending') && <div className="mt-3"><p className="text-xs leading-5 text-[#9db1a7]">The background runner processes at most 10 records per chunk. The original review expiry still applies: remaining rows are held when it expires, and require a new review and approval.</p><button type="button" className={`${secondary} mt-2`} disabled={Boolean(pending)} onClick={() => void run('continue')}>{pending === 'continue' ? 'Processing next chunk…' : 'Continue approved queue'}</button></div>}
+      {execution?.nextAttemptAt && <p role="status" className="mt-3 text-sm leading-5 text-[#e6bd68]">{waiting ? 'Waiting until' : 'Retry eligible at'} {new Date(execution.nextAttemptAt).toLocaleString()}. {execution.retryReason} The saved approval still expires at {review && new Date(review.expiresAt).toLocaleString()}.</p>}
+      {execution?.records.some((record) => record.status === 'pending') && <div className="mt-3"><p className="text-xs leading-5 text-[#9db1a7]">The background runner processes at most 10 records per chunk. The original review expiry still applies: remaining rows are held when it expires, and require a new review and approval.</p><button type="button" className={`${secondary} mt-2`} disabled={Boolean(pending) || waiting} onClick={() => void run('continue')}>{pending === 'continue' ? 'Processing next chunk…' : waiting ? 'Waiting for CRM capacity…' : 'Continue approved queue'}</button></div>}
       {execution && <ExecutionSummary execution={execution} />}
       <div className="mt-5 grid gap-3 sm:grid-cols-2"><label className="text-xs text-[#9db1a7]">Find reviewed row<input value={rowQuery} onChange={(event) => { setRowQuery(event.target.value); setRowPage(0); }} placeholder="Name, email, or row id" className="mt-2 block w-full rounded-xl border border-white/15 bg-[#07130f] p-3 text-sm text-[#edf8f2]" /></label><label className="text-xs text-[#9db1a7]">Show review decisions<select value={rowFilter} onChange={(event) => { setRowFilter(event.target.value); setRowPage(0); }} className="mt-2 block w-full rounded-xl border border-white/15 bg-[#07130f] p-3 text-sm text-[#edf8f2]"><option value="all">All checked rows</option>{Object.entries(rowLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label></div>
       <div className="mt-3 flex flex-wrap items-center justify-between gap-3"><p className="text-xs text-[#8fa99d]">{filteredRows.length ? `Showing ${page * rowPageSize + 1}–${Math.min((page + 1) * rowPageSize, filteredRows.length)} of ${filteredRows.length} matching rows.` : 'No rows match this filter.'} Filters do not change the whole-file approval.</p><div className="flex gap-2"><button type="button" className={secondary} disabled={page === 0} onClick={() => setRowPage(page - 1)}>Previous rows</button><button type="button" className={secondary} disabled={(page + 1) * rowPageSize >= filteredRows.length} onClick={() => setRowPage(page + 1)}>Next rows</button></div></div>

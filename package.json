@@ -2,7 +2,7 @@
   "name": "gtm-control-tower",
   "version": "0.1.0",
   "private": true,
-  "description": "Browser CSV cleanup and a self-hosted GTM systems lab for repairing CRM data, routing leads, and modeling revenue operations.",
+  "description": "A self-hosted GTM systems lab for repairing messy CRM data, routing leads, and modeling revenue operations.",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -25,9 +25,6 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:browser-csv": "node scripts/check-browser-csv.mjs",
-    "test:browser-csv-related": "node scripts/check-browser-csv-related.mjs",
-    "test:browser-csv-keyboard": "node scripts/check-browser-csv-keyboard.mjs",
-    "test:inbound-navigation": "node scripts/check-inbound-navigation.mjs",
     "test:csv-mapping": "node scripts/check-csv-mapping.mjs",
     "test:operator-key": "node scripts/check-operator-key.mjs",
     "setup": "node scripts/setup.mjs",
@@ -52,20 +49,26 @@
     "test:confirmed-matches": "node scripts/check-import-match-decision.mjs",
     "test:run-verification": "node scripts/check-run-verification.mjs",
     "test:pomade-handoff": "node scripts/check-pomade-handoff.mjs",
+    "test:pomade-qualification": "node scripts/check-pomade-qualification.mjs",
+    "test:crm-cohort-roundtrip": "node scripts/check-crm-cohort-roundtrip.mjs",
     "test:safe-import": "node scripts/check-safe-import.mjs",
     "test:operations-inbox-ui": "node scripts/check-operations-inbox.mjs",
     "test:slack-ui": "node scripts/check-slack-notifications.mjs",
     "generate:messy-crm": "node scripts/generate-messy-crm.mjs",
     "test:incidents-ui": "node scripts/check-incidents.mjs",
+    "test:handoff-audit-ui": "node scripts/check-handoff-audit.mjs",
     "qualify:incidents": "node scripts/qualify-incident-stress.mjs",
     "qualify:incidents:native": "node --env-file-if-exists=.env.local scripts/qualify-incidents-native.mjs"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.31.0",
     "better-sqlite3": "^12.11.1",
     "drizzle-orm": "^0.45.2",
     "next": "16.3.8",
+    "playwright-core": "1.62.1",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "1.63.1",
@@ -81,15 +84,14 @@
     "drizzle-kit": "^0.31.10",
     "eslint": "9.39.4",
     "eslint-config-next": "16.2.6",
-    "playwright-core": "1.62.1",
+    "fast-glob": "file:./vendor/fast-glob-compat",
     "react-server-dom-webpack": "19.2.8",
     "tailwindcss": "4.2.1",
     "typescript": "5.9.3",
     "vinext": "1.0.0-beta.8",
     "vite": "8.2.2",
     "vitest": "4.1.11",
-    "wrangler": "4.149.0",
-    "fast-glob": "file:./vendor/fast-glob-compat"
+    "wrangler": "4.149.0"
   },
   "type": "module",
   "overrides": {
